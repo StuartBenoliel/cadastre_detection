@@ -16,6 +16,15 @@ library(sf)
 library(dplyr)
 library(lubridate)
 library(mapview)
+library(DBI)
+source(file = "connexion_db.R")
+conn<-connecter()
+DBI::dbListTables(conn)
+```
+
+```{r}
+DBI::dbListFields(conn,"parc_45")
+
 ```
 
 
