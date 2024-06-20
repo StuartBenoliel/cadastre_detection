@@ -1,0 +1,482 @@
+---
+title: "TP PostGIS"
+output: pdf_document
+
+---
+
+
+
+## **OBJECTIFS DU TP:**
+
+- Le but de ce TP est de découvrir l'utilisation de PostGis (extension PostGreSQL) pour la manipulation d'objets spaciaux. 
+
+Aﬁn que tout le monde ait le même environnement de travail, vous travaillerez sur le datalab (plateforme du sspcloud, service de l’Insee) : https://datalab.sspcloud.fr.
+
+
+Les données seront directement téléchargées depuis votre programme R. 
+
+
+
+---
+
+
+
+### Exercice 1 - Création d'une BDD PostGre avec extension PostGIS
+
+0. Comme pour chaque séance, commencer par créer un projet. Déposer ensuite au sein de votre projet les programmes connexion_db.R et create_db.R
+
+1. Au sein du datalab, vous allez créer un service PostGre avec extension PostGIS afin d'y stocker ultérieurement vos données. Pour cela, une fois connecté à la plateforme du datalab : aller dans Mes Services/Nouveau Service/Onglet Bases de données/Lancer Posgresql/onglet Configuration Postgresql/onglet Extensions/cocher PostGIS puis Lancer le service.
+
+2. Au sein du programme connexion_db.R, modifier les variables "name_database", "user_name", "password", "url", "port" pour les adapter au service que vous venez de créer. Les informations nécessaire sà la connexion au serveur PostGre se trouvent sur le bouton README du service.
+
+3. Faire tourner tout le programme create_db.R. Pour que le programme fonctionne il vous faudra probablement modifier le chemin de la fonction source(). Après avoir bien fait correctement tourner le programme, vider votre environnement avec la commande `rm(list = ls())` 
+
+
+### Exercice 2 - Requêtes sur serveur PostGre
+
+Le début de l'exercice utilise le package DBI. Vous pouvez trouver de la documentation sur ce package [ici](https://dbi.r-dbi.org/)
+
+1. Connectez-vous au serveur postgre (la syntaxe se trouve au sein d'un programme précédemment lancé). Afficher ensuite les tables présentes sur le serveur avec la fonction `DBI::dbListTables()`.
+```{r}
+library(DBI)
+source(file = "connexion_db.R")
+conn<-connecter()
+DBI::dbListTables(conn)
+```
+
+2. Afficher les variables présentes dans la table "popnaiss_com". Pour cela vous utiliserez `DBI::dbListFields()`
+```{r}
+DBI::dbListFields(conn,"popnaiss_com")
+```
+
+
+3. Créer une copie de la table popnaiss_com qui sera stockée dans votre environnement. La requête SQL est la suivante `'SELECT * FROM popnaiss_com`. Utiliser la fonction `dbSendQuery()`. Quelle est la nature de l'objet retourné ?
+
+```{r}
+popnaiss<-DBI::dbSendQuery(conn, "SELECT * FROM popnaiss_com;")
+str(popnaiss)
+```
+
+4. Faire la même question que précedemment en utilisant cette fois la fonction `dbGetQuery()`. Quelle différence observez-vous ?
+
+```{r}
+popnaiss_get<-DBI::dbGetQuery(conn, "SELECT * FROM popnaiss_com;")
+str(popnaiss_get)
+#  Avec la fonction dbGetQuery(), on retrouve un dataframe en output.
+
+# Les objets en sortie de la fonction dbSendQuery() sont des objets d'un type particulier. Pour ramener cet objet à un dataframe, vous pouvez utiliser la fonction DBI::dbFetch(). Vous pouvez d'ailleurs décider de ne conserver que quelques lignes à votre dataframe (utile quand on manipule de très grosses bases, afin de ne pas saturer l'environnement). Par exemple :
+popnaiss<-DBI::dbSendQuery(conn, "SELECT * FROM popnaiss_com;") 
+popnaiss_5rows<-DBI::dbFetch(popnaiss,n=5) # ne conserve que les 5 premières lignes
+# la commande DBI::dbClearResult permet ensuite de libérer les ressources locales et distantes liées au résultat d'une requête.
+DBI::dbClearResult(popnaiss)
+```
+
+5. En utilisant à nouveau une requête SQL (donc sans travailler sur la copie), afficher l'ensemble des informations concernant la ville de Rennes (CODGEO = "35238") pour la table popnaiss_com.
+```{r}
+DBI::dbListFields(conn,"popnaiss_com")
+question5<-dbGetQuery(conn, statement = "SELECT * FROM popnaiss_com WHERE codgeo='35238';")
+str(question5)
+```
+
+6. On souhaite récupérer les informations relatives aux équipements (table bpe_metro) et aux naissances pour la ville de Bruz (table popnaiss_com). Pour cela, faites une jointure (en langage SQL) sur la commune de Bruz (CODGEO = "35047"). Vous utiliserez l'instruction INNER JOIN en terminant avec l'instruction WHERE. [Indication ici](https://www.w3schools.com/sql/sql_join_inner.asp). La clé de jointure est la variable codgeo dans popnaiss_com et depcom dans bpe21_metro. 
+
+```{r}
+
+DBI::dbListFields(conn,"bpe21_metro")
+# Jointure sur depcom
+
+query<-"SELECT * FROM popnaiss_com INNER JOIN bpe21_metro ON popnaiss_com.codgeo=bpe21_metro.depcom WHERE codgeo='35047';"
+question6<-dbGetQuery(conn,query)
+str(question6)
+```
+
+
+7. Le package `dbplyr` permet de travailler sur des BDD de données de type SQL sans avoir à passer par la requête SQL (peut être utile quand on a complètement oublié ses cours). Vous trouverez de la [documentation ici](https://dbplyr.tidyverse.org/).
+Refaire les questions 5 et 6 en utilisant de les packages dbplyr et dplyr. Que fait la fonction show_query() ?
+
+
+```{r}
+library(dplyr)
+library(dbplyr)
+
+# Connexion à la table popnaiss
+popnaiss<-tbl(conn,"popnaiss_com")
+str(popnaiss) # ! ce n'est pas un data.frame
+
+# Question 5
+popnaiss %>% 
+  filter(codgeo=="35047") %>% 
+  show_query()
+
+# POur récupérer les données => utiliser collect()
+pop_bruz <- popnaiss %>% 
+  filter(codgeo=="35047") %>% 
+  collect()
+str(pop_bruz)
+
+# Question 6
+popnaiss %>% 
+  filter(codgeo=="35047") %>% 
+  inner_join(
+    tbl(conn,"bpe21_metro"),
+    by = c("codgeo" = "depcom")
+  ) %>% 
+  show_query()
+
+# Récupération des données
+bpe_pop_bruz <- popnaiss %>% 
+  filter(codgeo=="35047") %>% 
+  inner_join(
+    tbl(conn,"bpe21_metro"),
+    by = c("codgeo" = "depcom")
+  ) %>% 
+  collect()
+bpe_pop_bruz %>% str()
+```
+
+
+
+### Exercice 3 - Manipulation de la Base Permanente des Equipements (BPE)
+
+Au-delà de la découverte de la source BPE, le but de cet exercice est aussi de poursuivre la manipulation de données via les requêtes SQL. Au cours de cet exercice, n'hésitez-pas à comparer les temps de traitement (avec la fonction `system.time()`) entre une solution avec requête SQL et une solution avec requête plus classique (avec dplyr par exemple). SPOIL ALERT : cela va + vite en SQL!
+
+1. A partir de la table bpe21_metro, créer une table bpe_dep50 (dans votre environnement) pour le département de la Manche (DEP='50'). Cette table contiendra uniquement les variables ID, DEPCOM, DOM, SDOM, TYPEQU, GEOMETRY. Quel est le type d'objet retourné ?
+
+```{r}
+bpe_dep50 <- dbGetQuery(conn, statement = "SELECT ID, DEPCOM, DOM, SDOM, TYPEQU, GEOMETRY FROM bpe21_metro WHERE DEP='50';")
+str(bpe_dep50) 
+
+# Les données sont récupérées sous forme d'un dataframe dont la géométrie n'est considérée comme une variable comme une autre
+```
+
+2. Refaire la question précédente en utilisant la fonction `st_read()`. La fonction st_read se comporte comme une fonction du package DBI sauf que l'argument `statement=` avec les fonctions DBI s'appelle `query=` avec st_read().
+
+```{r}
+library(sf)
+library(dplyr)
+bpe_dep50 <- st_read(conn, query = "SELECT ID, DEPCOM, DOM, SDOM, TYPEQU, GEOMETRY FROM bpe21_metro WHERE DEP='50';")
+str(bpe_dep50) 
+# il s'agit bien d'un objet sf et data.frame. Les fonctions sf déjà vues dans les autres TP seront fonctionnelles.
+
+# Remarque importante: Bien entendu, il est possible d'importer la table entière et de la manipuler sur R avec sf et dplyr 
+# mais au risque d'une perte de performance. Comparons sur la bpe21_metro (qui n'est pas très grosse) et sur une opération de filtrage simple
+system.time({
+  bpe_dep50 <- st_read(conn, query = "SELECT ID, DEPCOM, DOM, SDOM, TYPEQU, GEOMETRY FROM bpe21_metro WHERE DEP='50';")
+})
+# user  system elapsed 
+# 0.142   0.003   0.260
+
+system.time({
+  bpe_dep50 <- st_read(conn, query = "SELECT * FROM bpe21_metro;") %>% 
+    filter(dep == "50") %>% 
+    select(id, depcom, dom, sdom, typequ)
+})
+# user  system elapsed 
+# 32.265   1.887  34.132 
+# Ce qui est long ici c'est notamment le temps d'importation de la base complète (on regarde system)
+
+```
+
+3. Quel est le système de projection associé à la table de la question précédente ? Comparer ce système de projection avec celui de la table de la Réunion ("bpe21_04"). Vous identifierez le système de projection de la table de la Réunion de 2 manières différentes. Indice : pour une des façons, vous pouvez faire une requête SQL utilisant la fonction PostGIS `ST_SRID()`. Cette fonction prend en paramètre la variable GEOMETRY. 
+
+```{r}
+# CRS de la table précédente : CRS 2154 Lambert-93 (classique pour données France Metropolitaine)
+st_crs(bpe_dep50)
+
+# CRS de la Réunion
+# 1ere façon avec la fonction sf::st_crs
+st_read(conn, query = "SELECT * FROM bpe21_04") %>% st_crs() #2975 (UTM40S)
+#2nde façon avec la fonction POSTGIS ST_SRID(colonne géométrie) => renvoie le crs de chaque élément
+dbGetQuery(conn, "SELECT DISTINCT(ST_SRID(geometry)) FROM bpe21_04;")
+# ou fonction Find_SRID(nom du schema, nom de la table, nom de la colonne géométrie);"
+dbGetQuery(conn, "SELECT Find_SRID('public','bpe21_04', 'geometry');") 
+
+
+```
+4. Dénombrer les maternités TYPEQU='D107' par region et trier par ordre décroissant. Vous utiliserez la table bpe21_metro et les variable REG et TYPEQU en particulier. Chaque équipement possède un identifiant (ID). Pour compter les maternités, vous devrez donc compter les identifiants. Faites cela soit en utilisant sf+dplyr soit en utilisant une requête SQL. 
+
+```{r}
+# 1ere façon de faire: charger un sf et calculer avec le tidyverse
+system.time({
+  res1 <- sf::st_read(conn, query = "SELECT * FROM bpe21_metro WHERE TYPEQU='D107';") %>% 
+    group_by(reg) %>% 
+    summarise(n_mat = n()) %>% 
+    arrange(n_mat) %>% 
+    st_drop_geometry()
+})
+#    user  system elapsed 
+# 0.635   0.026   0.883 
+
+# 2nd façon: tout faire en SQL
+system.time({
+  res2 <- dbGetQuery(conn, statement = "SELECT REG, COUNT(id) FROM bpe21_metro WHERE TYPEQU='D107' GROUP BY REG ORDER BY COUNT(id);")
+})
+# user  system elapsed 
+# 0.041   0.009   0.298 
+
+
+```
+
+5. Changement de thème : on s'intéresse aux cinémas ! Sélectionner les cinémas (TYPEQU='F303') dans un rayon d'un 1km autour de la Sorbonne (5e arrondissemnt de Paris). On pourra utiliser les coordoonnées (long,lat) suivantes (lat = 48.84864, long = 2.34297) pour situer La Sorbonne. Attention, les coordonnées de longitude et de lattitude font référence au système WGS84 (CRS 4326).
+a. Créer la table "cinema_bpe" à partir de la table "bpe21_metro". Vous utiliserez une requête SQL ou une syntaxe sf+dplyr.
+
+```{r}
+# 1ere façon: principalement avec sf
+# On filtre la bpe en SQL
+cinemas_bpe <- sf::st_read(conn, query = "SELECT * FROM bpe21_metro WHERE TYPEQU='F303';")
+str(cinemas_bpe)
+# Le reste des opérations notamment les opérations géométriques sont réalisés avec sf sur R
+```
+
+b. Executez le code suivant. Ce code crée un "buffer" (périmètre) autour de la Sorbonne. 
+```{r}
+# On construit un buffer de 1km (une zone tampon) autour de la sorbonne
+  # df des coordonnées
+sorbonne_buffer <- data.frame(x=2.34297,y=48.84864) %>% 
+  #qu'on transforme en objet sf (systeme de proj WGS84 => crs=4326)
+    st_as_sf(coords = c("x","y"), crs = 4326) %>% 
+  # on reprojette en LAMBERT-93 (crs=2154)
+  st_transform(2154) %>% 
+  # on crée la zone tampon autour du point (l'unité est le mètre ici)
+  st_buffer(1000) 
+
+str(sorbonne_buffer) # le buffer est constitué d'un unique polygône
+plot(sorbonne_buffer %>% st_geometry()) # qui s'avère être un cercle
+```
+
+c. A partir de la table cinema_bpe, récupérer l'ensemble des cinémas contenus dans le buffer. Vous pouvez utiliser la fonction `st_within()` de `sf`.
+
+```{r}
+# On détermine si chaque cinéma de la bpe  appartient ou non au buffer avec la fonction st_within
+cinema_1km_sorbonne_list <- st_within(cinemas_bpe, sorbonne_buffer) # on obtient une liste
+ # str(cinema_1km_sorbonne_list)
+cinema_1km_sorbonne <- cinemas_bpe %>% filter(lengths(cinema_1km_sorbonne_list)>0)
+cinema_1km_sorbonne %>% nrow() #21 cinémas
+
+
+# 2nde façon: travailler en SQL avec POSTGIS
+
+# Le système de projection d'une base postgis peut se retrouver avec la fonction Find_SRID
+# qui prend trois arguments: le nom du schéma (ici public), le nom de la table et le nom de la colonne de la table correspondant à la géométrie.
+(crs_bpe <- dbGetQuery(conn, "SELECT Find_SRID('public','bpe21_metro', 'geometry');"))
+ 
+# Ici on remarque que le crs est 2154 (Lambert-93).
+# Il faut donc harmoniser les coordonnées du point Sorbonne et les projeter en Lambert-93
+# Pour cela on va créer un objet spatial en postgis de type POINT à partir des coordonnées WGS84 (epsg = 4326) fournies
+sorbonne <- "ST_GeomFromText('POINT(2.34297 48.84864)', 4326)"
+# et le reprojeter en Lambert-93. 
+sorbonne <- paste0("ST_Transform(", sorbonne, ", 2154)")
+# Autour de la Sorbonne on crée un buffer cad une zone tampon (ici un disque de diamètre 1km)
+sorbonne_buffer_req <- paste0("ST_Buffer(", sorbonne ,", 1000)")
+
+# On peut dès lors écrire la requête avec l'instruction ST_WITHIN
+# ST_within(A,B) indique si une géométrie A (ici nos points de la BPE) appartient à une géométrie B (ici notre buffer)
+query <- paste0(
+  "SELECT bpe.* FROM bpe21_metro as bpe, ", sorbonne_buffer_req, " AS sorbuff 
+  WHERE ST_Within(bpe.geometry, sorbuff.geometry) and TYPEQU='F303';"
+)
+cinema_1km_sorbonne <- sf::st_read(conn, query = query)
+#on utilise sf::st_read pour récupérer un objet spatial R plutôt qu'un dataframe
+str(cinema_1km_sorbonne)
+
+nrow(cinema_1km_sorbonne) # 21 cinémas dans un rayon de 1km (à vol d'oiseau)
+```
+
+
+6. Représenter ces cinémas sur une carte leaflet en utilisant le code suivant. Les cinémas repérés sont-ils tous bien contenus dans le buffer ? Voyez-vous des cinémas qui n'auraient pas été filtrés?  
+
+```{r}
+library(leaflet)
+
+
+leaflet() %>% 
+  setView(lat = 48.84864, lng = 2.34297, zoom = 15) %>% 
+  addTiles() %>% 
+  addMarkers(lat = 48.84864, lng = 2.34297) %>% 
+  addCircles(
+    lat = 48.84864, lng = 2.34297, weight = 1, radius = 1000
+  ) %>% 
+  addMarkers(data = cinema_1km_sorbonne %>% st_transform(4326))
+#On peut vérifier que les infos bpe se superposent très bien aux infos OSM
+
+
+# Remarque : 1000m en LAMBERT-93 ce n'est pas exactement 1000m en WGS84 (zoomez sur la carte suivante)
+leaflet() %>%
+  setView(lat = 48.84864, lng = 2.34297, zoom = 15) %>%
+  addTiles() %>%
+  addCircles(
+    lat = 48.84864, lng = 2.34297, weight = 1, radius = 1000
+  ) %>%
+  addPolygons(data=sorbonne_buffer %>% st_transform(4326), col = "red")
+# Les 1000m en LAMBERT-93 ne sont pas exactement 1000m en WGS84 (1000m "réels")
+# On aurait pu donc projeter la bpe en wgs84 pour tenir compte de cet écart.
+```
+
+### Exercice 4 - Illustration d'un problème fréquent de géolocalisation : les boulodromes de PACA !
+
+Le but de cet exercice est de vous sensibiliser aux problèmes de cohérence pouvant exister entre deux sources géolocalisées. Bien que projeté dans un même CRS, les données peuvent ne pas correspondre. Cela est particulièrement fréquent lorsqu'on travaille avec des polygones simplifiés. Illustration :
+
+1. A partir de la table bpe21_metro, récupérer l'ensemble des boulodromes (TYPEQU="F102") de France. Vous stockerez cela au sein d'une table "boulodrome". A partir de la table regions_metro, créer une table "paca" qui ne contiendra que la région PACA (code='93').
+
+```{r}
+paca <- st_read(conn, query = "SELECT * FROM regions_metro WHERE code = '93';")
+plot(paca %>% st_geometry())
+
+boulodromes <- st_read(conn, query = "SELECT id, typequ, geometry FROM bpe21_metro WHERE typequ = 'F102';")
+str(boulodromes)
+
+
+```
+
+2. Créer une table boulodrome_paca en utilisant la geometry des 2 tables. L'idée est de faire une intersection des deux fonds. Vous ferez cette intersection au choix : soit en utilisant sf soit en utilisant PostGIS. Dans les deux cas, la fonction s'appelle `st_contains`. 
+
+```{r}
+# 1ere façon: réaliser les opérations géométriques avec R grâce au package sf
+boulodromes_paca_list <- st_contains(paca, boulodromes)
+boulodromes_paca <- boulodromes %>% slice(boulodromes_paca_list[[1]])
+
+plot(paca %>% st_geometry())
+plot(boulodromes_paca %>% st_geometry(), pch = 3, cex = 0.8, add = TRUE)
+
+
+# 2nde façon: réaliser le traitement géométrique avec POSTGIS et la fonction ST_contains
+query <- "SELECT bpe.* FROM bpe21_metro AS BPE, regions_metro AS regions
+WHERE ST_Contains(regions.geometry, bpe.geometry) and bpe.typequ='F102' and regions.code = '93';"
+
+boulodromes_paca <- st_read(conn, query = query)
+plot(boulodromes_paca %>% st_geometry())
+# Cette 2nde façon est à préférer pour des objets trop lourds à charger en mémoire.
+
+```
+
+3. Le nombre de boulodromes en PACA issu de l'intersection correspond-t-il au nombre de boulodromes en PACA issu de la table bpe21_metro ? Pour faire cela :
+a. Récupérer les boulodromes de PACA en filtrant la bpe21_metro sur les variables `typequ = 'F102'`et `dep in ('04','05','06','13','83','84')`. 
+
+```{r}
+# on peut vérifier le résultat en récupérant directement les boulodromes de PACA depuis la BPE
+# Si des différences existent, essayez de comprendre pourquoi.
+boulodromes_paca_bis <- st_read(conn, query = "SELECT id, typequ, dep, qualite_xy, geometry FROM bpe21_metro WHERE typequ = 'F102' and dep in ('04','05','06','13','83','84');")
+```
+
+
+b. Executer le code suivant. Identifier les éventuels problèmes.
+```{r}
+# les deux data n'ont pas le même nb d'observations (904 vs 910)
+diff <- boulodromes_paca_bis %>% mutate(version_bis = TRUE) %>% 
+  st_join(
+    boulodromes_paca %>% mutate(version_orig = TRUE) %>% select(-typequ), by = "id"
+  ) %>% 
+  filter((is.na(version_bis) | (is.na(version_orig))))
+```
+
+
+```{r}
+# on réucpère 6 boulodromes supplémentaires:
+diff
+
+plot(paca %>% st_geometry())
+plot(boulodromes_paca %>% st_geometry(), pch = 3, cex = 0.8, add = TRUE)
+plot(diff %>% st_geometry(), col = "red", pch = 3, cex = 0.8, add = TRUE)
+
+# Pour deux d'entre eux, la géolocalisation de ces boulodromes est absurde car en pleine mer
+
+# Vérifions plus précisément les autres cas avec une carte leaflet
+
+leaflet() %>% 
+  setView(lat = 43.8741, lng = 6.0287, zoom = 8) %>% 
+  addTiles() %>% 
+  addMarkers(data = diff %>% st_transform(4326)) %>% 
+  addPolygons(data = paca %>% st_transform(4326), stroke = 1, color = "red")
+
+# On observe que (lecture d'ouest en est) 
+# - le polygône paca simplifie le tracé réel de la région => l'extrémité de la commune de Port-de-Bouc est hors du polygône, hors un boulodrome s'y trouve.
+# - les îles du Frioul ne sont pas incluses dans le polygône paca => 1 boulodrome est situé sur ces îles
+# - 3 boulodromes sont situés sur la mer (dont 1 est très éloigné)
+# - 1 dernier également en limite du polygône qui "oublie" une partie du territoire
+
+# Pour des raisons de stockage notamment, les fonds sont souvent simplifiés. L'exercice de géolocalisation n'est pas parfait.
+```
+
+
+### Exercice 5 - Optionnel mais pouvant vous servir un jour !
+
+Cet exercice traite des courbes isochrones. En cartographie, ces courbes désignent classiquement des lignes reliant des points situés à des temps de parcours identiques. Elles sont souvent utiles lorsqu'on cherche à identifier l'accessibilité d'un équipement.
+
+1. Choisir un équipement (= une ligne de la table bpe21_metro). Récupérer ses coordonnées et les convertir en WGS84 (epsg=4326)
+
+```{r}
+# Ici, on prend pour exemple les maternités
+mater <- sf::st_read(conn, query = "SELECT * FROM bpe21_metro WHERE TYPEQU='D107';") %>%
+  slice(1)
+  
+# On récupère ses coordonnées 
+mater_coords <- st_coordinates(mater) %>% as.numeric
+
+sf_reg_metro <- st_read(conn, query = "SELECT * FROM regions_metro")
+plot(st_geometry(sf_reg_metro))
+points(x = mater_coords[1], y = mater_coords[2], pch = 4, lwd = 2, cex = 1.5, col = "red")
+
+# On transforme ses coordonnées en WGS84 (epsg=4326)
+mater_coords <- st_coordinates(mater %>% st_transform(4326)) %>% as.numeric
+
+```
+
+2. Situer l'équipement sur une carte avec leaflet
+
+```{r}
+leaflet() %>% 
+  setView(lng = mater_coords[1], lat = mater_coords[2], zoom = 14) %>% 
+  addTiles() %>% 
+  addMarkers(lng = mater_coords[1], lat = mater_coords[2])
+```
+
+3. Calculer les isochrones avec osrm::osrmIsochrone
+
+```{r}
+# install.packages("osrm")
+# Attention, cela peut prendre quelques minutes
+iso <- osrm::osrmIsochrone(
+  loc = mater_coords, # coordonnées du point de référence
+  breaks = seq(0,60,10), # valeurs des isochrones à calculer en minutes
+  res = 100 # détermine le nombre de points utilisés (res*res) pour dessiner les isochornes 
+)
+str(iso)
+gc()
+```
+
+4. Représenter ces isochrones sous forme d'une carte choroplèthe
+
+```{r}
+bks <-  sort(unique(c(iso$isomin, iso$isomax)))
+pals <- hcl.colors(n = length(bks) - 1, palette = "Red-Blue", rev = TRUE)
+plot(iso["isomax"], breaks = bks, pal = pals, 
+     main = "Isochrones (in minutes)", reset = FALSE)
+points(x = mater_coords[1], y = mater_coords[2], pch = 4, lwd = 2, cex = 1.5)
+
+leaflet() %>% 
+  setView(lng = mater_coords[1], lat = mater_coords[2], zoom = 8) %>% 
+  addTiles() %>% 
+  addMarkers(lng = mater_coords[1], lat = mater_coords[2]) %>% 
+  addProviderTiles(
+    providers$CartoDB.DarkMatter,
+    options = providerTileOptions(opacity = 0.4)) %>%
+  addPolygons(
+    data=iso, 
+    fillColor = pals,
+    smoothFactor = 0.3,
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.65
+  ) %>% 
+  addLegend(
+    position="bottomleft",
+    colors=pals,
+    labels=rev(c("50-60","40-50",
+                 "30-40","20-30","10-20", "0-10")),
+    opacity = 0.6,
+    title="Temps de trajet par la route (en minutes)")
+
+```
+

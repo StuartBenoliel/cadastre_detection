@@ -1,0 +1,114 @@
+---
+title: "Prise_en_main"
+output: html_document
+date: "2024-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+## Prise en maain des données
+
+```{r}
+library(sf)
+library(dplyr)
+library(lubridate)
+library(mapview)
+```
+
+
+```{r}
+parcelles_45<-st_read("./cadastre-45-parcelles.json")
+parcelles_45_2023 <- st_read("./cadastre-45-parcelles-2023.json")
+
+# Renseigne la geometry (Multypolygon)
+# dimension: XY fait référence à un système de coordonnées dans un espace euclidien
+# bbox: désigne les coordonnées du cadre contenant/entourant nos objets spaciaux
+# CRS: désigne le système de projection à travers son code EPSG
+
+# Problème de géomètrie invalide ??
+valid_parcelles <- st_is_valid(parcelles_45_2023)
+# Affichez le nombre de géométries invalides
+print(length(parcelles_45_2023[!valid_parcelles, ]))
+parcelles_45_2023 <- st_make_valid(parcelles_45_2023)
+
+valid_parcelles <- st_is_valid(parcelles_45)
+# Affichez le nombre de géométries invalides
+print(length(parcelles_45[!valid_parcelles, ]))
+parcelles_45 <- st_make_valid(parcelles_45)
+
+rm(valid_parcelles)
+```
+
+```{r}
+
+parcelles_45$created <- ymd(parcelles_45$created)
+parcelles_45$updated <- ymd(parcelles_45$updated)
+
+parcelles_45_2023$created <- ymd(parcelles_45_2023$created)
+parcelles_45_2023$updated <- ymd(parcelles_45_2023$updated)
+
+date_millésime <-  "2023-04-01"
+# max(parcelles_45_2023$updated)
+
+chgt <- parcelles_45 %>% 
+  filter(updated >= as.Date(date_millésime))
+
+cree <- chgt %>% 
+  filter(updated == created)
+
+evol <- chgt %>% 
+  filter(updated != created)
+
+supp <- parcelles_45_2023 %>% 
+  filter(!id %in% parcelles_45$id)
+```
+
+```{r}
+mapview(list(chgt %>% st_buffer(dist = 5000), chgt), legend = FALSE, 
+        layer.name = c("Loire-Atlantique avec un buffer de 5 km", "Loire-Atlantique"), col.regions = list("#440154FF", "#FDE725FF"))
+```
+
+
+```{r}
+
+chgt_test <- chgt %>%  head(1)
+
+centroid <- st_centroid(chgt_test)
+
+parcelle_centroid <- st_intersects(parcelles_45_2023, centroid)
+parcelle_centroid <- parcelles_45_2023 %>%
+  filter(lengths(parcelle_centroid) > 0)
+
+buffer <- st_buffer(parcelle_centroid, dist = 100/sqrt(pi))
+
+parcelles_concernées <- buffer %>% 
+  st_intersection(parcelles_45_2023)
+
+plot(st_geometry(chgt_test))
+plot(st_geometry(centroid), add = TRUE)
+plot(buffer %>% st_geometry(),add=TRUE)
+
+```
+
+
+
+```{r}
+parcelles_45_IGN<-st_read("./parcelle-45-IGN/PARCELLE.SHP"
+)
+# Attention pas le même système de projection
+```
+
+```{r}
+str(parcelles_45)
+st_crs(parcelles_45)
+```
+
+```{r}
+plot(st_geometry(parcelles_45))
+# TRES LONG
+```
+
+
