@@ -35,7 +35,7 @@ gestion_num_departement <- function(num_depart) {
 num_departements <- sapply(num_departements, gestion_num_departement)
 
 # Fonction pour télécharger et traiter chaque département
-process_departement <- function(num_depart, num_annees) {
+process_departement <- function(num_depart, num_annees, indic_parc = T) {
   # Construire l'URL du fichier .7z pour le département spécifié
   if (num_annees == 2024) {
     url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
@@ -74,7 +74,9 @@ process_departement <- function(num_depart, num_annees) {
   
   # print(list.files(shapefile_dir))
   
-  shapefile_path <- file.path(shapefile_dir, "PARCELLE.SHP")
+  shapefile_path <- file.path(shapefile_dir, 
+                              ifelse(indic_parc,"PARCELLE.SHP", "COMMUNE.SHP"))
+  
   if (file.exists(shapefile_path)) {
     parc <- st_read(shapefile_path) %>%
       mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
@@ -90,6 +92,7 @@ process_departement <- function(num_depart, num_annees) {
 
 parc_45 <- process_departement(num_departements, "2024")
 parc_45_23 <- process_departement(num_departements, "2023")
+com_45 <- process_departement(num_departements, "2024", F)
 
 # Appliquer la fonction à chaque département
 # list_parc <-lapply(num_departements,num_annees, process_departement)
@@ -98,43 +101,63 @@ parc_45_23 <- process_departement(num_departements, "2023")
 
 # Construction de la requête créant les tables ####
 
-constru_table <- function(parc) {
-  types_vars_parc <- purrr::map_chr(
-    names(parc)[-c(1,10,11)],
-    function(var){
-      paste0(var, " VARCHAR(", max(nchar(parc[[var]])), "), ")
-    }
-  ) %>% 
-    paste0(., collapse="")
-  
-  query <- paste0(
-    'CREATE TABLE ',
-    deparse(substitute(parc)),
-    ' (IDU VARCHAR PRIMARY KEY,',
-    types_vars_parc,
-    'CONTENANCE INT,',
-    'geometry GEOMETRY(MULTIPOLYGON, 2154));',
-    collapse =''
-  )
+constru_table <- function(table_sf, indic_parc = T) {
+  if(indic_parc) {
+    types_vars <- purrr::map_chr(
+      names(table_sf)[-c(1,10,11)],
+      function(var){
+        paste0(var, " VARCHAR(", max(nchar(table_sf[[var]])), "), ")
+      }
+    ) %>% 
+      paste0(., collapse="")
+    
+    query <- paste0(
+      'CREATE TABLE ',
+      deparse(substitute(table_sf)),
+      ' (IDU VARCHAR PRIMARY KEY,',
+      types_vars,
+      'CONTENANCE INT,',
+      'geometry GEOMETRY(MULTIPOLYGON, 2154));',
+      collapse =''
+    )
+    
+  } else {
+    types_vars <- purrr::map_chr(
+      names(table_sf)[-c(3,4)],
+      function(var){
+        paste0(var, " VARCHAR(", max(nchar(table_sf[[var]])), "), ")
+      }
+    ) %>% 
+      paste0(., collapse="")
+    
+    query <- paste0(
+      'CREATE TABLE ',
+      deparse(substitute(table_sf)),
+      ' (CODE_INSEE VARCHAR PRIMARY KEY,',
+      types_vars,
+      'geometry GEOMETRY(MULTIPOLYGON, 2154));',
+      collapse =''
+    )
+  }
   
   # Création de la table (structure vide) ####
   dbSendQuery(conn, 
               paste0('DROP TABLE IF EXISTS ',
-                     deparse(substitute(parc)),
+                     deparse(substitute(table_sf)),
                      ';'))
   dbSendQuery(conn, query)
   
   # Remplissage ####
   sf::st_write(
-    obj = parc %>% rename_with(tolower),
+    obj = table_sf %>% rename_with(tolower),
     dsn = conn,
-    Id(table = deparse(substitute(parc))),
+    Id(table = deparse(substitute(table_sf))),
     append = TRUE
   )
   
   # test lecture
   parc_head <- sf::st_read(conn, query = paste0('SELECT * FROM ',
-                                                deparse(substitute(parc)),
+                                                deparse(substitute(table_sf)),
                                                 ' LIMIT 10;'))
   str(parc_head)
   
@@ -142,6 +165,7 @@ constru_table <- function(parc) {
 
 constru_table(parc_45)
 constru_table(parc_45_23)
+constru_table(com_45, F)
 
 dbListTables(conn)
 

@@ -17,6 +17,8 @@ library(dplyr)
 library(lubridate)
 library(mapview)
 library(DBI)
+library(ggplot2)
+library(purr)
 source(file = "connexion_db.R")
 conn<-connecter()
 DBI::dbListTables(conn)
@@ -24,8 +26,44 @@ DBI::dbListTables(conn)
 
 ```{r}
 DBI::dbListFields(conn,"parc_45")
+DBI::dbListFields(conn,"parc_45_23")
+```
+
+```{r}
+parcelle_get<-st_read(conn, query = "SELECT * FROM parc_45;")
+commune_get<-st_read(conn, query = "SELECT * FROM com_45;")
 
 ```
+
+```{r}
+create_extended_borders <- function(commune, buffer_distance) {
+  buffer_positive <- st_buffer(commune, buffer_distance)
+  buffer_negative <- st_buffer(commune, -buffer_distance)
+  buffer_difference <- st_difference(buffer_positive, buffer_negative)
+  return(buffer_difference)
+}
+
+buffer_distance <- 500  
+crs <- st_crs(commune_get)
+
+
+extended_borders <- commune_get %>%
+  mutate(extended_border = map(st_geometry(.), ~ create_extended_borders(.x, buffer_distance))) %>% 
+  st_set_geometry(NULL) %>% 
+  rename(geometry = extended_border) %>% 
+  st_set_geometry("geometry") %>% 
+  st_as_sf(crs = crs)
+
+str(commune_get)
+
+ggplot() +
+  geom_sf(data = commune_get, color = "black", alpha = 0.5) +  
+  geom_sf(data =  extended_borders , fill = "lightblue", alpha = 0.5, color = NA) +  
+  theme_minimal() +
+  labs(title = "Frontières étendues des communes du Loiret")
+
+```
+
 
 
 ```{r}
@@ -81,43 +119,5 @@ mapview(list(chgt %>% st_buffer(dist = 5000), chgt), legend = FALSE,
 ```
 
 
-```{r}
-
-chgt_test <- chgt %>%  head(1)
-
-centroid <- st_centroid(chgt_test)
-
-parcelle_centroid <- st_intersects(parcelles_45_2023, centroid)
-parcelle_centroid <- parcelles_45_2023 %>%
-  filter(lengths(parcelle_centroid) > 0)
-
-buffer <- st_buffer(parcelle_centroid, dist = 100/sqrt(pi))
-
-parcelles_concernées <- buffer %>% 
-  st_intersection(parcelles_45_2023)
-
-plot(st_geometry(chgt_test))
-plot(st_geometry(centroid), add = TRUE)
-plot(buffer %>% st_geometry(),add=TRUE)
-
-```
-
-
-
-```{r}
-parcelles_45_IGN<-st_read("./parcelle-45-IGN/PARCELLE.SHP"
-)
-# Attention pas le même système de projection
-```
-
-```{r}
-str(parcelles_45)
-st_crs(parcelles_45)
-```
-
-```{r}
-plot(st_geometry(parcelles_45))
-# TRES LONG
-```
 
 
