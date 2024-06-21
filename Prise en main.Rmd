@@ -18,7 +18,7 @@ library(lubridate)
 library(mapview)
 library(DBI)
 library(ggplot2)
-library(purr)
+library(purrr)
 source(file = "connexion_db.R")
 conn<-connecter()
 DBI::dbListTables(conn)
@@ -43,25 +43,31 @@ create_extended_borders <- function(commune, buffer_distance) {
   return(buffer_difference)
 }
 
-buffer_distance <- 500  
-crs <- st_crs(commune_get)
-
+buffer_distance <- 50  
 
 extended_borders <- commune_get %>%
-  mutate(extended_border = map(st_geometry(.), ~ create_extended_borders(.x, buffer_distance))) %>% 
-  st_set_geometry(NULL) %>% 
-  rename(geometry = extended_border) %>% 
-  st_set_geometry("geometry") %>% 
-  st_as_sf(crs = crs)
+  group_by(code_insee) %>%  
+  do(extended = create_extended_borders(., buffer_distance))
 
-str(commune_get)
+extended_borders <- do.call(rbind, extended_borders$extended) %>%
+  select(-c(4,5,6)) %>% 
+  st_sf()
 
-ggplot() +
-  geom_sf(data = commune_get, color = "black", alpha = 0.5) +  
-  geom_sf(data =  extended_borders , fill = "lightblue", alpha = 0.5, color = NA) +  
+intersected_parcelles <- parcelle_get %>%
+  st_filter(extended_borders, .predicate = st_intersects)
+
+plot <- ggplot() +
+  geom_sf(data = commune_get, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data =  extended_borders , aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = intersected_parcelles, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
   theme_minimal() +
-  labs(title = "Frontières étendues des communes du Loiret")
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
+ggsave("parcelles_croisant_bordures.png", plot = plot, width = 12, height = 8, dpi = 300)
+plot
 ```
 
 
