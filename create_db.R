@@ -20,7 +20,7 @@ DBI::dbListObjects(conn)
 
 # En téléchargeant depuis le site internet
 
-num_departements <- c("45", "22", "972")  
+num_departements <- c("45")  
 
 # Fonction pour gérer le format des numéros de département
 gestion_num_departement <- function(num_depart) {
@@ -34,118 +34,116 @@ gestion_num_departement <- function(num_depart) {
 # Appliquer la fonction à chaque département
 num_departements <- sapply(num_departements, gestion_num_departement)
 
-
 # Fonction pour télécharger et traiter chaque département
-process_departement <- function(num_depart) {
+process_departement <- function(num_depart, num_annees) {
   # Construire l'URL du fichier .7z pour le département spécifié
-  url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
-                num_depart,
-                "_2024-04-01/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
-                num_depart,
-                "_2024-04-01.7z")
+  if (num_annees == 2024) {
+    url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
+                  num_depart,
+                  "_2024-04-01/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
+                  num_depart,
+                  "_2024-04-01.7z")
+  }
   
-  # Télécharger le fichier .7z
+  if(num_annees == 2023) {
+    url <- paste0("https://files.opendatarchives.fr/professionnels.ign.fr/parcellaire-express/PARCELLAIRE_EXPRESS_1-1__SHP_LAMB93_D",
+                  num_depart,
+                  "_2023-07-01.7z")
+  }
+  
   temp <- tempfile(fileext = ".7z")
   download.file(url, temp, mode = "wb")
   temp_dir <- tempdir()
   archive_extract(temp, dir = temp_dir)
   
-  shapefile_dir <- file.path(temp_dir, 
-                             paste0("PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D", num_depart, "_2024-04-01/PARCELLAIRE-EXPRESS/1_DONNEES_LIVRAISON_2024-05-00031/PEPCI_1-1_SHP_LAMB93_D", num_depart))
+  if (num_annees == 2024) {
+    shapefile_dir <- file.path(temp_dir, 
+                               paste0("PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D", 
+                                      num_depart, 
+                                      "_2024-04-01/PARCELLAIRE-EXPRESS/1_DONNEES_LIVRAISON_2024-05-00031/PEPCI_1-1_SHP_LAMB93_D", 
+                                      num_depart))
+  }
+  
+  if(num_annees == 2023) {
+    shapefile_dir <- file.path(temp_dir, 
+                               paste0("PARCELLAIRE_EXPRESS_1-1__SHP_LAMB93_D", 
+                                      num_depart, 
+                                      "_2023-07-01/PARCELLAIRE_EXPRESS/1_DONNEES_LIVRAISON_2023-07-00202/PEPCI_1-1_SHP_LAMB93_D", 
+                                      num_depart))
+  }
+  
+  # print(list.files(shapefile_dir))
   
   shapefile_path <- file.path(shapefile_dir, "PARCELLE.SHP")
   if (file.exists(shapefile_path)) {
-    parc <- st_read(shapefile_path)
+    parc <- st_read(shapefile_path) %>%
+      mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+    # Attention systeme de projection dans DOM
     print(str(parc))
   } else {
     stop("Le fichier shapefile spécifié n'a pas été trouvé dans l'archive.")
   }
-  return(parc)
-  # Supprimer les fichiers temporaires
   unlink(temp)
-  unlink(temp_dir, recursive = TRUE)
+  unlink(temp_dir)
+  return(parc)
 }
 
+parc_45 <- process_departement(num_departements, "2024")
+parc_45_23 <- process_departement(num_departements, "2023")
+
 # Appliquer la fonction à chaque département
-list_parc <- sapply(num_departements, process_departement)
-
-unlink(temp)
-unlink(temp_dir, recursive = TRUE)
-
-# Si importé manuellement
-parc_45<-st_read("./parcelle-45-IGN/PARCELLE.SHP")
-
-
-parc_45 <- parc_45 %>%
-  mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
-# Attention systeme de projection dans DOM
+# list_parc <-lapply(num_departements,num_annees, process_departement)
 
 # c- Construction et Exécution des requêtes pour créer les données sur la base postgis ####
 
 # Construction de la requête créant les tables ####
-types_vars_parc <- purrr::map_chr(
-  names(parc_45)[-c(1,10,11)],
-  function(var){
-    paste0(var, " VARCHAR(", max(nchar(parc_45[[var]])), "), ")
-  }
-) %>% 
-  paste0(., collapse="")
 
-query <- paste0(
-  'CREATE TABLE parc_45',
-  ' (IDU VARCHAR PRIMARY KEY,',
-  types_vars_parc,
-  'CONTENANCE INT,',
-  'geometry GEOMETRY(MULTIPOLYGON, 2154));',
-  collapse =''
-)
+constru_table <- function(parc) {
+  types_vars_parc <- purrr::map_chr(
+    names(parc)[-c(1,10,11)],
+    function(var){
+      paste0(var, " VARCHAR(", max(nchar(parc[[var]])), "), ")
+    }
+  ) %>% 
+    paste0(., collapse="")
+  
+  query <- paste0(
+    'CREATE TABLE ',
+    deparse(substitute(parc)),
+    ' (IDU VARCHAR PRIMARY KEY,',
+    types_vars_parc,
+    'CONTENANCE INT,',
+    'geometry GEOMETRY(MULTIPOLYGON, 2154));',
+    collapse =''
+  )
+  
+  # Création de la table (structure vide) ####
+  dbSendQuery(conn, 
+              paste0('DROP TABLE IF EXISTS ',
+                     deparse(substitute(parc)),
+                     ';'))
+  dbSendQuery(conn, query)
+  
+  # Remplissage ####
+  sf::st_write(
+    obj = parc %>% rename_with(tolower),
+    dsn = conn,
+    Id(table = deparse(substitute(parc))),
+    append = TRUE
+  )
+  
+  # test lecture
+  parc_head <- sf::st_read(conn, query = paste0('SELECT * FROM ',
+                                                deparse(substitute(parc)),
+                                                ' LIMIT 10;'))
+  str(parc_head)
+  
+}
 
-# Création de la table (structure vide) ####
-dbSendQuery(conn, 'DROP TABLE IF EXISTS parc_45;')
-dbSendQuery(conn, query)
-
-types_vars_parc <- purrr::map_chr(
-  names(parc_45_23)[-c(1,10,11)],
-  function(var){
-    paste0(var, " VARCHAR(", max(nchar(parc_45_23[[var]])), "), ")
-  }
-) %>% 
-  paste0(., collapse="")
-
-query <- paste0(
-  'CREATE TABLE parc_45_23',
-  ' (IDU VARCHAR PRIMARY KEY,',
-  types_vars_parc,
-  'CONTENANCE INT,',
-  'geometry GEOMETRY(MULTIPOLYGON, 2154));',
-  collapse =''
-)
-
-# Création de la table (structure vide) ####
-dbSendQuery(conn, 'DROP TABLE IF EXISTS parc_45_23;')
-dbSendQuery(conn, query)
+constru_table(parc_45)
+constru_table(parc_45_23)
 
 dbListTables(conn)
-
-# Remplissage ####
-sf::st_write(
-  obj = parc_45 %>% rename_with(tolower),
-  dsn = conn,
-  Id(table = 'parc_45'),
-  append = TRUE
-)
-
-sf::st_write(
-  obj = parc_45_23 %>% rename_with(tolower),
-  dsn = conn,
-  Id(table = 'parc_45_23'),
-  append = TRUE
-)
-
-# test lecture
-parc_head <- sf::st_read(conn, query = 'SELECT * FROM parc_45 LIMIT 10;')
-str(parc_head)
-st_crs(parc_head)
 
 # Déconnexion finale
 dbDisconnect(conn)
