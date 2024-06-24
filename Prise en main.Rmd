@@ -30,8 +30,9 @@ DBI::dbListFields(conn,"parc_45_23")
 ```
 
 ```{r}
-parcelle_get<-st_read(conn, query = "SELECT * FROM parc_45;")
-commune_get<-st_read(conn, query = "SELECT * FROM com_45;")
+parcelle_24<-st_read(conn, query = "SELECT * FROM parc_45;")
+parcelle_23<-st_read(conn, query = "SELECT * FROM parc_45_23;")
+commune<-st_read(conn, query = "SELECT * FROM com_45;")
 
 ```
 
@@ -39,13 +40,15 @@ commune_get<-st_read(conn, query = "SELECT * FROM com_45;")
 create_extended_borders <- function(commune, buffer_distance) {
   buffer_positive <- st_buffer(commune, buffer_distance)
   buffer_negative <- st_buffer(commune, -buffer_distance)
+  suppressWarnings({
   buffer_difference <- st_difference(buffer_positive, buffer_negative)
+  })
   return(buffer_difference)
 }
 
 buffer_distance <- 50  
 
-extended_borders <- commune_get %>%
+extended_borders <- commune %>%
   group_by(code_insee) %>%  
   do(extended = create_extended_borders(., buffer_distance))
 
@@ -53,22 +56,137 @@ extended_borders <- do.call(rbind, extended_borders$extended) %>%
   select(-c(4,5,6)) %>% 
   st_sf()
 
-intersected_parcelles <- parcelle_get %>%
+inter_parc_24 <- parcelle_24 %>%
   st_filter(extended_borders, .predicate = st_intersects)
 
+inter_parc_23 <- parcelle_23 %>%
+  st_filter(extended_borders, .predicate = st_intersects)
+
+```
+
+```{r}
 plot <- ggplot() +
-  geom_sf(data = commune_get, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data = commune, aes(fill = "Communes"), color = "black", alpha = 0.5) +  
   geom_sf(data =  extended_borders , aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = intersected_parcelles, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = inter_parc_24, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
   scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
   theme_minimal() +
   labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret", 
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-ggsave("parcelles_croisant_bordures.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("parcelles_croisant_bordures.png", plot = plot, width = 12, height = 8, dpi = 300)
 plot
 ```
+
+
+```{r}
+# Méthode au niveau de la superficie des parcelles
+
+df_comp <- full_join(inter_parc_24 %>% select(idu, contenance) %>% as.data.frame(), 
+                           inter_parc_23 %>% select(idu, contenance) %>% as.data.frame(),
+                           by = "idu", suffix = c(".df1", ".df2")) %>%
+  filter(is.na(contenance.df1) | is.na(contenance.df2) | contenance.df1 != contenance.df2) %>%
+  mutate(
+    contenance.df1 = ifelse(is.na(contenance.df1), "Manquant", contenance.df1),
+    contenance.df2 = ifelse(is.na(contenance.df2), "Manquant", contenance.df2)
+  )
+
+df_comp <- df_comp %>% 
+  mutate(typo = case_when(
+    contenance.df1 == "Manquant" ~ "Suppression",
+    contenance.df2 == "Manquant" ~ "Ajout",
+    contenance.df1 != contenance.df2 ~ "Modification"
+  ))
+
+table(df_comp$typo)
+```
+
+
+```{r}
+X <- df_comp %>% filter(typo == "Ajout")
+
+meth_sup <- inter_parc_24 %>% 
+            filter(idu %in% X$idu)
+
+ggplot() +
+  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data =  extended_borders , aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = inter_parc_24 %>% 
+            filter(idu %in% X$idu), aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
+  theme_minimal() +
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret, ajoutées en 2024 au sens de la superficie", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+```
+
+
+
+```{r}
+X <- df_comp %>% filter(typo == "Suppression")
+
+ggplot() +
+  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data =  extended_borders , aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = inter_parc_23 %>% 
+            filter(idu %in% X$idu), aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
+  theme_minimal() +
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret, supprimées en 2024 au sens de la superficie", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+```
+
+
+```{r}
+# Méthode au niveau de la géomètrie des parcelles
+
+df_comp <- inter_parc_24 %>% 
+  st_filter(inter_parc_23, .predicate = st_equals)
+
+meth_geom <- inter_parc_24 %>% 
+            filter(!idu %in% df_comp$idu)
+
+ggplot() +
+  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data =  extended_borders , aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = meth_geom, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
+  theme_minimal() +
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret, modifiés au niveau de la geometry en 2024", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+```
+
+```{r}
+inner_join(meth_geom %>% as.data.frame(),
+           meth_sup %>% as.data.frame(), by = "idu") %>% nrow()
+```
+```{r}
+
+```
+
+
+
+```{r}
+mapview_map <- mapview(commune_get, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(extended_borders, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(intersected_parcelles, layer.name = "Parcelles croisées", col.regions = "purple", alpha.regions = 0.5)
+mapview_map
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
