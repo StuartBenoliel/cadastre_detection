@@ -19,6 +19,8 @@ library(mapview)
 library(DBI)
 library(ggplot2)
 library(purrr)
+library(webshot)
+# webshot::install_phantomjs()
 source(file = "connexion_db.R")
 conn<-connecter()
 DBI::dbListTables(conn)
@@ -30,9 +32,9 @@ DBI::dbListFields(conn,"parc_45_23")
 ```
 
 ```{r}
-parcelle_24<-st_read(conn, query = "SELECT * FROM parc_45;")
-parcelle_23<-st_read(conn, query = "SELECT * FROM parc_45_23;")
-commune<-st_read(conn, query = "SELECT * FROM com_45;")
+parcelle_24<-st_read(conn, query = "SELECT * FROM parc_45;", quiet = T)
+parcelle_23<-st_read(conn, query = "SELECT * FROM parc_45_23;", quiet = T)
+commune<-st_read(conn, query = "SELECT * FROM com_45;", quiet = T)
 
 ajout_parc_tot <- parcelle_24 %>% 
   filter(!idu %in% parcelle_23$idu)
@@ -70,14 +72,16 @@ inter_parc_23 <- parcelle_23 %>%
 # Parcelle modifié n'étant plus dans la zone tampon considérée comme ajoutée
 
 ajout_parc <- ajout_parc_tot %>%
-  st_filter(bordure, .predicate = st_intersects)
+  st_filter(bordure, .predicate = st_intersects) %>% 
+  arrange(nom_com)
 
 #supp_parc_bad <- inter_parc_23 %>% 
 #  filter(!idu %in% inter_parc_24$idu)
 # Parcelle modifié n'étant plus dans la zone tampon considérée comme supprimée
 
 supp_parc <- supp_parc_tot %>%
-  st_filter(bordure, .predicate = st_intersects)
+  st_filter(bordure, .predicate = st_intersects) %>% 
+  arrange(nom_com)
 
 ```
 
@@ -120,16 +124,16 @@ df_sup <- df_sup %>%
 # Problème : il arrive que des parcelles ne contiennent pas la superficie
 # A revoir car typologie fausse
 table(df_sup$typo)
-```
 
-
-```{r}
 apres_sup <- inter_parc_24 %>% 
   filter(idu %in% df_sup[filter(typo == "Ajout"),]$idu)
 
 avant_sup <- inter_parc_23 %>% 
   filter(idu %in% df_sup[filter(typo == "Suppression"),]$idu)
+```
 
+
+```{r}
 plot <- ggplot() +
   geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
   geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
@@ -170,6 +174,9 @@ avant_geom <- inter_parc_23 %>%
   filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
   arrange(nom_com)
 
+```
+
+```{r}
 plot <- ggplot() +
   geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
   geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
@@ -188,6 +195,7 @@ plot <- ggplot() +
 plot
 ```
 
+
 ```{r}
 mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
@@ -198,13 +206,54 @@ mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions =
 ```
 
 
+```{r}
+identical(apres_geom %>% st_drop_geometry() %>% arrange(across(everything())),
+          avant_geom %>% st_drop_geometry() %>% arrange(across(everything())))
+
+df1_sorted <- apres_geom %>% select(!contenance) %>%  st_drop_geometry() %>% arrange(across(everything()))
+df2_sorted <- avant_geom %>% select(!contenance) %>% st_drop_geometry() %>% arrange(across(everything()))
+
+# Récupérer les lignes de df1 non présentes dans df2
+diff_df1 <- anti_join(df1_sorted, df2_sorted, by = colnames(df1_sorted))
+
+# Récupérer les lignes de df2 non présentes dans df1
+diff_df2 <- anti_join(df2_sorted, df1_sorted, by = colnames(df2_sorted))
+
+# Combiner les deux résultats pour obtenir toutes les lignes différentes
+diff_all <- bind_rows(diff_df1, diff_df2)
+# Cas de parcelles n'etant plus dans la zone tampon suite à la modification
+```
 
 
+```{r}
+inter_parc_24 %>% filter(idu == "451260000E0146")
+inter_parc_23 %>% filter(idu == "451260000E0146")
+ajout_parc_tot %>% filter(idu == "451260000E0146")
+ajout_parc %>% filter(idu == "451260000E0146")
+
+parcelle_24 %>% filter(idu == "451260000E0146")
+parcelle_23 %>% filter(idu == "451260000E0146")
+```
 
 
+```{r}
+ajout_parc <- ajout_parc %>% 
+  arrange(nom_com)
 
+supp_parc <- supp_parc %>% 
+  arrange(nom_com)
+```
 
+```{r}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées_2024", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, layer.name = "Parcelles modifiées_2023", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
 
+mapshot(map, file = "parcelles_modifiées_bordure_45.html")
+```
 
 
 
