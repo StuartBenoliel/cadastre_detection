@@ -93,11 +93,11 @@ plot <- ggplot() +
   geom_sf(data = inter_parc_24, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
   scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
   theme_minimal() +
-  labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Vendée", 
+  labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Côte d'or", 
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-# ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("parcelles_croisant_bordures_21.png", plot = plot, width = 12, height = 8, dpi = 300)
 plot
 ```
 
@@ -134,11 +134,11 @@ plot <- ggplot() +
   scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles modifiées (2024)" = "purple",
                                "Parcelles modifiées (2023)" = "pink", "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
   theme_minimal() +
-  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Vendée, modifiés au niveau de la geometry en 2024", 
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Côte d'or, modifiés au niveau de la geometry en 2024", 
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-# ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("parcelles_bordures_modifiées_21.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
 ```
 
@@ -151,7 +151,7 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
   mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
   mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
 
-mapshot(map, url = "parcelles_modifiées_bordure_85.html")
+mapshot(map, url = "parcelles_modifiées_bordure_21.html")
 ```
 
 
