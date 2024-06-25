@@ -93,11 +93,11 @@ plot <- ggplot() +
   geom_sf(data = inter_parc_24, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
   scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
   theme_minimal() +
-  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret", 
+  labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Vendée", 
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-# ggsave("parcelles_croisant_bordures.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 plot
 ```
 
@@ -146,13 +146,16 @@ plot <- ggplot() +
 ```{r}
 map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(apres_geom, layer.name = "Parcelles modifiées (2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(avant_geom, layer.name = "Parcelles modifiées (2023)", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, layer.name = "Parcelles modifiées (état 2023)", col.regions = "pink", alpha.regions = 0.5) +
   mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
   mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
 
 mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ```
+
+
+
 
 
 ```{r}
@@ -192,18 +195,6 @@ ajout_parc <- ajout_parc %>%
 supp_parc <- supp_parc %>% 
   arrange(nom_com)
 ```
-
-```{r}
-map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(apres_geom, layer.name = "Parcelles modifiées 2024", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(avant_geom, layer.name = "Parcelles modifiées 2023", col.regions = "pink", alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
-
-mapshot(map, url = "parcelles_modifiées_bordure_85.html")
-```
-
 
 
 
