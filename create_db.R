@@ -20,7 +20,7 @@ DBI::dbListObjects(conn)
 
 # En téléchargeant depuis le site internet
 
-num_departements <- c("45")  
+num_departements <- c("85")  
 
 # Fonction pour gérer le format des numéros de département
 gestion_num_departement <- function(num_depart) {
@@ -90,9 +90,9 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
   return(parc)
 }
 
-parc_45 <- process_departement(num_departements, "2024")
-parc_45_23 <- process_departement(num_departements, "2023")
-com_45 <- process_departement(num_departements, "2024", F)
+parc_85 <- process_departement(num_departements, "2024")
+parc_85_23 <- process_departement(num_departements, "2023")
+com_85 <- process_departement(num_departements, "2024", F)
 
 # Appliquer la fonction à chaque département
 # list_parc <-lapply(num_departements,num_annees, process_departement)
@@ -163,9 +163,9 @@ constru_table <- function(table_sf, indic_parc = T) {
   
 }
 
-constru_table(parc_45)
-constru_table(parc_45_23)
-constru_table(com_45, F)
+constru_table(parc_85)
+constru_table(parc_85_23)
+constru_table(com_85, F)
 
 dbListTables(conn)
 

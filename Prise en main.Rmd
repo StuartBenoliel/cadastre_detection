@@ -27,14 +27,14 @@ DBI::dbListTables(conn)
 ```
 
 ```{r}
-DBI::dbListFields(conn,"parc_45")
-DBI::dbListFields(conn,"parc_45_23")
+DBI::dbListFields(conn,"parc_85")
+DBI::dbListFields(conn,"parc_85_23")
 ```
 
 ```{r}
-parcelle_24<-st_read(conn, query = "SELECT * FROM parc_45;", quiet = T)
-parcelle_23<-st_read(conn, query = "SELECT * FROM parc_45_23;", quiet = T)
-commune<-st_read(conn, query = "SELECT * FROM com_45;", quiet = T)
+parcelle_24<-st_read(conn, query = "SELECT * FROM parc_85;")
+parcelle_23<-st_read(conn, query = "SELECT * FROM parc_85_23;")
+commune<-st_read(conn, query = "SELECT * FROM com_85;")
 
 ajout_parc_tot <- parcelle_24 %>% 
   filter(!idu %in% parcelle_23$idu)
@@ -102,6 +102,113 @@ plot
 ```
 
 
+
+
+```{r}
+# Méthode au niveau de la géomètrie des parcelles
+
+df_geom <- inter_parc_24 %>%
+  filter(!idu %in% ajout_parc$idu) %>% 
+  st_filter(inter_parc_23, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées
+# Attention : doit etre invariant en changeant l'ordre des tables
+
+apres_geom <- inter_parc_24 %>% 
+  filter(!idu %in% df_geom$idu & !idu %in% ajout_parc$idu) %>% 
+  arrange(nom_com)
+
+avant_geom <- inter_parc_23 %>% 
+  filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
+  arrange(nom_com)
+
+```
+
+```{r}
+plot <- ggplot() +
+  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = apres_geom, aes(fill = "Parcelles modifiées (2024)"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = avant_geom, aes(fill = "Parcelles modifiées (2023)"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = ajout_parc, aes(fill = "Parcelles ajoutées"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = supp_parc, aes(fill = "Parcelles supprimées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles modifiées (2024)" = "purple",
+                               "Parcelles modifiées (2023)" = "pink", "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
+  theme_minimal() +
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Vendée, modifiés au niveau de la geometry en 2024", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+
+# ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+# plot
+```
+
+
+```{r}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, layer.name = "Parcelles modifiées (2023)", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_modifiées_bordure_85.html")
+```
+
+
+```{r}
+identical(apres_geom %>% st_drop_geometry() %>% arrange(across(everything())),
+          avant_geom %>% st_drop_geometry() %>% arrange(across(everything())))
+
+df1_sorted <- apres_geom %>% select(!contenance) %>%  st_drop_geometry() %>% arrange(across(everything()))
+df2_sorted <- avant_geom %>% select(!contenance) %>% st_drop_geometry() %>% arrange(across(everything()))
+
+# Récupérer les lignes de df1 non présentes dans df2
+diff_df1 <- anti_join(df1_sorted, df2_sorted, by = colnames(df1_sorted))
+
+# Récupérer les lignes de df2 non présentes dans df1
+diff_df2 <- anti_join(df2_sorted, df1_sorted, by = colnames(df2_sorted))
+
+# Combiner les deux résultats pour obtenir toutes les lignes différentes
+diff_all <- bind_rows(diff_df1, diff_df2)
+# Cas de parcelles n'etant plus dans la zone tampon suite à la modification
+```
+
+
+```{r}
+inter_parc_24 %>% filter(idu == "451260000E0146")
+inter_parc_23 %>% filter(idu == "451260000E0146")
+ajout_parc_tot %>% filter(idu == "451260000E0146")
+ajout_parc %>% filter(idu == "451260000E0146")
+
+parcelle_24 %>% filter(idu == "451260000E0146")
+parcelle_23 %>% filter(idu == "451260000E0146")
+```
+
+
+```{r}
+ajout_parc <- ajout_parc %>% 
+  arrange(nom_com)
+
+supp_parc <- supp_parc %>% 
+  arrange(nom_com)
+```
+
+```{r}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées 2024", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, layer.name = "Parcelles modifiées 2023", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_modifiées_bordure_85.html")
+```
+
+
+
+
+
+
 ```{r}
 # Méthode au niveau de la superficie des parcelles
 
@@ -154,108 +261,6 @@ mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions =
   mapview(apres_sup, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
   mapview(avant_sup, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
 ```
-
-
-
-```{r}
-# Méthode au niveau de la géomètrie des parcelles
-
-df_geom <- inter_parc_24 %>%
-  filter(!idu %in% ajout_parc$idu) %>% 
-  st_filter(inter_parc_23, .predicate = st_equals)
-# Parcelles n'ayant pas été modifiées
-# Attention : doit etre invariant en changeant l'ordre des tables
-
-apres_geom <- inter_parc_24 %>% 
-  filter(!idu %in% df_geom$idu & !idu %in% ajout_parc$idu) %>% 
-  arrange(nom_com)
-
-avant_geom <- inter_parc_23 %>% 
-  filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
-  arrange(nom_com)
-
-```
-
-```{r}
-plot <- ggplot() +
-  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
-  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = apres_geom, aes(fill = "Parcelles modifiées (2024)"), alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = avant_geom, aes(fill = "Parcelles modifiées (2023)"), alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = ajout_parc, aes(fill = "Parcelles ajoutées"), alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = supp_parc, aes(fill = "Parcelles supprimées"), alpha = 0.5, color = "black", size = 0.01) +
-  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles modifiées (2024)" = "purple",
-                               "Parcelles modifiées (2023)" = "pink", "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
-  theme_minimal() +
-  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret, modifiés au niveau de la geometry en 2024", 
-       fill ="Légende",
-       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
-
-# ggsave("parcelles_bordures_modifiées.png", plot = plot, width = 12, height = 8, dpi = 300)
-plot
-```
-
-
-```{r}
-mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(apres_geom, layer.name = "Parcelles modifiées_2024", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(avant_geom, layer.name = "Parcelles modifiées_2023", col.regions = "pink", alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
-```
-
-
-```{r}
-identical(apres_geom %>% st_drop_geometry() %>% arrange(across(everything())),
-          avant_geom %>% st_drop_geometry() %>% arrange(across(everything())))
-
-df1_sorted <- apres_geom %>% select(!contenance) %>%  st_drop_geometry() %>% arrange(across(everything()))
-df2_sorted <- avant_geom %>% select(!contenance) %>% st_drop_geometry() %>% arrange(across(everything()))
-
-# Récupérer les lignes de df1 non présentes dans df2
-diff_df1 <- anti_join(df1_sorted, df2_sorted, by = colnames(df1_sorted))
-
-# Récupérer les lignes de df2 non présentes dans df1
-diff_df2 <- anti_join(df2_sorted, df1_sorted, by = colnames(df2_sorted))
-
-# Combiner les deux résultats pour obtenir toutes les lignes différentes
-diff_all <- bind_rows(diff_df1, diff_df2)
-# Cas de parcelles n'etant plus dans la zone tampon suite à la modification
-```
-
-
-```{r}
-inter_parc_24 %>% filter(idu == "451260000E0146")
-inter_parc_23 %>% filter(idu == "451260000E0146")
-ajout_parc_tot %>% filter(idu == "451260000E0146")
-ajout_parc %>% filter(idu == "451260000E0146")
-
-parcelle_24 %>% filter(idu == "451260000E0146")
-parcelle_23 %>% filter(idu == "451260000E0146")
-```
-
-
-```{r}
-ajout_parc <- ajout_parc %>% 
-  arrange(nom_com)
-
-supp_parc <- supp_parc %>% 
-  arrange(nom_com)
-```
-
-```{r}
-map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(apres_geom, layer.name = "Parcelles modifiées_2024", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(avant_geom, layer.name = "Parcelles modifiées_2023", col.regions = "pink", alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
-
-mapshot(map, file = "parcelles_modifiées_bordure_45.html")
-```
-
-
 
 
 
@@ -331,8 +336,8 @@ meth_geom <- inter_parc_24 %>%
 
 
 ```{r}
-parcelles_45<-st_read("./cadastre-45-parcelles.json")
-parcelles_45_2023 <- st_read("./cadastre-45-parcelles-2023.json")
+parcelles_85<-st_read("./cadastre-85-parcelles.json")
+parcelles_85_2023 <- st_read("./cadastre-85-parcelles-2023.json")
 
 # Renseigne la geometry (Multypolygon)
 # dimension: XY fait référence à un système de coordonnées dans un espace euclidien
