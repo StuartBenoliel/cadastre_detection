@@ -9,6 +9,7 @@ library(archive)
 
 # 0- Créer un service postgres avec l'extension postgis sur le datalab ####
 rm(list=ls())
+options(timeout = 600)
 
 # 1- Connexion à la base de données ####
 source("connexion_db.R", encoding = "utf-8")
@@ -36,6 +37,14 @@ num_departements <- sapply(num_departements, gestion_num_departement)
 
 # Fonction pour télécharger et traiter chaque département
 process_departement <- function(num_depart, num_annees, indic_parc = T) {
+  
+  archive_months <- c(
+    "2022" = "01",
+    "2021" = "02",
+    "2020" = "01",
+    "2019" = "07"
+  )
+  
   # Construire l'URL du fichier .7z pour le département spécifié
   if (num_annees == 2024) {
     url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
@@ -51,10 +60,38 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
                   "_2023-07-01.7z")
   }
   
+  if (num_annees %in% names(archive_months)) {
+    url <- paste0("https://files.opendatarchives.fr/professionnels.ign.fr/parcellaire-express/PCI-par-DEPT_",
+                  num_annees,
+                  "-",
+                  archive_months[num_annees],
+                  "/PARCELLAIRE_EXPRESS_1-0__SHP_LAMB93_D",
+                  num_depart,
+                  "_",
+                  num_annees,
+                  "-",
+                  archive_months[num_annees],
+                  "-01.7z")
+  }
+  
   temp <- tempfile(fileext = ".7z")
   download.file(url, temp, mode = "wb")
   temp_dir <- tempdir()
   archive_extract(temp, dir = temp_dir)
+  
+  archive_months_2 <- c(
+    "2022" = "02",
+    "2021" = "03",
+    "2020" = "03",
+    "2019" = "08"
+  )
+  
+  archive_code <- c(
+    "2022" = "00096",
+    "2021" = "00240",
+    "2020" = "00152",
+    "2019" = "00039"
+  )
   
   if (num_annees == 2024) {
     shapefile_dir <- file.path(temp_dir, 
@@ -71,6 +108,27 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
                                       "_2023-07-01/PARCELLAIRE_EXPRESS/1_DONNEES_LIVRAISON_2023-07-00202/PEPCI_1-1_SHP_LAMB93_D", 
                                       num_depart))
   }
+  
+  if (num_annees %in% names(archive_months)) {
+    url <- file.path(temp_dir, 
+                     paste0("PARCELLAIRE_EXPRESS_1-0__SHP_LAMB93_D", 
+                            num_depart, 
+                            "_",
+                            num_annees,
+                            "-",
+                            archive_months[num_annees],
+                            "-01/PARCELLAIRE_EXPRESS/1_DONNEES_LIVRAISON_",
+                            num_annees,
+                            "-",
+                            archive_months_2[num_annees],
+                            "-",
+                            archive_code[num_annees],
+                            "/PEPCI_1-1_SHP_LAMB93_D", 
+                            num_depart))
+  }
+  
+  
+
   
   # print(list.files(shapefile_dir))
   
@@ -93,6 +151,10 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
 parc_85 <- process_departement(num_departements, "2024")
 parc_85_23 <- process_departement(num_departements, "2023")
 com_85 <- process_departement(num_departements, "2024", F)
+
+parc_21 <- process_departement("021", "2024")
+parc_21_23 <- process_departement("021", "2023")
+com_21 <- process_departement("021", "2024", F)
 
 # Appliquer la fonction à chaque département
 # list_parc <-lapply(num_departements,num_annees, process_departement)
@@ -166,6 +228,12 @@ constru_table <- function(table_sf, indic_parc = T) {
 constru_table(parc_85)
 constru_table(parc_85_23)
 constru_table(com_85, F)
+
+constru_table(parc_21)
+constru_table(parc_21_23)
+constru_table(com_21, F)
+
+parc_21_23 %>% filter(IDU == "213200000B0081")
 
 dbListTables(conn)
 

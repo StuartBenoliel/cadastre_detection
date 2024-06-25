@@ -85,6 +85,38 @@ supp_parc <- supp_parc_tot %>%
 
 ```
 
+```{r}
+inter_parc_24_sql <- dbGetQuery(conn, statement = "
+  WITH commune_buffers AS (
+      SELECT
+          code_insee,
+          ST_Buffer(geometry, 50) AS buffer_positive,
+          ST_Buffer(geometry, -50) AS buffer_negative
+      FROM
+          com_85
+  ),
+  extended_borders AS (
+      SELECT
+          code_insee,
+          ST_Difference(buffer_positive, buffer_negative) AS border_geom
+      FROM
+          commune_buffers
+  ),
+  filtered_parcelles AS (
+      SELECT
+          parc_85.*
+      FROM
+          parc_85
+      JOIN
+          extended_borders
+      ON
+          ST_Intersects(parc_85.geometry, extended_borders.border_geom)
+  )
+  SELECT * FROM filtered_parcelles;
+")
+```
+
+
 
 ```{r}
 plot <- ggplot() +
@@ -154,6 +186,31 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
 mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ```
 
+
+```{r}
+unique(sort(inter_parc_23$com_abs))
+unique(sort(inter_parc_24$com_abs))
+
+parc_com_abs_apres <- inter_parc_24 %>% 
+  filter(!com_abs %in% inter_parc_23$com_abs)
+
+parc_com_abs_apres <- parc_com_abs_apres %>%
+  mutate(idu_avant = paste0(substr(idu,1,2),
+                            com_abs, 
+                            "000", 
+                            substr(idu,9,14))
+         )
+
+parc_com_abs_avant <- inter_parc_23 %>% 
+  filter(idu %in% parc_com_abs_apres$idu_avant)
+```
+
+```{r}
+mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(parc_com_abs_apres, layer.name = "Parcelles après (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parc_com_abs_avant, layer.name = "Parcelles avant (état 2023)", col.regions = "pink", alpha.regions = 0.5)
+```
 
 
 

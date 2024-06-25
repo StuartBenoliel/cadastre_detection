@@ -1,0 +1,185 @@
+---
+title: "Prise_en_main"
+output: html_document
+date: "2024-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+## Prise en maain des données
+
+```{r}
+library(sf)
+library(dplyr)
+library(lubridate)
+library(mapview)
+library(DBI)
+library(ggplot2)
+library(purrr)
+library(webshot)
+# webshot::install_phantomjs()
+source(file = "connexion_db.R")
+conn<-connecter()
+DBI::dbListTables(conn)
+```
+
+```{r}
+DBI::dbListFields(conn,"parc_21")
+DBI::dbListFields(conn,"parc_21_23")
+```
+
+```{r}
+parcelle_24<-st_read(conn, query = "SELECT * FROM parc_21;")
+parcelle_23<-st_read(conn, query = "SELECT * FROM parc_21_23;")
+commune<-st_read(conn, query = "SELECT * FROM com_21;")
+
+ajout_parc_tot <- parcelle_24 %>% 
+  filter(!idu %in% parcelle_23$idu)
+
+supp_parc_tot <- parcelle_23 %>% 
+  filter(!idu %in% parcelle_24$idu)
+```
+
+```{r}
+create_extended_borders <- function(commune, buffer_distance) {
+  buffer_positive <- st_buffer(commune, buffer_distance)
+  buffer_negative <- st_buffer(commune, -buffer_distance)
+  suppressWarnings({
+    buffer_difference <- st_difference(buffer_positive, buffer_negative)
+  })
+  return(buffer_difference)
+}
+
+bordure <- commune %>%
+  group_by(code_insee) %>%  
+  do(extended = create_extended_borders(., 50))
+
+bordure <- do.call(rbind, bordure$extended) %>%
+  select(-c(4,5,6)) %>% 
+  st_sf()
+
+inter_parc_24 <- parcelle_24 %>%
+  st_filter(bordure, .predicate = st_intersects)
+
+inter_parc_23 <- parcelle_23 %>%
+  st_filter(bordure, .predicate = st_intersects)
+
+#ajout_parc_bad <- inter_parc_24 %>% 
+#  filter(!idu %in% inter_parc_23$idu)
+# Parcelle modifié n'étant plus dans la zone tampon considérée comme ajoutée
+
+ajout_parc <- ajout_parc_tot %>%
+  st_filter(bordure, .predicate = st_intersects) %>% 
+  arrange(nom_com)
+
+#supp_parc_bad <- inter_parc_23 %>% 
+#  filter(!idu %in% inter_parc_24$idu)
+# Parcelle modifié n'étant plus dans la zone tampon considérée comme supprimée
+
+supp_parc <- supp_parc_tot %>%
+  st_filter(bordure, .predicate = st_intersects) %>% 
+  arrange(nom_com)
+
+```
+
+
+```{r}
+plot <- ggplot() +
+  geom_sf(data = commune, aes(fill = "Communes"), color = "black", alpha = 0.5) +  
+  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = inter_parc_24, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
+  theme_minimal() +
+  labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Vendée", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+
+# ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+plot
+```
+
+
+
+
+```{r}
+# Méthode au niveau de la géomètrie des parcelles
+
+df_geom <- inter_parc_24 %>%
+  filter(!idu %in% ajout_parc$idu) %>% 
+  st_filter(inter_parc_23, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées
+# Attention : doit etre invariant en changeant l'ordre des tables
+
+apres_geom <- inter_parc_24 %>% 
+  filter(!idu %in% df_geom$idu & !idu %in% ajout_parc$idu) %>% 
+  arrange(nom_com)
+
+avant_geom <- inter_parc_23 %>% 
+  filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
+  arrange(nom_com)
+
+```
+
+```{r}
+plot <- ggplot() +
+  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = apres_geom, aes(fill = "Parcelles modifiées (2024)"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = avant_geom, aes(fill = "Parcelles modifiées (2023)"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = ajout_parc, aes(fill = "Parcelles ajoutées"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = supp_parc, aes(fill = "Parcelles supprimées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles modifiées (2024)" = "purple",
+                               "Parcelles modifiées (2023)" = "pink", "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
+  theme_minimal() +
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Vendée, modifiés au niveau de la geometry en 2024", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+
+# ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+# plot
+```
+
+
+```{r}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, layer.name = "Parcelles modifiées (état 2023)", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_modifiées_bordure_85.html")
+```
+
+
+```{r}
+unique(sort(inter_parc_23$com_abs))
+unique(sort(inter_parc_24$com_abs))
+
+parc_com_abs_apres <- inter_parc_24 %>% 
+  filter(!com_abs %in% inter_parc_23$com_abs)
+
+parc_com_abs_apres <- parc_com_abs_apres %>%
+  mutate(idu_avant = paste0(substr(idu,1,2),
+                            com_abs, 
+                            "000", 
+                            substr(idu,9,14))
+         )
+
+parc_com_abs_avant <- inter_parc_23 %>% 
+  filter(idu %in% parc_com_abs_apres$idu_avant)
+```
+
+```{r}
+mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(parc_com_abs_apres, layer.name = "Parcelles après (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parc_com_abs_avant, layer.name = "Parcelles avant (état 2023)", col.regions = "pink", alpha.regions = 0.5)
+```
+
+
+
+
