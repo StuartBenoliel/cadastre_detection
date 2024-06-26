@@ -27,11 +27,6 @@ DBI::dbListTables(conn)
 ```
 
 ```{r}
-DBI::dbListFields(conn,"parc_85")
-DBI::dbListFields(conn,"parc_85_23")
-```
-
-```{r}
 parcelle_24<-st_read(conn, query = "SELECT * FROM parc_85;")
 parcelle_23<-st_read(conn, query = "SELECT * FROM parc_85_23;")
 commune<-st_read(conn, query = "SELECT * FROM com_85;")
@@ -55,7 +50,7 @@ create_extended_borders <- function(commune, buffer_distance) {
 
 bordure <- commune %>%
   group_by(code_insee) %>%  
-  do(extended = create_extended_borders(., 50))
+  do(extended = create_extended_borders(., 500))
 
 bordure <- do.call(rbind, bordure$extended) %>%
   select(-c(4,5,6)) %>% 
@@ -170,7 +165,7 @@ plot <- ggplot() +
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-# ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+ ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
 ```
 
