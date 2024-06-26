@@ -20,6 +20,7 @@ library(DBI)
 library(ggplot2)
 library(purrr)
 library(webshot)
+library(pracma)
 # webshot::install_phantomjs()
 source(file = "connexion_db.R")
 conn<-connecter()
@@ -198,13 +199,125 @@ parc_com_abs_apres <- parc_com_abs_apres %>%
 
 parc_com_abs_avant <- inter_parc_23 %>% 
   filter(idu %in% parc_com_abs_apres$idu_avant)
+
+df_abs <- parc_com_abs_apres %>%
+  st_filter(parc_com_abs_avant, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées mise à part le nom de commune
+
+parc_com_abs_apres <- parc_com_abs_apres %>% 
+  filter(!idu %in% df_abs$idu)
+
+parc_com_abs_avant <- parc_com_abs_avant %>% 
+  filter(!idu %in% df_abs$idu_avant)
+
+# Attention cas de parcelles crées (n'existant pas avant) mais ayant le numéro de 
+# com_abs
 ```
 
 ```{r}
-mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+parc_com_abs_apres[12,]
+parc_com_abs_avant[1,]
+
+mapview(parc_com_abs_apres[12,], layer.name = "Parcelles après (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parc_com_abs_avant[1,], layer.name = "Parcelles avant (état 2023)", col.regions = "pink", alpha.regions = 0.5)
+```
+
+
+```{r}
+P <- st_coordinates(parc_com_abs_apres[11,]$geometry)[, 1:2]
+Q <- st_coordinates(parc_com_abs_avant[1,]$geometry)[, 1:2]
+hausdorff_dist(P, Q)
+hausdorff_dist(Q, P)
+
+hausdorff_distance <- max(hausdorff_dist(P, Q),
+                          hausdorff_dist(Q, P))
+print(paste("Distance de Hausdorff :", hausdorff_distance))
+```
+
+```{r}
+# Méthode au niveau de la géomètrie des parcelles + distance de Hausdorff
+
+calculate_hausdorff_distance <- function(polygon1, polygon2) {
+  P <- st_coordinates(polygon1)[, 1:2]
+  Q <- st_coordinates(polygon2)[, 1:2]
+  max(hausdorff_dist(P, Q), hausdorff_dist(Q, P))
+}
+
+# Définir le seuil de distance de Hausdorff
+hausdorff_threshold <- 1  # Remplacer par le seuil désiré
+
+matching_indices <- integer()
+
+# Comparer chaque polygone de parc_com_abs_avant avec tous les polygones de parc_com_abs_apres
+for (i in 1:nrow(parc_com_abs_avant)) {
+  avant_polygon <- parc_com_abs_avant[i, ]$geometry
+  
+  for (j in 1:nrow(parc_com_abs_apres)) {
+    apres_polygon <- parc_com_abs_apres[j, ]$geometry
+    distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+    
+    if (distance < hausdorff_threshold) {
+      matching_indices <- c(matching_indices, j)
+    }
+  }
+}
+
+# Garder uniquement les polygones correspondants dans parc_com_abs_apres
+filtered_parc_com_abs_apres <- parc_com_abs_apres[unique(matching_indices), ]
+
+parc_com_abs_apres_cut_add <- parc_com_abs_apres %>% 
+  filter(!idu %in% filtered_parc_com_abs_apres$idu)
+# Parcelles qui ont fait l'objet d'un redécoupage ou vétritable ajout
+
+```
+
+```{r}
+# Définir le seuil de distance de Hausdorff
+hausdorff_threshold <- 1  # Remplacer par le seuil désiré
+
+matching_indices <- integer()
+
+# Comparer chaque polygone de parc_com_abs_avant avec tous les polygones de apres_geom
+for (i in 1:nrow(avant_geom)) {
+  avant_polygon <- avant_geom[i, ]$geometry
+  
+  for (j in 1:nrow(apres_geom)) {
+    apres_polygon <- apres_geom[j, ]$geometry
+    distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+    
+    if (distance < hausdorff_threshold) {
+      matching_indices <- c(matching_indices, j)
+    }
+  }
+}
+
+# Garder uniquement les polygones correspondants dans apres_geom
+filtered_apres_geom <- apres_geom[unique(matching_indices), ]
+
+apres_geom_cut <- apres_geom %>% 
+  filter(!idu %in% filtered_apres_geom$idu) %>% 
+  arrange(nom_com)
+# Parcelles qui ont fait l'objet d'un redécoupage
+
+avant_geom_cut <- avant_geom %>% 
+  filter(!idu %in% filtered_apres_geom$idu) %>% 
+  arrange(nom_com)
+
+```
+
+
+
+
+
+```{r}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(parc_com_abs_apres, layer.name = "Parcelles après (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(parc_com_abs_avant, layer.name = "Parcelles avant (état 2023)", col.regions = "pink", alpha.regions = 0.5)
+  mapview(apres_geom_cut, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom_cut, layer.name = "Parcelles modifiées (état 2023)", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_modifiées_distance_bordure_85.html")
 ```
 
 
