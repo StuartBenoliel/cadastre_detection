@@ -32,15 +32,15 @@ DBI::dbListFields(conn,"parc_21_23")
 ```
 
 ```{r}
-parcelle_24<-st_read(conn, query = "SELECT * FROM parc_21;")
 parcelle_23<-st_read(conn, query = "SELECT * FROM parc_21_23;")
+parcelle_22<-st_read(conn, query = "SELECT * FROM parc_21;")
 commune<-st_read(conn, query = "SELECT * FROM com_21;")
 
-ajout_parc_tot <- parcelle_24 %>% 
-  filter(!idu %in% parcelle_23$idu)
+ajout_parc_tot <- parcelle_23 %>% 
+  filter(!idu %in% parcelle_22$idu)
 
-supp_parc_tot <- parcelle_23 %>% 
-  filter(!idu %in% parcelle_24$idu)
+supp_parc_tot <- parcelle_22 %>% 
+  filter(!idu %in% parcelle_23$idu)
 ```
 
 ```{r}
@@ -61,7 +61,7 @@ bordure <- do.call(rbind, bordure$extended) %>%
   select(-c(4,5,6)) %>% 
   st_sf()
 
-inter_parc_24 <- parcelle_24 %>%
+inter_parc_22 <- parcelle_22 %>%
   st_filter(bordure, .predicate = st_intersects)
 
 inter_parc_23 <- parcelle_23 %>%
@@ -90,10 +90,10 @@ supp_parc <- supp_parc_tot %>%
 plot <- ggplot() +
   geom_sf(data = commune, aes(fill = "Communes"), color = "black", alpha = 0.5) +  
   geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = inter_parc_24, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = inter_parc_23, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
   scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
   theme_minimal() +
-  labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Côte d'or", 
+  labs(title = "Parcelles cadastrales (2023) croisant les frontières étendues des communes de Côte d'or", 
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
@@ -107,17 +107,17 @@ plot
 ```{r}
 # Méthode au niveau de la géomètrie des parcelles
 
-df_geom <- inter_parc_24 %>%
+df_geom <- inter_parc_23 %>%
   filter(!idu %in% ajout_parc$idu) %>% 
-  st_filter(inter_parc_23, .predicate = st_equals)
+  st_filter(inter_parc_22, .predicate = st_equals)
 # Parcelles n'ayant pas été modifiées
 # Attention : doit etre invariant en changeant l'ordre des tables
 
-apres_geom <- inter_parc_24 %>% 
+apres_geom <- inter_parc_23 %>% 
   filter(!idu %in% df_geom$idu & !idu %in% ajout_parc$idu) %>% 
   arrange(nom_com)
 
-avant_geom <- inter_parc_23 %>% 
+avant_geom <- inter_parc_22 %>% 
   filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
   arrange(nom_com)
 
@@ -127,18 +127,17 @@ avant_geom <- inter_parc_23 %>%
 plot <- ggplot() +
   geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
   geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = apres_geom, aes(fill = "Parcelles modifiées (2024)"), alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = avant_geom, aes(fill = "Parcelles modifiées (2023)"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = apres_geom, aes(fill = "Parcelles modifiées (état 2023)"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = avant_geom, aes(fill = "Parcelles modifiées (état 2022)"), alpha = 0.5, color = "black", size = 0.01) +
   geom_sf(data = ajout_parc, aes(fill = "Parcelles ajoutées"), alpha = 0.5, color = "black", size = 0.01) +
   geom_sf(data = supp_parc, aes(fill = "Parcelles supprimées"), alpha = 0.5, color = "black", size = 0.01) +
-  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles modifiées (2024)" = "purple",
-                               "Parcelles modifiées (2023)" = "pink", "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles modifiées (état 2023)" = "purple", "Parcelles modifiées (état 2022)" = "pink", "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
   theme_minimal() +
-  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Côte d'or, modifiés au niveau de la geometry en 2024", 
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Côte d'or, modifiés au niveau de la geometry en 2023", 
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-# ggsave("parcelles_bordures_modifiées_21.png", plot = plot, width = 12, height = 8, dpi = 300)
+ggsave("parcelles_bordures_modifiées_21.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
 ```
 
@@ -146,8 +145,8 @@ plot <- ggplot() +
 ```{r}
 map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(avant_geom, layer.name = "Parcelles modifiées (état 2023)", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2023)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, layer.name = "Parcelles modifiées (état 2022)", col.regions = "pink", alpha.regions = 0.5) +
   mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
   mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
 

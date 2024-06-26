@@ -79,69 +79,19 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
   temp_dir <- tempdir()
   archive_extract(temp, dir = temp_dir)
   
-  archive_months_2 <- c(
-    "2022" = "02",
-    "2021" = "03",
-    "2020" = "03",
-    "2019" = "08"
-  )
+  fichier_parcelle <- list.files(temp_dir, 
+                                 pattern = ifelse(indic_parc,"PARCELLE.SHP", "COMMUNE.SHP"), 
+                                 recursive = TRUE, full.names = TRUE)
   
-  archive_code <- c(
-    "2022" = "00096",
-    "2021" = "00240",
-    "2020" = "00152",
-    "2019" = "00039"
-  )
-  
-  if (num_annees == 2024) {
-    shapefile_dir <- file.path(temp_dir, 
-                               paste0("PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D", 
-                                      num_depart, 
-                                      "_2024-04-01/PARCELLAIRE-EXPRESS/1_DONNEES_LIVRAISON_2024-05-00031/PEPCI_1-1_SHP_LAMB93_D", 
-                                      num_depart))
-  }
-  
-  if(num_annees == 2023) {
-    shapefile_dir <- file.path(temp_dir, 
-                               paste0("PARCELLAIRE_EXPRESS_1-1__SHP_LAMB93_D", 
-                                      num_depart, 
-                                      "_2023-07-01/PARCELLAIRE_EXPRESS/1_DONNEES_LIVRAISON_2023-07-00202/PEPCI_1-1_SHP_LAMB93_D", 
-                                      num_depart))
-  }
-  
-  if (num_annees %in% names(archive_months)) {
-    url <- file.path(temp_dir, 
-                     paste0("PARCELLAIRE_EXPRESS_1-0__SHP_LAMB93_D", 
-                            num_depart, 
-                            "_",
-                            num_annees,
-                            "-",
-                            archive_months[num_annees],
-                            "-01/PARCELLAIRE_EXPRESS/1_DONNEES_LIVRAISON_",
-                            num_annees,
-                            "-",
-                            archive_months_2[num_annees],
-                            "-",
-                            archive_code[num_annees],
-                            "/PEPCI_1-1_SHP_LAMB93_D", 
-                            num_depart))
-  }
-  
-  
-
-  
-  # print(list.files(shapefile_dir))
-  
-  shapefile_path <- file.path(shapefile_dir, 
-                              ifelse(indic_parc,"PARCELLE.SHP", "COMMUNE.SHP"))
-  
-  if (file.exists(shapefile_path)) {
-    parc <- st_read(shapefile_path) %>%
+  # Vérifier si le fichier a été trouvé
+  if(length(fichier_parcelle) > 0) {
+    parc <- st_read(fichier_parcelle) %>%
       mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
     # Attention systeme de projection dans DOM
     print(str(parc))
+    
   } else {
-    stop("Le fichier shapefile spécifié n'a pas été trouvé dans l'archive.")
+    print("Fichier non trouvé.")
   }
   unlink(temp)
   unlink(temp_dir)
@@ -152,7 +102,7 @@ parc_85 <- process_departement(num_departements, "2024")
 parc_85_23 <- process_departement(num_departements, "2023")
 com_85 <- process_departement(num_departements, "2024", F)
 
-parc_21 <- process_departement("021", "2024")
+parc_21 <- process_departement("021", "2022")
 parc_21_23 <- process_departement("021", "2023")
 com_21 <- process_departement("021", "2024", F)
 
@@ -225,6 +175,10 @@ constru_table <- function(table_sf, indic_parc = T) {
   
 }
 
+parc_21_23 <- parc_21_23 %>% 
+  filter(!(IDU == "213200000B0081" & FEUILLE == "5"))
+# Doublon de ligne bizarre
+
 constru_table(parc_85)
 constru_table(parc_85_23)
 constru_table(com_85, F)
@@ -233,7 +187,6 @@ constru_table(parc_21)
 constru_table(parc_21_23)
 constru_table(com_21, F)
 
-parc_21_23 %>% filter(IDU == "213200000B0081")
 
 dbListTables(conn)
 
