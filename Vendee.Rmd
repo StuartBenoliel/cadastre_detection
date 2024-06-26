@@ -277,11 +277,16 @@ hausdorff_threshold <- 1  # Remplacer par le seuil désiré
 
 matching_indices <- integer()
 
-# Comparer chaque polygone de parc_com_abs_avant avec tous les polygones de apres_geom
 for (i in 1:nrow(avant_geom)) {
   avant_polygon <- avant_geom[i, ]$geometry
   
-  for (j in 1:nrow(apres_geom)) {
+  # Sélectionner les polygones de parc_com_abs_apres qui intersectent avec avant_polygon
+  intersecting_polygons <- st_intersects(avant_polygon, apres_geom, sparse = FALSE)
+  
+  # Extraire les indices des polygones intersectants
+  intersecting_indices <- which(intersecting_polygons)
+  
+  for (j in intersecting_indices) {
     apres_polygon <- apres_geom[j, ]$geometry
     distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
     
@@ -290,6 +295,7 @@ for (i in 1:nrow(avant_geom)) {
     }
   }
 }
+
 
 # Garder uniquement les polygones correspondants dans apres_geom
 filtered_apres_geom <- apres_geom[unique(matching_indices), ]
@@ -306,6 +312,42 @@ avant_geom_cut <- avant_geom %>%
 ```
 
 
+```{r}
+# Vérification translation 
+is_translation <- function(polygon1, polygon2) {
+  coords1 <- st_coordinates(polygon1)[, 1:2]
+  coords2 <- st_coordinates(polygon2)[, 1:2]
+  
+  # Vérifier si les deux polygones ont le même nombre de sommets
+  if (nrow(coords1) != nrow(coords2)) {
+    return(FALSE)
+  }
+  
+  # Calculer la translation
+  translation <- coords1 - coords2
+  
+  # Vérifier si la translation est constante pour tous les points
+  all(translation == translation[1, ])
+}
+
+matching_indices <- integer()
+
+# Comparer chaque polygone de parc_com_abs_avant avec les polygones de parc_com_abs_apres
+for (i in 1:nrow(parc_com_abs_avant)) {
+  avant_polygon <- parc_com_abs_avant[i, ]$geometry
+  
+  for (j in 1:nrow(parc_com_abs_apres)) {
+    apres_polygon <- parc_com_abs_apres[j, ]$geometry
+    
+    if (is_translation(avant_polygon, apres_polygon)) {
+      matching_indices <- c(matching_indices, j)
+    }
+  }
+}
+
+# Garder uniquement les polygones correspondants dans parc_com_abs_apres
+filtered_parc_com_abs_apres <- parc_com_abs_apres[unique(matching_indices), ]
+```
 
 
 
@@ -320,6 +362,33 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
 mapshot(map, url = "parcelles_modifiées_distance_bordure_85.html")
 ```
 
+
+```{r}
+
+results_df <- data.frame(
+  Avant_Index = integer(),
+  Apres_Index = integer(),
+  Hausdorff_Distance = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (i in 1:nrow(supp_parc)) {
+  avant_polygon <- supp_parc[i, ]$geometry
+  
+  for (j in 1:nrow(ajout_parc)) {
+    apres_polygon <- ajout_parc[j, ]$geometry
+    distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+    
+    if (distance < hausdorff_threshold) {
+      results_df <- rbind(results_df, data.frame(
+        Avant_Index = i,
+        Apres_Index = j,
+        Hausdorff_Distance = distance
+      ))
+    }
+  }
+}
+```
 
 
 
