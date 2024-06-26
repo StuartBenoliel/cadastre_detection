@@ -27,11 +27,6 @@ DBI::dbListTables(conn)
 ```
 
 ```{r}
-DBI::dbListFields(conn,"parc_21")
-DBI::dbListFields(conn,"parc_21_23")
-```
-
-```{r}
 parcelle_23<-st_read(conn, query = "SELECT * FROM parc_21_23;")
 parcelle_22<-st_read(conn, query = "SELECT * FROM parc_21;")
 commune<-st_read(conn, query = "SELECT * FROM com_21;")
@@ -107,9 +102,26 @@ plot
 ```{r}
 # Méthode au niveau de la géomètrie des parcelles
 
-df_geom <- inter_parc_23 %>%
-  filter(!idu %in% ajout_parc$idu) %>% 
-  st_filter(inter_parc_22, .predicate = st_equals)
+test <- inter_parc_23 %>%
+  filter(idu == "21001000ZA0001")
+
+st_within(inter_parc_22%>%
+  filter(idu == "21001000ZA0001") %>% select(geometry), test$geometry)
+
+st_contains(test, test)
+
+mat1 <- as.matrix(inter_parc_22[[11]][[5954]][[1]][[1]])
+mat2 <- as.matrix(inter_parc_23[[11]][[97247]][[1]][[1]])
+
+# Comparaison composante par composante
+comparison_result <- (abs(mat1 - mat2) < 1e-8)
+
+st_is_within_distance(test$geometry, inter_parc_22$geometry, dist = 0)
+
+mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(test, layer.name = "Parcelles modifiées (état 2023)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(inter_parc_22[c(5954, 54766),], layer.name = "Parcelles modifiées (état 2022)", col.regions = "pink", alpha.regions = 0.5)
 # Parcelles n'ayant pas été modifiées
 # Attention : doit etre invariant en changeant l'ordre des tables
 
