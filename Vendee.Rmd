@@ -154,6 +154,10 @@ avant_geom <- inter_parc_23 %>%
   filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
   arrange(nom_com)
 
+anti_join(avant_geom %>% st_drop_geometry(), apres_geom%>% st_drop_geometry(), by = "idu")
+
+parcelle_24 %>% filter(idu == "852000000A1334")
+
 ```
 
 ```{r}
