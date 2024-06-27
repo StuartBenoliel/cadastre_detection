@@ -110,9 +110,6 @@ inter_parc_24_sql <- dbGetQuery(conn, statement = "
   )
   SELECT * FROM filtered_parcelles;
 ")
-CREATE INDEX idx_parc_85_geom ON parc_85 USING GIST(geometry);
-CREATE INDEX idx_com_85_geom ON com_85 USING GIST(geometry);
-
 ```
 
 ```{r}
@@ -135,7 +132,6 @@ system.time({
     st_sf()
   
   inter_parc_24 <- parcelle_24 %>%
-    head(5000) %>% 
     st_filter(bordure, .predicate = st_intersects)
 })
 
@@ -144,65 +140,32 @@ system.time({
 
 ```{r}
 system.time({
-  dbGetQuery(conn, "DROP TABLE IF EXISTS commune_buffers;")
-  dbGetQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
-  dbGetQuery(conn, "DROP TABLE IF EXISTS limited_parcelles;")
-  dbGetQuery(conn, "DROP TABLE IF EXISTS filtered_parcelles;")
 
-# Analyser la table com_85 pour optimiser les requêtes
-  dbGetQuery(conn, "ANALYZE com_85;")
-  
-  dbGetQuery(conn, "
-  CREATE TEMP TABLE commune_buffers AS
+  dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
   SELECT
       code_insee,
-      ST_Buffer(geometry, 250) AS buffer_positive,
-      ST_Buffer(geometry, -250) AS buffer_negative
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS border_geom
   FROM
       com_85;
 ")
   
-  # Étape 2 : Créer extended_borders
-  dbGetQuery(conn, "
-  CREATE TEMP TABLE extended_borders AS
-  SELECT
-      code_insee,
-      ST_Difference(buffer_positive, buffer_negative) AS border_geom
-  FROM
-      commune_buffers;
-")
-  
-  # Étape 3 : Sélectionner les 5000 premières lignes de parc_85
-  dbGetQuery(conn, "
-  CREATE TEMP TABLE limited_parcelles AS
-  SELECT *
-  FROM parc_85
-  LIMIT 5000;
-")
-  
-  dbGetQuery(conn, "
-  CREATE INDEX idx_limited_parcelles_geom ON limited_parcelles USING GIST(geometry);
-")
-  
-  dbGetQuery(conn, "
+  dbSendQuery(conn, "
   CREATE INDEX idx_extended_borders_geom ON extended_borders USING GIST(border_geom);
 ")
   
-  # Étape 4 : Créer filtered_parcelles
-  dbGetQuery(conn, "
-  CREATE TEMP TABLE filtered_parcelles AS
+  inter_parc_24_sql <- dbGetQuery(conn, "
   SELECT
-      limited_parcelles.*
+      *
   FROM
-      limited_parcelles
+      parc_85
   JOIN
       extended_borders
   ON
-      ST_Intersects(limited_parcelles.geometry, extended_borders.border_geom);
+      ST_Intersects(parc_85.geometry, extended_borders.border_geom);
 ")
   
-  # Étape 5 : Sélectionner les résultats finaux
-  inter_parc_24_sql <- dbGetQuery(conn, "SELECT * FROM filtered_parcelles;")
+  dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
   
 })
 ```

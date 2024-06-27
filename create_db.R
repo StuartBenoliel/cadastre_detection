@@ -78,13 +78,12 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
   download.file(url, temp, mode = "wb")
   temp_dir <- tempdir()
   archive_extract(temp, dir = temp_dir)
-  
+  unlink(temp)
+  # print(list.files(temp_dir))
   fichier_parcelle <- list.files(temp_dir, 
                                  pattern = ifelse(indic_parc,"PARCELLE.SHP", "COMMUNE.SHP"), 
                                  recursive = TRUE, full.names = TRUE)
-  print(fichier_parcelle)
   
-  # Vérifier si le fichier a été trouvé
   if(length(fichier_parcelle) > 0) {
     parc <- st_read(fichier_parcelle) %>%
       mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
@@ -94,8 +93,11 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
   } else {
     print("Fichier non trouvé.")
   }
-  unlink(temp)
-  unlink(temp_dir)
+  
+  files <- list.files(temp_dir, full.names = TRUE)
+  # Filtrer les fichiers commencant par "PARCELLAIRE"
+  parcellaire_file <- files[grep("^PARCELLAIRE", basename(files))]
+  unlink(parcellaire_file, recursive = TRUE)
   return(parc)
 }
 
@@ -106,8 +108,6 @@ com_85 <- process_departement(num_departements, "2024", F)
 parc_21 <- process_departement("021", "2022")
 parc_21_23 <- process_departement("021", "2023")
 com_21 <- process_departement("021", "2024", F)
-
-st_crs(parc_85)
 
 # Appliquer la fonction à chaque département
 # list_parc <-lapply(num_departements,num_annees, process_departement)
@@ -162,7 +162,9 @@ constru_table <- function(table_sf, indic_parc = T) {
                      ';'))
   dbSendQuery(conn, query)
   dbSendQuery(conn,
-              paste0('CREATE INDEX idx ON ',
+              paste0('CREATE INDEX ',
+                     paste0('idx_',deparse(substitute(table_sf))),
+                     ' ON ',
                      deparse(substitute(table_sf)),
                      ' USING GIST(geometry);'))
   
