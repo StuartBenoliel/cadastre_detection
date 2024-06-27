@@ -137,7 +137,6 @@ plot <- ggplot() +
 # plot
 ```
 
-
 ```{r}
 # Méthode au niveau de la géomètrie des parcelles
 df_geom <- inter_parc_24 %>%
@@ -153,10 +152,6 @@ apres_geom <- inter_parc_24 %>%
 avant_geom <- inter_parc_23 %>% 
   filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
   arrange(nom_com)
-
-anti_join(avant_geom %>% st_drop_geometry(), apres_geom%>% st_drop_geometry(), by = "idu")
-
-parcelle_24 %>% filter(idu == "852000000A1334")
 
 ```
 
@@ -192,46 +187,163 @@ mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ```
 
 ```{r}
+unique(sort(inter_parc_23$com_abs))
+unique(sort(inter_parc_24$com_abs))
+
+parc_com_abs_apres <- ajout_parc %>% 
+  filter(!com_abs %in% inter_parc_23$com_abs)
+
+parc_com_abs_apres <- parc_com_abs_apres %>%
+  mutate(idu_avant = paste0(substr(idu,1,2),
+                            com_abs, 
+                            "000", 
+                            substr(idu,9,14))
+  )
+
+parc_com_abs_avant <- supp_parc %>% 
+  filter(idu %in% parc_com_abs_apres$idu_avant)
+
+df_abs <- parc_com_abs_apres %>%
+  st_filter(parc_com_abs_avant, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées mise à part le nom de commune
+
+parc_com_abs_apres <- parc_com_abs_apres %>% 
+  filter(!idu %in% df_abs$idu)
+
+parc_com_abs_avant <- parc_com_abs_avant %>% 
+  filter(!idu %in% df_abs$idu_avant)
+
+# Attention cas de parcelles crées (n'existant pas avant) mais ayant le numéro de 
+# com_abs
+```
+
+```{r}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, layer.name = "Parcelles modifiées (état 2023)", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_modifiées_bordure_85.html")
+```
+
+```{r}
 # Méthode au niveau de la géomètrie des parcelles + distance de Hausdorff
-# Définir le seuil de distance de Hausdorff
-hausdorff_threshold <- 1  # Remplacer par le seuil désiré
+
+calculate_hausdorff_distance <- function(polygon1, polygon2) {
+  P <- st_coordinates(polygon1)[, 1:2]
+  Q <- st_coordinates(polygon2)[, 1:2]
+  max(hausdorff_dist(P, Q), hausdorff_dist(Q, P))
+}
+
+joint_geom <- avant_geom %>% as.data.frame() %>% 
+  full_join(apres_geom, by = "idu", suffix = c("_avant", "_apres"))
+
+# Calculer la distance de Hausdorff pour chaque ligne jointe
+joint_geom <- joint_geom %>%
+  rowwise() %>%
+  mutate(hausdorff_dist = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    calculate_hausdorff_distance(st_geometry(geometry_avant), st_geometry(geometry_apres))
+  } else {
+    NA
+  })
+
+# Sélectionner les colonnes nécessaires et renommer
+avant_geom <- avant_geom %>% 
+  left_join(joint_geom %>% select(idu, hausdorff_dist), by = "idu")
+
+apres_geom <- apres_geom %>% 
+  left_join(joint_geom %>% select(idu, hausdorff_dist), by = "idu")
+
+calculate_min_hausdorff_distance <- function(avant, apres) {
+  hausdorff_dists <- numeric(nrow(avant))
+  
+  for (i in 1:nrow(avant)) {
+    avant_polygon <- avant[i, ]$geometry
+    
+    # Sélectionner les polygones de ajout_parc qui intersectent avec avant_polygon
+    intersecting_polygons <- st_intersects(avant_polygon, apres, sparse = FALSE)
+    
+    # Extraire les indices des polygones intersectants
+    intersecting_indices <- which(intersecting_polygons)
+    
+    if (length(intersecting_indices) > 0) {
+      distances <- numeric(length(intersecting_indices))
+      for (j in 1:length(intersecting_indices)) {
+        apres_polygon <- apres[intersecting_indices[j], ]$geometry
+        distances[j] <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+      }
+      # Stocker la distance minimale
+      hausdorff_dists[i] <- min(distances, na.rm = TRUE)
+    } else {
+      hausdorff_dists[i] <- NA
+    }
+  }
+  return(hausdorff_dists)
+}
+
+supp_parc <- supp_parc %>%
+  mutate(hausdorff_dist = calculate_min_hausdorff_distance(supp_parc, ajout_parc))
+
+ajout_parc <- ajout_parc %>%
+  mutate(hausdorff_dist = calculate_min_hausdorff_distance(ajout_parc, supp_parc))
+
+```
+
+
+```{r}
+library(RColorBrewer)
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2024)", 
+          col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, z=c("hausdorff_dist"), layer.name = "Parcelles modifiées (état 2023)", 
+          alpha.regions = 0.5) +
+  mapview(ajout_parc, z=c("hausdorff_dist"), layer.name = "Parcelles ajoutées",
+          col.regions = colorRampPalette(brewer.pal(9, "Greens")), alpha.regions = 0.5) +
+  mapview(supp_parc,  z=c("hausdorff_dist"), layer.name = "Parcelles supprimées",
+          col.regions = colorRampPalette(brewer.pal(9, "Oranges")), alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_distance_bordure_85.html")
+```
+
+```{r}
+# Vérification translation 
+is_translation <- function(polygon1, polygon2) {
+  coords1 <- st_coordinates(polygon1)[, 1:2]
+  coords2 <- st_coordinates(polygon2)[, 1:2]
+  
+  # Vérifier si les deux polygones ont le même nombre de sommets
+  if (nrow(coords1) != nrow(coords2)) {
+    return(FALSE)
+  }
+  
+  # Calculer la translation
+  translation <- coords1 - coords2
+  
+  # Vérifier si la translation est constante pour tous les points
+  all(translation == translation[1, ])
+}
 
 matching_indices <- integer()
 
-for (i in 1:nrow(avant_geom)) {
-  avant_polygon <- avant_geom[i, ]$geometry
+# Comparer chaque polygone de parc_com_abs_avant avec les polygones de parc_com_abs_apres
+for (i in 1:nrow(parc_com_abs_avant)) {
+  avant_polygon <- parc_com_abs_avant[i, ]$geometry
   
-  # Sélectionner les polygones de parc_com_abs_apres qui intersectent avec avant_polygon
-  intersecting_polygons <- st_intersects(avant_polygon, apres_geom, sparse = FALSE)
-  
-  # Extraire les indices des polygones intersectants
-  intersecting_indices <- which(intersecting_polygons)
-  
-  for (j in intersecting_indices) {
-    apres_polygon <- apres_geom[j, ]$geometry
-    distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+  for (j in 1:nrow(parc_com_abs_apres)) {
+    apres_polygon <- parc_com_abs_apres[j, ]$geometry
     
-    if (distance < hausdorff_threshold) {
+    if (is_translation(avant_polygon, apres_polygon)) {
       matching_indices <- c(matching_indices, j)
     }
   }
 }
 
-
-# Garder uniquement les polygones correspondants dans apres_geom
-filtered_apres_geom <- apres_geom[unique(matching_indices), ]
-
-apres_geom_cut <- apres_geom %>% 
-  filter(!idu %in% filtered_apres_geom$idu) %>% 
-  arrange(nom_com)
-# Parcelles qui ont fait l'objet d'un redécoupage
-
-avant_geom_cut <- avant_geom %>% 
-  filter(!idu %in% filtered_apres_geom$idu) %>% 
-  arrange(nom_com)
-
+# Garder uniquement les polygones correspondants dans parc_com_abs_apres
+filtered_parc_com_abs_apres <- parc_com_abs_apres[unique(matching_indices), ]
 ```
-
 
 
 
@@ -278,14 +390,16 @@ mapview(parc_com_abs_apres[12,], layer.name = "Parcelles après (état 2024)", c
 
 
 ```{r}
-P <- st_coordinates(parc_com_abs_apres[11,]$geometry)[, 1:2]
-Q <- st_coordinates(parc_com_abs_avant[1,]$geometry)[, 1:2]
+P <- st_coordinates(apres_geom_cut[11,]$geometry)[, 1:2]
+Q <- st_coordinates(avant_geom_cut[12,]$geometry)[, 1:2]
 hausdorff_dist(P, Q)
 hausdorff_dist(Q, P)
 
 hausdorff_distance <- max(hausdorff_dist(P, Q),
                           hausdorff_dist(Q, P))
 print(paste("Distance de Hausdorff :", hausdorff_distance))
+apres_geom_cut[465,]
+avant_geom_cut[441,]
 ```
 
 ```{r}
@@ -325,43 +439,6 @@ parc_com_abs_apres_cut_add <- parc_com_abs_apres %>%
 ```
 
 
-
-```{r}
-# Vérification translation 
-is_translation <- function(polygon1, polygon2) {
-  coords1 <- st_coordinates(polygon1)[, 1:2]
-  coords2 <- st_coordinates(polygon2)[, 1:2]
-  
-  # Vérifier si les deux polygones ont le même nombre de sommets
-  if (nrow(coords1) != nrow(coords2)) {
-    return(FALSE)
-  }
-  
-  # Calculer la translation
-  translation <- coords1 - coords2
-  
-  # Vérifier si la translation est constante pour tous les points
-  all(translation == translation[1, ])
-}
-
-matching_indices <- integer()
-
-# Comparer chaque polygone de parc_com_abs_avant avec les polygones de parc_com_abs_apres
-for (i in 1:nrow(parc_com_abs_avant)) {
-  avant_polygon <- parc_com_abs_avant[i, ]$geometry
-  
-  for (j in 1:nrow(parc_com_abs_apres)) {
-    apres_polygon <- parc_com_abs_apres[j, ]$geometry
-    
-    if (is_translation(avant_polygon, apres_polygon)) {
-      matching_indices <- c(matching_indices, j)
-    }
-  }
-}
-
-# Garder uniquement les polygones correspondants dans parc_com_abs_apres
-filtered_parc_com_abs_apres <- parc_com_abs_apres[unique(matching_indices), ]
-```
 
 
 
