@@ -116,7 +116,7 @@ inter_parc_24_sql <- dbGetQuery(conn, statement = "
 system.time({
   create_extended_borders <- function(commune, buffer_distance) {
     buffer_positive <- st_buffer(commune, buffer_distance)
-    buffer_negative <- st_buffer(commune, -buffer_distance)
+    buffer_negative <- st_buffer(commune, 0)
     suppressWarnings({
       buffer_difference <- st_difference(buffer_positive, buffer_negative)
     })
@@ -132,37 +132,60 @@ system.time({
     st_sf()
   
   inter_parc_24 <- parcelle_24 %>%
-    st_filter(bordure, .predicate = st_intersects)
+  st_filter(bordure, .predicate = st_intersects)
 })
 
 
 ```
 
 ```{r}
-system.time({
+dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
+  FROM
+      com_85;
+")
 
+
+bordure_sql <- st_read(conn, query = "SELECT * FROM extended_borders;")
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+
+mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(bordure_sql, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5)
+
+```
+
+
+
+```{r}
+system.time({
+  
   dbSendQuery(conn, "
   CREATE TEMP TABLE extended_borders AS
   SELECT
       code_insee,
-      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS border_geom
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
   FROM
       com_85;
 ")
   
   dbSendQuery(conn, "
-  CREATE INDEX idx_extended_borders_geom ON extended_borders USING GIST(border_geom);
+  CREATE INDEX idx_extended_borders_geometry ON extended_borders USING GIST(geometry);
 ")
   
-  inter_parc_24_sql <- dbGetQuery(conn, "
+  inter_parc_24_sql <- st_read(conn, query = "
   SELECT
-      *
+      parc_85.*
   FROM
       parc_85
   JOIN
       extended_borders
   ON
-      ST_Intersects(parc_85.geometry, extended_borders.border_geom);
+      ST_Intersects(parc_85.geometry, extended_borders.geometry);
 ")
   
   dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
