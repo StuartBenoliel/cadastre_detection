@@ -41,13 +41,14 @@ supp_parc_tot <- parcelle_23 %>%
 
 ```{r}
 create_extended_borders <- function(commune, buffer_distance) {
-  buffer_positive <- st_buffer(commune, buffer_distance)
-  buffer_negative <- st_buffer(commune, -buffer_distance)
+  buffer_positif <- st_buffer(commune, buffer_distance)
+  buffer_negatif <- st_buffer(commune, -buffer_distance)
   suppressWarnings({
-    buffer_difference <- st_difference(buffer_positive, buffer_negative)
+    buffer_difference <- st_difference(buffer_positif, buffer_negatif)
   })
   return(buffer_difference)
 }
+# Problème de parcelles au niveau du contour désormais
 
 bordure <- commune %>%
   group_by(code_insee) %>%  
@@ -82,103 +83,31 @@ supp_parc <- supp_parc_tot %>%
 ```
 
 ```{r}
-inter_parc_24_sql <- dbGetQuery(conn, statement = "
-  WITH commune_buffers AS (
-      SELECT
-          code_insee,
-          ST_Buffer(geometry, 50) AS buffer_positive,
-          ST_Buffer(geometry, -50) AS buffer_negative
-      FROM
-          com_85
-  ),
-  extended_borders AS (
-      SELECT
-          code_insee,
-          ST_Difference(buffer_positive, buffer_negative) AS border_geom
-      FROM
-          commune_buffers
-  ),
-  filtered_parcelles AS (
-      SELECT
-          parc_85.*
-      FROM
-          parc_85
-      JOIN
-          extended_borders
-      ON
-          ST_Intersects(parc_85.geometry, extended_borders.border_geom)
-  )
-  SELECT * FROM filtered_parcelles;
-")
-```
-
-```{r}
-system.time({
-  create_extended_borders <- function(commune, buffer_distance) {
-    buffer_positive <- st_buffer(commune, buffer_distance)
-    buffer_negative <- st_buffer(commune, 0)
-    suppressWarnings({
-      buffer_difference <- st_difference(buffer_positive, buffer_negative)
-    })
-    return(buffer_difference)
-  }
-  
-  bordure <- commune %>%
-    group_by(code_insee) %>%  
-    do(extended = create_extended_borders(., 250))
-  
-  bordure <- do.call(rbind, bordure$extended) %>%
-    select(-c(4,5,6)) %>% 
-    st_sf()
-  
-  inter_parc_24 <- parcelle_24 %>%
-  st_filter(bordure, .predicate = st_intersects)
-})
-
-
-```
-
-```{r}
+# Méthode SQL qui ne donne pas les memes résultats
+# Marche pas avec mapview
 dbSendQuery(conn, "
   CREATE TEMP TABLE extended_borders AS
   SELECT
-      code_insee,
-      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
+      code_insee, nom_com, code_dep,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
   FROM
       com_85;
 ")
 
-
-bordure_sql <- st_read(conn, query = "SELECT * FROM extended_borders;")
-
-dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
-
-mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(bordure_sql, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5)
-
-```
-
-
-
-```{r}
-system.time({
-  
-  dbSendQuery(conn, "
-  CREATE TEMP TABLE extended_borders AS
-  SELECT
-      code_insee,
-      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
+bordure_sql <- st_read(conn, query = "
+  SELECT 
+      *
   FROM
-      com_85;
-")
-  
-  dbSendQuery(conn, "
+      extended_borders;
+") %>%
+      mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+
+dbSendQuery(conn, "
   CREATE INDEX idx_extended_borders_geometry ON extended_borders USING GIST(geometry);
 ")
-  
-  inter_parc_24_sql <- st_read(conn, query = "
-  SELECT
+
+inter_parc_24_sql <- st_read(conn, query = "
+  SELECT DISTINCT
       parc_85.*
   FROM
       parc_85
@@ -186,11 +115,10 @@ system.time({
       extended_borders
   ON
       ST_Intersects(parc_85.geometry, extended_borders.geometry);
-")
-  
-  dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
-  
-})
+") %>%
+      mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
 ```
 
 
@@ -203,18 +131,15 @@ plot <- ggplot() +
   theme_minimal() +
   labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Vendée", 
        fill ="Légende",
-       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 250m de chaque côté de celles définies par l'IGN")
 
 # ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
-plot
+# plot
 ```
-
-
 
 
 ```{r}
 # Méthode au niveau de la géomètrie des parcelles
-
 df_geom <- inter_parc_24 %>%
   filter(!idu %in% ajout_parc$idu) %>% 
   st_filter(inter_parc_23, .predicate = st_equals)
@@ -261,6 +186,51 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
 
 mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ```
+
+```{r}
+# Méthode au niveau de la géomètrie des parcelles + distance de Hausdorff
+# Définir le seuil de distance de Hausdorff
+hausdorff_threshold <- 1  # Remplacer par le seuil désiré
+
+matching_indices <- integer()
+
+for (i in 1:nrow(avant_geom)) {
+  avant_polygon <- avant_geom[i, ]$geometry
+  
+  # Sélectionner les polygones de parc_com_abs_apres qui intersectent avec avant_polygon
+  intersecting_polygons <- st_intersects(avant_polygon, apres_geom, sparse = FALSE)
+  
+  # Extraire les indices des polygones intersectants
+  intersecting_indices <- which(intersecting_polygons)
+  
+  for (j in intersecting_indices) {
+    apres_polygon <- apres_geom[j, ]$geometry
+    distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+    
+    if (distance < hausdorff_threshold) {
+      matching_indices <- c(matching_indices, j)
+    }
+  }
+}
+
+
+# Garder uniquement les polygones correspondants dans apres_geom
+filtered_apres_geom <- apres_geom[unique(matching_indices), ]
+
+apres_geom_cut <- apres_geom %>% 
+  filter(!idu %in% filtered_apres_geom$idu) %>% 
+  arrange(nom_com)
+# Parcelles qui ont fait l'objet d'un redécoupage
+
+avant_geom_cut <- avant_geom %>% 
+  filter(!idu %in% filtered_apres_geom$idu) %>% 
+  arrange(nom_com)
+
+```
+
+
+
+
 
 
 ```{r}
@@ -315,7 +285,6 @@ print(paste("Distance de Hausdorff :", hausdorff_distance))
 ```
 
 ```{r}
-# Méthode au niveau de la géomètrie des parcelles + distance de Hausdorff
 
 calculate_hausdorff_distance <- function(polygon1, polygon2) {
   P <- st_coordinates(polygon1)[, 1:2]
@@ -351,45 +320,6 @@ parc_com_abs_apres_cut_add <- parc_com_abs_apres %>%
 
 ```
 
-```{r}
-# Définir le seuil de distance de Hausdorff
-hausdorff_threshold <- 1  # Remplacer par le seuil désiré
-
-matching_indices <- integer()
-
-for (i in 1:nrow(avant_geom)) {
-  avant_polygon <- avant_geom[i, ]$geometry
-  
-  # Sélectionner les polygones de parc_com_abs_apres qui intersectent avec avant_polygon
-  intersecting_polygons <- st_intersects(avant_polygon, apres_geom, sparse = FALSE)
-  
-  # Extraire les indices des polygones intersectants
-  intersecting_indices <- which(intersecting_polygons)
-  
-  for (j in intersecting_indices) {
-    apres_polygon <- apres_geom[j, ]$geometry
-    distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
-    
-    if (distance < hausdorff_threshold) {
-      matching_indices <- c(matching_indices, j)
-    }
-  }
-}
-
-
-# Garder uniquement les polygones correspondants dans apres_geom
-filtered_apres_geom <- apres_geom[unique(matching_indices), ]
-
-apres_geom_cut <- apres_geom %>% 
-  filter(!idu %in% filtered_apres_geom$idu) %>% 
-  arrange(nom_com)
-# Parcelles qui ont fait l'objet d'un redécoupage
-
-avant_geom_cut <- avant_geom %>% 
-  filter(!idu %in% filtered_apres_geom$idu) %>% 
-  arrange(nom_com)
-
-```
 
 
 ```{r}
@@ -694,4 +624,83 @@ mapview(list(chgt %>% st_buffer(dist = 5000), chgt), legend = FALSE,
 
 
 
+```{r}
+system.time({
+  create_extended_borders <- function(commune, buffer_distance) {
+    buffer_positive <- st_buffer(commune, buffer_distance)
+    buffer_negative <- st_buffer(commune, 0)
+    suppressWarnings({
+      buffer_difference <- st_difference(buffer_positive, buffer_negative)
+    })
+    return(buffer_difference)
+  }
+  
+  bordure <- commune %>%
+    group_by(code_insee) %>%  
+    do(extended = create_extended_borders(., 250))
+  
+  bordure <- do.call(rbind, bordure$extended) %>%
+    select(-c(4,5,6)) %>% 
+    st_sf()
+  
+  inter_parc_24 <- parcelle_24 %>%
+    st_filter(bordure, .predicate = st_intersects)
+})
 
+
+```
+
+```{r}
+dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
+  FROM
+      com_85;
+")
+
+
+bordure_sql <- st_read(conn, query = "SELECT * FROM extended_borders;")
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+
+mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(inter_parc_24, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(inter_parc_24_sql, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5)
+
+```
+
+
+
+```{r}
+system.time({
+  
+  dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
+  FROM
+      com_85;
+")
+  
+  dbSendQuery(conn, "
+  CREATE INDEX idx_extended_borders_geometry ON extended_borders USING GIST(geometry);
+")
+  
+  inter_parc_24_sql <- st_read(conn, query = "
+  SELECT
+      parc_85.*
+  FROM
+      parc_85
+  JOIN
+      extended_borders
+  ON
+      ST_Intersects(parc_85.geometry, extended_borders.geometry);
+")
+  
+  dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+  
+})
+```
