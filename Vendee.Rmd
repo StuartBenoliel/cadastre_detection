@@ -326,6 +326,39 @@ is_translation <- function(polygon1, polygon2) {
   all(translation == translation[1, ])
 }
 
+P <- apres_geom[531,]$geometry
+Q <- avant_geom[504,]$geometry
+
+# Choisir un point de référence dans P et Q (par exemple le premier point)
+point_ref_P <- st_coordinates(P)[1, 1:2]
+point_ref_Q <- st_coordinates(Q)[1, 1:2]
+
+# Calculer la translation nécessaire pour ajuster P à Q
+translation <- point_ref_Q - point_ref_P
+
+# Appliquer la translation à toutes les coordonnées de P
+P_adjusted <- st_geometry(P) + translation
+
+plot(st_geometry(P_adjusted), col = "blue", main = "Polygone ajusté (P_adjusted)")
+plot(st_geometry(Q), col = "red", add = TRUE)
+
+centroid_P <- st_centroid(P)
+
+# Calculer le centroïde de Q
+centroid_Q <- st_centroid(Q)
+
+# Calculer la translation nécessaire
+translation <- st_coordinates(centroid_Q)[1, 1:2] - st_coordinates(centroid_P)[1, 1:2]
+
+# Appliquer la translation à P pour obtenir P_adjusted
+P_adjusted <- st_geometry(P) + translation
+
+# Visualisation pour vérifier visuellement
+plot(P_adjusted, col = "green", main = "Polygone P ajusté")
+plot(Q, col = "red", add = TRUE)
+
+is_translation(P,Q)
+
 matching_indices <- integer()
 
 # Comparer chaque polygone de parc_com_abs_avant avec les polygones de parc_com_abs_apres
