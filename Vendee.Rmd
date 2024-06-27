@@ -11,7 +11,7 @@ rm(list = ls())
 
 ## Prise en maain des données
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(sf)
 library(dplyr)
 library(lubridate)
@@ -28,9 +28,9 @@ DBI::dbListTables(conn)
 ```
 
 ```{r}
-parcelle_24<-st_read(conn, query = "SELECT * FROM parc_85;")
-parcelle_23<-st_read(conn, query = "SELECT * FROM parc_85_23;")
-commune<-st_read(conn, query = "SELECT * FROM com_85;")
+parcelle_24 <- st_read(conn, query = "SELECT * FROM parc_85;")
+parcelle_23 <- st_read(conn, query = "SELECT * FROM parc_85_23;")
+commune <- st_read(conn, query = "SELECT * FROM com_85;")
 
 ajout_parc_tot <- parcelle_24 %>% 
   filter(!idu %in% parcelle_23$idu)
@@ -51,7 +51,7 @@ create_extended_borders <- function(commune, buffer_distance) {
 
 bordure <- commune %>%
   group_by(code_insee) %>%  
-  do(extended = create_extended_borders(., 500))
+  do(extended = create_extended_borders(., 250))
 
 bordure <- do.call(rbind, bordure$extended) %>%
   select(-c(4,5,6)) %>% 
@@ -110,8 +110,102 @@ inter_parc_24_sql <- dbGetQuery(conn, statement = "
   )
   SELECT * FROM filtered_parcelles;
 ")
+CREATE INDEX idx_parc_85_geom ON parc_85 USING GIST(geometry);
+CREATE INDEX idx_com_85_geom ON com_85 USING GIST(geometry);
+
 ```
 
+```{r}
+system.time({
+  create_extended_borders <- function(commune, buffer_distance) {
+    buffer_positive <- st_buffer(commune, buffer_distance)
+    buffer_negative <- st_buffer(commune, -buffer_distance)
+    suppressWarnings({
+      buffer_difference <- st_difference(buffer_positive, buffer_negative)
+    })
+    return(buffer_difference)
+  }
+  
+  bordure <- commune %>%
+    group_by(code_insee) %>%  
+    do(extended = create_extended_borders(., 250))
+  
+  bordure <- do.call(rbind, bordure$extended) %>%
+    select(-c(4,5,6)) %>% 
+    st_sf()
+  
+  inter_parc_24 <- parcelle_24 %>%
+    head(5000) %>% 
+    st_filter(bordure, .predicate = st_intersects)
+})
+
+
+```
+
+```{r}
+system.time({
+  dbGetQuery(conn, "DROP TABLE IF EXISTS commune_buffers;")
+  dbGetQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+  dbGetQuery(conn, "DROP TABLE IF EXISTS limited_parcelles;")
+  dbGetQuery(conn, "DROP TABLE IF EXISTS filtered_parcelles;")
+
+# Analyser la table com_85 pour optimiser les requêtes
+  dbGetQuery(conn, "ANALYZE com_85;")
+  
+  dbGetQuery(conn, "
+  CREATE TEMP TABLE commune_buffers AS
+  SELECT
+      code_insee,
+      ST_Buffer(geometry, 250) AS buffer_positive,
+      ST_Buffer(geometry, -250) AS buffer_negative
+  FROM
+      com_85;
+")
+  
+  # Étape 2 : Créer extended_borders
+  dbGetQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee,
+      ST_Difference(buffer_positive, buffer_negative) AS border_geom
+  FROM
+      commune_buffers;
+")
+  
+  # Étape 3 : Sélectionner les 5000 premières lignes de parc_85
+  dbGetQuery(conn, "
+  CREATE TEMP TABLE limited_parcelles AS
+  SELECT *
+  FROM parc_85
+  LIMIT 5000;
+")
+  
+  dbGetQuery(conn, "
+  CREATE INDEX idx_limited_parcelles_geom ON limited_parcelles USING GIST(geometry);
+")
+  
+  dbGetQuery(conn, "
+  CREATE INDEX idx_extended_borders_geom ON extended_borders USING GIST(border_geom);
+")
+  
+  # Étape 4 : Créer filtered_parcelles
+  dbGetQuery(conn, "
+  CREATE TEMP TABLE filtered_parcelles AS
+  SELECT
+      limited_parcelles.*
+  FROM
+      limited_parcelles
+  JOIN
+      extended_borders
+  ON
+      ST_Intersects(limited_parcelles.geometry, extended_borders.border_geom);
+")
+  
+  # Étape 5 : Sélectionner les résultats finaux
+  inter_parc_24_sql <- dbGetQuery(conn, "SELECT * FROM filtered_parcelles;")
+  
+})
+```
 
 
 ```{r}
@@ -166,7 +260,7 @@ plot <- ggplot() +
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
- ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
 ```
 
@@ -195,7 +289,7 @@ parc_com_abs_apres <- parc_com_abs_apres %>%
                             com_abs, 
                             "000", 
                             substr(idu,9,14))
-         )
+  )
 
 parc_com_abs_avant <- inter_parc_23 %>% 
   filter(idu %in% parc_com_abs_apres$idu_avant)
