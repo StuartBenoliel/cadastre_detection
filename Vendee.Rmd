@@ -313,6 +313,8 @@ is_translation <- function(polygon1, polygon2) {
 P <- apres_geom[531,]$geometry
 Q <- avant_geom[504,]$geometry
 
+# 531 (P) 504 (Q)
+
 st_area(st_geometry(P))
 st_area(st_geometry(Q))
 # Surfaces différentes
@@ -368,6 +370,69 @@ map <- mapview(st_set_crs(P, 2154), col.regions = "green", layer.name = "Polygon
 mapshot(map, url = "cas_translation.html")
 ```
 
+```{r prise en main rotation}
+# Deux polygones visiblement en rotation
+P <- apres_geom %>%
+  filter(idu == "852000000C0758") %>%
+  pull(geometry)
+
+Q <- avant_geom %>%
+  filter(idu == "852000000C0758") %>%
+  pull(geometry)
+
+st_area(st_geometry(P))
+st_area(st_geometry(Q))
+# Surfaces différentes
+
+ggplot() +
+  geom_sf(data = st_as_sf(P), fill = "blue", color = "blue") +
+  geom_sf(data = st_as_sf(Q), fill = "red", color = "red") +
+  theme_minimal() +
+  labs(title = "Comparaison des polygones P et Q",
+       subtitle = "Polygone P en bleu et polygone Q en rouge")
+
+hausdorff_dist(st_coordinates(P)[, 1:2], 
+               st_coordinates(Q)[, 1:2])
+
+centroid_P <- st_centroid(P)
+centroid_Q <- st_centroid(Q)
+
+translation <- st_coordinates(centroid_Q)[1, 1:2] - st_coordinates(centroid_P)[1, 1:2]
+
+P_adjusted <- st_geometry(P) + translation
+
+hausdorff_dist(st_coordinates(P_adjusted)[, 1:2], 
+               st_coordinates(Q)[, 1:2])
+
+rotation = function(a){
+  r = a * pi / 180 #degrées en radians
+  matrix(c(cos(r), sin(r), -sin(r), cos(r)), nrow = 2, ncol = 2)
+} 
+
+optimize_rotation <- function(geometry1, geometry2) {
+  angles <- seq(0, 360, by = 1)
+  iou_values <- sapply(angles, function(angle) {
+    rotated_geom <-  st_set_crs((geometry1 - st_centroid(geometry1)) * rotation(angle) + st_centroid(geometry1), 2154)
+    calculate_iou(rotated_geom, geometry2)
+  })
+  best_angle <- angles[which.max(iou_values)]
+  best_iou <- max(iou_values)
+  return(best_angle)
+}
+P_rotated <-  st_set_crs((P_adjusted - st_centroid(P_adjusted)) * rotation(optimize_rotation(P_adjusted,Q)) + st_centroid(P_adjusted), 2154)
+
+map <- mapview(st_set_crs(P, 2154), col.regions = "green", layer.name = "Polygone P") +
+  mapview(st_set_crs(P_adjusted, 2154), col.regions = "#7FFFD4", layer.name = "Polygone P translaté") +
+  mapview(st_set_crs(P_rotated, 2154), col.regions = "lightgreen", layer.name = "Polygone P translaté en rotation") +
+  mapview(st_set_crs(Q, 2154), col.regions = "red", layer.name = "Q") +
+  mapview(st_set_crs(centroid_P, 2154), col.regions = "blue", layer.name = "Centroid P") +
+  mapview(st_set_crs(centroid_Q, 2154), col.regions = "black", layer.name = "Centroid Q")
+
+mapshot(map, url = "cas_rotation.html")
+
+map
+```
+
 ```{r prise en main simplification des polygones}
 tolerance = 0.1
 
@@ -415,6 +480,80 @@ tolerance = 0.1
 P_simplified <- st_simplify(P, dTolerance = tolerance)
 Q_simplified <- st_simplify(Q, dTolerance = tolerance)
 
+calculate_iou <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    
+    # Calculer l'intersection
+    intersection <- st_intersection(geometry_avant, geometry_apres)
+    
+    if (length(intersection) == 0) {
+      return(0) # Si les géométries ne s'intersectent pas du tout, IoU est 0
+    }
+    
+    # Calculer l'aire de l'intersection
+    area_intersection <- st_area(intersection)
+    
+    # Calculer l'union
+    union <- st_union(geometry_avant, geometry_apres)
+    
+    # Calculer l'aire de l'union
+    area_union <- st_area(union)
+    
+    # Calculer IoU
+    iou <- area_intersection / area_union
+    
+    return(as.numeric(iou))
+  } else {
+    return(NA)
+  }
+}
+
+rotate_around_point <- function(geometry, angle, point) {
+  coords <- st_coordinates(geometry)[, 1:2]
+  point_coords <- st_coordinates(point)[1, 1:2]
+  
+  # Matrice de rotation
+  rotation_matrix <- matrix(c(cos(angle), -sin(angle), sin(angle), cos(angle)), nrow = 2)
+  
+  # Appliquer la rotation
+  rotated_coords <- t(rotation_matrix %*% t(coords - point_coords)) + point_coords
+  
+  # Reconstruire la géométrie avec les coordonnées tournées
+  rotated_geometry <- st_geometry(st_sfc(st_polygon(list(rotated_coords))), crs = st_crs(geometry))
+  
+  return(rotated_geometry)
+}
+
+
+optimize_rotation <- function(geometry1, geometry2) {
+  angles <- seq(0, 2*pi, length.out = 360)  # Tester 360 angles de rotation
+  iou_values <- sapply(angles, function(angle) {
+    rotated_geom <- rotate_around_point(geometry1, angle, st_centroid(geometry1))
+    calculate_iou(rotated_geom, geometry2)
+  })
+  best_angle <- angles[which.max(iou_values)]
+  best_iou <- max(iou_values)
+  return(as.numeric(best_iou))
+}
+
+calculate_iou_ajust <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    # Calculer l'ajustement de la géométrie_avant
+    centroid_apres <- st_centroid(geometry_apres)
+    centroid_avant <- st_centroid(geometry_avant)
+    translation_vector <- st_coordinates(centroid_apres)[1, 1:2] - st_coordinates(centroid_avant)[1, 1:2]
+    geometry_avant_ajust <- st_geometry(geometry_avant) + translation_vector
+    
+    # Calculer IoU ajusté calculate_iou(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
+    iou_ajust <- optimize_rotation(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
+    
+    return(iou_ajust)
+  } else {
+    return(NA)
+  }
+}
+
+
 joint_geom <- joint_geom %>%
   rowwise() %>%
   mutate(
@@ -429,6 +568,8 @@ joint_geom <- joint_geom %>%
     } else {
       NA
     },
+    iou = calculate_iou(st_geometry(geometry_avant),st_geometry(geometry_apres)),
+    iou_ajust = calculate_iou_ajust(st_geometry(geometry_avant), st_geometry(geometry_apres)),
     hausdorff_dist_simp = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
       calculate_hausdorff_distance(
         st_simplify(st_geometry(geometry_avant), dTolerance = tolerance), 
@@ -443,21 +584,56 @@ joint_geom <- joint_geom %>%
     } else {
       NA
     },
+    hausdorff_dist_simp_ajust = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+      calculate_hausdorff_distance(
+        st_geometry(st_simplify(st_geometry(geometry_avant), dTolerance = tolerance)) + st_coordinates(st_centroid(st_simplify(st_geometry(geometry_apres), dTolerance = tolerance)))[1, 1:2] - st_coordinates(st_centroid(st_simplify(st_geometry(geometry_avant), dTolerance = tolerance)))[1, 1:2], 
+        st_geometry(st_simplify(st_geometry(geometry_apres), dTolerance = tolerance)))
+    } else {
+      NA
+    },
     ecart_simp = hausdorff_dist - hausdorff_dist_simp,
     ecart_ajust = hausdorff_dist - hausdorff_dist_ajust
   )
 
 sum(joint_geom$translation_simp, na.rm=TRUE)
-# 328
+# 328 / 1374
+sum(joint_geom$hausdorff_dist < 15, na.rm=TRUE)
+#1056
+sum(joint_geom$hausdorff_dist_simp < 15, na.rm=TRUE)
+#1147
+sum(joint_geom$hausdorff_dist_ajust < 15, na.rm=TRUE)
+#1100
+sum(joint_geom$hausdorff_dist_simp_ajust < 15, na.rm=TRUE)
+#1194 
+
 ggplot(na.omit(tidyr::gather(joint_geom, variable, value, ecart_simp, ecart_ajust, hausdorff_dist_simp, hausdorff_dist_ajust)), aes(x = value)) +
   geom_histogram(aes(y = ..density..), binwidth = 1, fill = "skyblue", color = "black", alpha = 0.7) +
   facet_wrap(~ variable, scales = "free") +
   labs(title = "Histogrammes de différentes variables", x = "Valeurs", y = "Densité") +
   theme_minimal()
+
+avant_geom <- avant_geom %>% 
+  left_join(joint_geom %>% select(idu, iou_ajust), by = "idu")
+
+apres_geom <- apres_geom %>% 
+  left_join(joint_geom %>% select(idu, iou_ajust), by = "idu")
 ```
 
 
+```{r mapview iou_ajust}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2024)", 
+          col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, z=c("iou_ajust"), layer.name = "Parcelles modifiées (état 2023)", 
+          alpha.regions = 0.5) +
+  mapview(ajout_parc, z=c("hausdorff_dist"), layer.name = "Parcelles ajoutées",
+          col.regions = colorRampPalette(brewer.pal(9, "Greens")), alpha.regions = 0.5) +
+  mapview(supp_parc,  z=c("hausdorff_dist"), layer.name = "Parcelles supprimées",
+          col.regions = colorRampPalette(brewer.pal(9, "Oranges")), alpha.regions = 0.5)
 
+mapshot(map, url = "parcelles_iou_bordure_85.html")
+```
 
 ```{r}
 unique(sort(inter_parc_23$com_abs))
