@@ -477,8 +477,17 @@ hausdorff_dist(st_coordinates(P_adjusted)[, 1:2],
 
 tolerance = 0.1
 
-P_simplified <- st_simplify(P, dTolerance = tolerance)
-Q_simplified <- st_simplify(Q, dTolerance = tolerance)
+is_translation <- function(polygon1, polygon2) {
+  coords1 <- st_coordinates(polygon1)[, 1:2]
+  coords2 <- st_coordinates(polygon2)[, 1:2]
+  
+  if (nrow(coords1) != nrow(coords2)) {
+    return(FALSE)
+  }
+  
+  translation <- coords1 - coords2
+  all(translation == translation[1, ])
+}
 
 calculate_iou <- function(geometry_avant, geometry_apres) {
   if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
@@ -545,7 +554,7 @@ calculate_iou_ajust <- function(geometry_avant, geometry_apres) {
     geometry_avant_ajust <- st_geometry(geometry_avant) + translation_vector
     
     # Calculer IoU ajusté calculate_iou(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
-    iou_ajust <- optimize_rotation(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
+    iou_ajust <- calculate_iou(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
     
     return(iou_ajust)
   } else {
@@ -618,7 +627,31 @@ avant_geom <- avant_geom %>%
 apres_geom <- apres_geom %>% 
   left_join(joint_geom %>% select(idu, iou_ajust), by = "idu")
 ```
+```{r mapview cas simpl nécessaire}
+P <- joint_geom[6,]$geometry_avant
+Q <- joint_geom[6,]$geometry_apres
 
+translation <- st_coordinates(Q)[1, 1:2] - st_coordinates(P)[1, 1:2]
+P_adjusted <- st_geometry(P) + translation
+P_simplified <- st_simplify(P, dTolerance = tolerance)
+Q_simplified <- st_simplify(Q, dTolerance = tolerance)
+
+calculate_hausdorff_distance(
+        P, 
+        Q)
+
+calculate_hausdorff_distance(
+        P_adjusted, 
+        Q)
+
+calculate_hausdorff_distance(
+        P_simplified, 
+        Q_simplified)
+
+# Exactement le même visuellement
+
+
+```
 
 ```{r mapview iou_ajust}
 map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
