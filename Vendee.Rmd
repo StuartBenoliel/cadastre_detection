@@ -22,6 +22,7 @@ library(purrr)
 library(webshot)
 library(pracma)
 library(RColorBrewer)
+library(tidyr)
 # webshot::install_phantomjs()
 source(file = "connexion_db.R")
 conn<-connecter()
@@ -133,6 +134,32 @@ for (col in intersect(names(avant_geom), names(apres_geom))) {
 modif_geom <- avant_geom %>% as.data.frame() %>% 
   full_join(apres_geom, by = identical_columns, suffix = c("_avant", "_apres"))
 
+evol_sup <- modif_geom %>% 
+  mutate(superficie_apres = st_area(geometry_apres),
+         superficie_avant = st_area(geometry_avant)) %>% 
+  group_by(code_com) %>% 
+  summarise(modif_superficie_apres = round(sum(superficie_apres),2),
+            modif_superficie_avant = round(sum(superficie_avant),2),
+            modif_evolution_superficie = modif_superficie_apres - modif_superficie_avant)
+
+ajout_sup <- ajout_parc %>% 
+  mutate(superficie = st_area(geometry)) %>% 
+  group_by(code_com) %>% 
+  summarise(superficie_ajoute = round(sum(superficie),2)) %>% 
+  st_drop_geometry()
+
+supprime_sup <- supp_parc %>% 
+  mutate(superficie = st_area(geometry)) %>% 
+  group_by(code_com) %>% 
+  summarise(superficie_supprime = round(sum(superficie),2)) %>% 
+  st_drop_geometry()
+
+evol_sup <- evol_sup %>% 
+  full_join(ajout_sup, by = "code_com") %>% 
+  full_join(supprime_sup, by = "code_com") %>% 
+  mutate(across(everything(), ~ replace_na(.x, units::set_units(0, m*m)))) %>% 
+  mutate(tot_evolution_superficie = round(modif_evolution_superficie + superficie_ajoute - superficie_supprime,2))
+
 ```
 
 ```{r ggplot methode geometry}
@@ -172,7 +199,7 @@ mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 calculate_iou <- function(geometry_avant, geometry_apres) {
   if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
     
-    intersection <- st_intersection(geometry_avant, geometry_apres)
+    intersection <- st_intersection(st_setgeometry_avant, geometry_apres)
     
     if (length(intersection) == 0) {
       return(0) # Si les géométries ne s'intersectent pas du tout, IoU est 0
@@ -235,46 +262,6 @@ apres_geom <- apres_geom %>%
   left_join(modif_geom %>% select(idu, iou_ajust), by = "idu")
 ```
 
-```{r focus parcelle changement de communes}
-
-parc_com_abs_apres <- ajout_parc %>% 
-  filter(com_abs != "000")
-
-parc_com_abs_apres <- parc_com_abs_apres %>%
-  mutate(idu_avant = paste0(substr(idu,1,2),
-                            com_abs, 
-                            "000", 
-                            substr(idu,9,14))
-  )
-
-parc_com_abs_avant <- supp_parc %>% 
-  filter(idu %in% parc_com_abs_apres$idu_avant)
-
-df_abs <- parc_com_abs_apres %>%
-  st_filter(parc_com_abs_avant, .predicate = st_equals)
-# Parcelles n'ayant pas été modifiées mise à part le nom de commune
-
-parc_com_abs_apres <- parc_com_abs_apres %>% 
-  filter(!idu %in% df_abs$idu)
-
-parc_com_abs_avant <- parc_com_abs_avant %>% 
-  filter(!idu %in% df_abs$idu_avant)
-
-# Attention cas de parcelles crées (n'existant pas avant) mais ayant le numéro de 
-# com_abs
-```
-
-```{r focus parcelle changement de communes}
-map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(parc_com_abs_apres, layer.name = "Parcelles abs (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(parc_com_abs_avant, layer.name = "Parcelles abs (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "lightgreen", alpha.regions = 0.5)
-
-mapshot(map, url = "parcelles_abs.html")
-```
-
 ```{r geometry 2}
 
 # Méthode au niveau de la géomètrie des parcelles
@@ -294,28 +281,94 @@ supp_parc <- supp_parc %>%
   arrange(nom_com)
 ```
 
-```{r mapview iou_ajust}
+```{r iou ajout/sup}
+calculate_iou_for_polygon <- function(polygon, ajout_parc) {
+  
+  intersecting_geoms <- ajout_parc %>%
+    st_filter(polygon, .predicate = st_intersects)
+  
+  # Récupérer les noms des polygones participants
+  names_participants <- intersecting_geoms$idu
+  if (isempty(names_participants)) {
+    return(list(iou = NA, participants = NA))
+  }
+  
+  # Faire l'union des géométries
+  combined_geom <- st_union(intersecting_geoms)
+  
+  # Calculer l'IOU
+  iou_value <- calculate_iou(combined_geom, polygon)
+  
+  list(iou = iou_value, participants = paste(names_participants, collapse = ", "))
+}
 
-map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(apres_geom %>% filter(iou_ajust < quantiles[3] | is.na(iou_ajust)),
-          z=c("iou_ajust"), layer.name = "Parcelles modifiées (état 2024)", 
-          alpha.regions = 0.5) +
-  mapview(avant_geom %>% filter(iou_ajust < quantiles[3] | is.na(iou_ajust)), 
-          z=c("iou_ajust"), layer.name = "Parcelles modifiées (état 2023)", 
-          alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées",col.regions = "purple", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "lightgreen",alpha.regions = 0.5)
+supp_parc <- supp_parc %>%
+  rowwise() %>%
+  mutate(result = list(calculate_iou_for_polygon(geometry, ajout_parc))) %>%
+  mutate(iou = result$iou,
+         participants = result$participants) %>%
+  ungroup() %>%
+  select(-result)
+
+ajout_parc <- ajout_parc %>%
+  rowwise() %>%
+  mutate(result = list(calculate_iou_for_polygon(geometry, supp_parc))) %>%
+  mutate(iou = result$iou,
+         participants = result$participants) %>%
+  ungroup() %>%
+  select(-result)
+
+fusion <- ajout_parc %>% 
+  filter(iou > 0.99 & nchar(participants) != 14)
+
+subdiv <- supp_parc %>% 
+  filter(iou > 0.99 & nchar(participants) != 14)
+
+ajout_parc <- ajout_parc %>%
+  filter(!idu %in% unlist(str_split(subdiv$participants, ",\\s*"))) %>% 
+  filter(!idu %in% fusion$idu & iou < 0.99)
+
+supp_parc <- supp_parc %>%
+  filter(!idu %in% unlist(str_split(fusion$participants, ",\\s*"))) %>% 
+  filter(!idu %in% subdiv$idu & iou < 0.99)
+
+```
+
+```{r mapview iou}
+
+apres_filtre <- apres_geom %>% filter(iou_ajust < quantiles[3] | is.na(iou_ajust))
+avant_filtre <- avant_geom %>% filter(iou_ajust < quantiles[3] | is.na(iou_ajust))
+
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5,
+               homebutton = F) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(apres_filtre,
+          z=c("iou_ajust"), layer.name = "Parcelles modifiées iou < Q_5% = 0.934 (état 2024)", 
+          alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(avant_filtre, 
+          z=c("iou_ajust"), layer.name = "Parcelles modifiées iou < Q_5% = 0.934 (état 2023)", 
+          alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(fusion, layer.name = "Parcelles fusionnéees (état 2024)", col.regions = "red", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(supp_parc_tot %>%
+            filter(idu %in% unlist(str_split(fusion$participants, ",\\s*"))),  
+          layer.name = "Parcelles avant fusion (état 2023)", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(ajout_parc_tot %>%
+            filter(idu %in% unlist(str_split(subdiv$participants, ",\\s*"))),  
+          layer.name = "Parcelles subdivisées (état 2024)", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(subdiv,  layer.name = "Parcelles avant subdivision (état 2023)", col.regions = "red", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(ajout_parc, z=c("iou"), layer.name = "Parcelles restantes (état 2024)", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(supp_parc, z=c("iou"), layer.name = "Parcelles restantes (état 2023)", alpha.regions = 0.5,
+          homebutton = F)
 
 mapshot(map, url = "parcelles_iou_bordure_85.html")
 ```
-
-
-
-
-
-
-
-
 
 

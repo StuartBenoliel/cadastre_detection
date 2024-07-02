@@ -231,11 +231,107 @@ calculate_hausdorff_distance(
 
 ```
 
+```{r découpage}
+P <- supp_parc %>%
+  filter(idu == "852670000D0264") %>%
+  pull(geometry)
 
-```{r}
-parc_com_abs_apres[12,]
-parc_com_abs_avant[1,]
+Q_1 <- ajout_parc %>% 
+  filter(idu == "852670000D0731") %>%
+  pull(geometry)
 
-mapview(parc_com_abs_apres[12,], layer.name = "Parcelles après (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(parc_com_abs_avant[1,], layer.name = "Parcelles avant (état 2023)", col.regions = "pink", alpha.regions = 0.5)
+Q_2 <- ajout_parc %>% 
+  filter(idu == "852670000D0732") %>%
+  pull(geometry)
+
+Q <- st_union(Q_1,Q_2)
+# P inclut dans Q (la parcelle supprimée est plus petite que les deux crées)
+st_contains(Q, P)
+st_covered_by(P,Q)
+st_within(P, Q)
+st_intersects(P,Q)
+st_intersects(Q,P)
+
+st_overlaps(P, Q_1)
+st_overlaps(P, Q_2)
+st_overlaps(Q_2, P)
+st_overlaps(Q_1, P)
+st_intersects(Q_1, P)
+st_intersects(Q_2, P)
+st_intersects(P,Q_1)
+st_intersects(P,Q_2)
+
+# st_intersects : Renvoie TRUE si les géométries se touchent au moins en un point. Cela inclut les cas où les géométries se chevauchent partiellement ou totalement, ou simplement se touchent aux bords.
+# st_overlaps : Renvoie TRUE si les géométries se chevauchent partiellement, c'est-à-dire qu'elles partagent une partie de leur espace mais aucune d'elles n'est entièrement contenue dans l'autre.
+
+ajout_parc %>%
+  st_filter(M, .predicate = st_intersects) %>% 
+  st_union %>% 
+  calculate_iou(M)
+
+polygons <- list(P = P, M = M)
+# Fonction pour calculer l'IOU pour un polygone donné
+calculate_iou_for_polygon <- function(polygon, ajout_parc) {
+  intersecting_geoms <- ajout_parc %>%
+    st_filter(polygon, .predicate = st_intersects)
+  
+  if (st_is_empty(intersecting_geoms)) {
+    return(NA)
+  }
+  
+  # Récupérer les noms des polygones participants
+  names_participants <- intersecting_geoms$idu
+
+  # Faire l'union des géométries
+  combined_geom <- st_union(intersecting_geoms)
+  
+  # Calculer l'IOU
+  iou_value <- calculate_iou(combined_geom, polygon)
+  
+  list(iou = iou_value, participants = names_participants)
+}
+
+# Appliquer la fonction à chaque polygone
+results <- map(polygons, ~ calculate_iou_for_polygon(.x, ajout_parc))
+```
+
+
+```{r focus parcelle changement de communes}
+
+parc_com_abs_apres <- ajout_parc %>% 
+  filter(com_abs != "000")
+
+parc_com_abs_apres <- parc_com_abs_apres %>%
+  mutate(idu_avant = paste0(substr(idu,1,2),
+                            com_abs, 
+                            "000", 
+                            substr(idu,9,14))
+  )
+
+parc_com_abs_avant <- supp_parc %>% 
+  filter(idu %in% parc_com_abs_apres$idu_avant)
+
+df_abs <- parc_com_abs_apres %>%
+  st_filter(parc_com_abs_avant, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées mise à part le nom de commune
+
+parc_com_abs_apres <- parc_com_abs_apres %>% 
+  filter(!idu %in% df_abs$idu)
+
+parc_com_abs_avant <- parc_com_abs_avant %>% 
+  filter(!idu %in% df_abs$idu_avant)
+
+# Attention cas de parcelles crées (n'existant pas avant) mais ayant le numéro de 
+# com_abs
+```
+
+```{r focus parcelle changement de communes}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(parc_com_abs_apres, layer.name = "Parcelles abs (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parc_com_abs_avant, layer.name = "Parcelles abs (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "lightgreen", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_abs.html")
 ```
