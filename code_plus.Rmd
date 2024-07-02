@@ -1,0 +1,572 @@
+---
+title: "Prise_en_main"
+output: html_document
+date: "2024-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+## Prise en maain des données
+
+```{r package message=FALSE, warning=FALSE}
+library(sf)
+library(dplyr)
+library(lubridate)
+library(mapview)
+library(DBI)
+library(ggplot2)
+library(purrr)
+library(webshot)
+library(pracma)
+library(RColorBrewer)
+# webshot::install_phantomjs()
+source(file = "connexion_db.R")
+conn<-connecter()
+DBI::dbListTables(conn)
+```
+
+```{r bordure_sql}
+# Méthode SQL qui ne donne pas les memes résultats
+# Marche pas avec mapview
+dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee, nom_com, code_dep,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
+  FROM
+      com_85;
+")
+
+bordure_sql <- st_read(conn, query = "
+  SELECT 
+      *
+  FROM
+      extended_borders;
+") %>%
+  mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+
+dbSendQuery(conn, "
+  CREATE INDEX idx_extended_borders_geometry ON extended_borders USING GIST(geometry);
+")
+
+inter_parc_24_sql <- st_read(conn, query = "
+  SELECT DISTINCT
+      parc_85.*
+  FROM
+      parc_85
+  JOIN
+      extended_borders
+  ON
+      ST_Intersects(parc_85.geometry, extended_borders.geometry);
+") %>%
+  mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+```
+
+```{r ajout distance de hausdorff}
+# Méthode au niveau de la géomètrie des parcelles + distance de Hausdorff
+
+calculate_hausdorff_distance <- function(polygon1, polygon2) {
+  P <- st_coordinates(polygon1)[, 1:2]
+  Q <- st_coordinates(polygon2)[, 1:2]
+  max(hausdorff_dist(P, Q), hausdorff_dist(Q, P))
+}
+
+joint_geom <- avant_geom %>% as.data.frame() %>% 
+  full_join(apres_geom, by = "idu", suffix = c("_avant", "_apres"))
+
+joint_geom <- joint_geom %>%
+  rowwise() %>%
+  mutate(hausdorff_dist = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    calculate_hausdorff_distance(st_geometry(geometry_avant), st_geometry(geometry_apres))
+  } else {
+    NA
+  })
+
+avant_geom <- avant_geom %>% 
+  left_join(joint_geom %>% select(idu, hausdorff_dist), by = "idu")
+
+apres_geom <- apres_geom %>% 
+  left_join(joint_geom %>% select(idu, hausdorff_dist), by = "idu")
+
+calculate_min_hausdorff_distance <- function(avant, apres) {
+  hausdorff_dists <- numeric(nrow(avant))
+  
+  for (i in 1:nrow(avant)) {
+    avant_polygon <- avant[i, ]$geometry
+    
+    # Sélectionner les polygones de ajout_parc qui intersectent avec avant_polygon
+    intersecting_polygons <- st_intersects(avant_polygon, apres, sparse = FALSE)
+    
+    # Extraire les indices des polygones intersectants
+    intersecting_indices <- which(intersecting_polygons)
+    
+    if (length(intersecting_indices) > 0) {
+      distances <- numeric(length(intersecting_indices))
+      for (j in 1:length(intersecting_indices)) {
+        apres_polygon <- apres[intersecting_indices[j], ]$geometry
+        distances[j] <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+      }
+      # Stocker la distance minimale
+      hausdorff_dists[i] <- min(distances, na.rm = TRUE)
+    } else {
+      hausdorff_dists[i] <- NA
+    }
+  }
+  return(hausdorff_dists)
+}
+
+supp_parc <- supp_parc %>%
+  mutate(hausdorff_dist = calculate_min_hausdorff_distance(supp_parc, ajout_parc))
+
+ajout_parc <- ajout_parc %>%
+  mutate(hausdorff_dist = calculate_min_hausdorff_distance(ajout_parc, supp_parc))
+
+```
+
+```{r mapview distance}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2024)", 
+          col.regions = "purple", alpha.regions = 0.5) +
+  mapview(avant_geom, z=c("hausdorff_dist"), layer.name = "Parcelles modifiées (état 2023)", 
+          alpha.regions = 0.5) +
+  mapview(ajout_parc, z=c("hausdorff_dist"), layer.name = "Parcelles ajoutées",
+          col.regions = colorRampPalette(brewer.pal(9, "Greens")), alpha.regions = 0.5) +
+  mapview(supp_parc,  z=c("hausdorff_dist"), layer.name = "Parcelles supprimées",
+          col.regions = colorRampPalette(brewer.pal(9, "Oranges")), alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_distance_bordure_85.html")
+```
+
+
+```{r}
+system.time({
+  create_extended_borders <- function(commune, buffer_distance) {
+    buffer_positive <- st_buffer(commune, buffer_distance)
+    buffer_negative <- st_buffer(commune, 0)
+    suppressWarnings({
+      buffer_difference <- st_difference(buffer_positive, buffer_negative)
+    })
+    return(buffer_difference)
+  }
+  
+  bordure <- commune %>%
+    group_by(code_insee) %>%  
+    do(extended = create_extended_borders(., 250))
+  
+  bordure <- do.call(rbind, bordure$extended) %>%
+    select(-c(4,5,6)) %>% 
+    st_sf()
+  
+  inter_parc_24 <- parcelle_24 %>%
+    st_filter(bordure, .predicate = st_intersects)
+})
+
+
+```
+
+```{r}
+dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
+  FROM
+      com_85;
+")
+
+
+bordure_sql <- st_read(conn, query = "SELECT * FROM extended_borders;")
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+
+mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(inter_parc_24, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(inter_parc_24_sql, layer.name = "Parcelles modifiées (état 2024)", col.regions = "purple", alpha.regions = 0.5)
+
+```
+
+
+
+```{r}
+system.time({
+  
+  dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, 0)) AS geometry
+  FROM
+      com_85;
+")
+  
+  dbSendQuery(conn, "
+  CREATE INDEX idx_extended_borders_geometry ON extended_borders USING GIST(geometry);
+")
+  
+  inter_parc_24_sql <- st_read(conn, query = "
+  SELECT
+      parc_85.*
+  FROM
+      parc_85
+  JOIN
+      extended_borders
+  ON
+      ST_Intersects(parc_85.geometry, extended_borders.geometry);
+")
+  
+  dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+  
+})
+```
+
+
+```{r}
+parcelles_85<-st_read("./cadastre-85-parcelles.json")
+parcelles_85_2023 <- st_read("./cadastre-85-parcelles-2023.json")
+
+# Renseigne la geometry (Multypolygon)
+# dimension: XY fait référence à un système de coordonnées dans un espace euclidien
+# bbox: désigne les coordonnées du cadre contenant/entourant nos objets spaciaux
+# CRS: désigne le système de projection à travers son code EPSG
+
+# Problème de géomètrie invalide ??
+valid_parcelles <- st_is_valid(parcelles_45_2023)
+# Affichez le nombre de géométries invalides
+print(length(parcelles_45_2023[!valid_parcelles, ]))
+parcelles_45_2023 <- st_make_valid(parcelles_45_2023)
+
+valid_parcelles <- st_is_valid(parcelles_45)
+# Affichez le nombre de géométries invalides
+print(length(parcelles_45[!valid_parcelles, ]))
+parcelles_45 <- st_make_valid(parcelles_45)
+
+rm(valid_parcelles)
+```
+
+```{r}
+
+parcelles_45$created <- ymd(parcelles_45$created)
+parcelles_45$updated <- ymd(parcelles_45$updated)
+
+parcelles_45_2023$created <- ymd(parcelles_45_2023$created)
+parcelles_45_2023$updated <- ymd(parcelles_45_2023$updated)
+
+date_millésime <-  "2023-04-01"
+# max(parcelles_45_2023$updated)
+
+chgt <- parcelles_45 %>% 
+  filter(updated >= as.Date(date_millésime))
+
+cree <- chgt %>% 
+  filter(updated == created)
+
+evol <- chgt %>% 
+  filter(updated != created)
+
+supp <- parcelles_45_2023 %>% 
+  filter(!id %in% parcelles_45$id)
+```
+
+
+```{r}
+
+calculate_hausdorff_distance <- function(polygon1, polygon2) {
+  P <- st_coordinates(polygon1)[, 1:2]
+  Q <- st_coordinates(polygon2)[, 1:2]
+  max(hausdorff_dist(P, Q), hausdorff_dist(Q, P))
+}
+
+# Définir le seuil de distance de Hausdorff
+hausdorff_threshold <- 1  # Remplacer par le seuil désiré
+
+matching_indices <- integer()
+
+# Comparer chaque polygone de parc_com_abs_avant avec les polygones de parc_com_abs_apres
+for (i in 1:nrow(parc_com_abs_avant)) {
+  avant_polygon <- parc_com_abs_avant[i, ]$geometry
+  
+  for (j in 1:nrow(parc_com_abs_apres)) {
+    apres_polygon <- parc_com_abs_apres[j, ]$geometry
+    
+    if (is_translation(avant_polygon, apres_polygon)) {
+      matching_indices <- c(matching_indices, j)
+    }
+  }
+}
+
+# Garder uniquement les polygones correspondants dans parc_com_abs_apres
+filtered_parc_com_abs_apres <- parc_com_abs_apres[unique(matching_indices), ]
+
+matching_indices <- integer()
+
+# Comparer chaque polygone de parc_com_abs_avant avec tous les polygones de parc_com_abs_apres
+for (i in 1:nrow(parc_com_abs_avant)) {
+  avant_polygon <- parc_com_abs_avant[i, ]$geometry
+  
+  for (j in 1:nrow(parc_com_abs_apres)) {
+    apres_polygon <- parc_com_abs_apres[j, ]$geometry
+    distance <- calculate_hausdorff_distance(avant_polygon, apres_polygon)
+    
+    if (distance < hausdorff_threshold) {
+      matching_indices <- c(matching_indices, j)
+    }
+  }
+}
+
+# Garder uniquement les polygones correspondants dans parc_com_abs_apres
+filtered_parc_com_abs_apres <- parc_com_abs_apres[unique(matching_indices), ]
+
+parc_com_abs_apres_cut_add <- parc_com_abs_apres %>% 
+  filter(!idu %in% filtered_parc_com_abs_apres$idu)
+# Parcelles qui ont fait l'objet d'un redécoupage ou vétritable ajout
+
+```
+
+
+```{r}
+# Méthode au niveau de la superficie des parcelles
+
+df_sup <- full_join(inter_parc_24 %>% select(idu, contenance) %>% as.data.frame(), 
+                    inter_parc_23 %>% select(idu, contenance) %>% as.data.frame(),
+                    by = "idu", suffix = c(".df1", ".df2")) %>%
+  filter(is.na(contenance.df1) | is.na(contenance.df2) | contenance.df1 != contenance.df2) %>%
+  mutate(
+    contenance.df1 = ifelse(is.na(contenance.df1), "Manquant", contenance.df1),
+    contenance.df2 = ifelse(is.na(contenance.df2), "Manquant", contenance.df2)
+  )
+
+df_sup <- df_sup %>% 
+  mutate(typo = case_when(
+    contenance.df1 == "Manquant" ~ "Suppression",
+    contenance.df2 == "Manquant" ~ "Ajout",
+    contenance.df1 != contenance.df2 ~ "Modification"
+  ))
+
+# Problème : il arrive que des parcelles ne contiennent pas la superficie
+# A revoir car typologie fausse
+table(df_sup$typo)
+
+apres_sup <- inter_parc_24 %>% 
+  filter(idu %in% df_sup[filter(typo == "Ajout"),]$idu)
+
+avant_sup <- inter_parc_23 %>% 
+  filter(idu %in% df_sup[filter(typo == "Suppression"),]$idu)
+```
+
+
+```{r}
+plot <- ggplot() +
+  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
+  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = apres_sup, aes(fill = "Parcelles ajoutées"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = avant_sup, aes(fill = "Parcelles supprimées"), alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles ajoutées" = "lightgreen",
+                               "Parcelles supprimées" = "red")) +
+  theme_minimal() +
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes du Loiret, modifiées en 2024 au sens de la superficie", 
+       fill ="Légende",
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+plot
+```
+
+```{r}
+mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(apres_sup, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(avant_sup, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
+```
+
+
+```{r check translation}
+
+tolerance = 0.1
+
+is_translation <- function(polygon1, polygon2) {
+  coords1 <- st_coordinates(polygon1)[, 1:2]
+  coords2 <- st_coordinates(polygon2)[, 1:2]
+  
+  if (nrow(coords1) != nrow(coords2)) {
+    return(FALSE)
+  }
+  
+  translation <- coords1 - coords2
+  all(translation == translation[1, ])
+}
+
+calculate_iou <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    
+    # Calculer l'intersection
+    intersection <- st_intersection(geometry_avant, geometry_apres)
+    
+    if (length(intersection) == 0) {
+      return(0) # Si les géométries ne s'intersectent pas du tout, IoU est 0
+    }
+    
+    # Calculer l'aire de l'intersection
+    area_intersection <- st_area(intersection)
+    
+    # Calculer l'union
+    union <- st_union(geometry_avant, geometry_apres)
+    
+    # Calculer l'aire de l'union
+    area_union <- st_area(union)
+    
+    # Calculer IoU
+    iou <- area_intersection / area_union
+    
+    return(as.numeric(iou))
+  } else {
+    return(NA)
+  }
+}
+
+rotate_around_point <- function(geometry, angle, point) {
+  coords <- st_coordinates(geometry)[, 1:2]
+  point_coords <- st_coordinates(point)[1, 1:2]
+  
+  # Matrice de rotation
+  rotation_matrix <- matrix(c(cos(angle), -sin(angle), sin(angle), cos(angle)), nrow = 2)
+  
+  # Appliquer la rotation
+  rotated_coords <- t(rotation_matrix %*% t(coords - point_coords)) + point_coords
+  
+  # Reconstruire la géométrie avec les coordonnées tournées
+  rotated_geometry <- st_geometry(st_sfc(st_polygon(list(rotated_coords))), crs = st_crs(geometry))
+  
+  return(rotated_geometry)
+}
+
+
+optimize_rotation <- function(geometry1, geometry2) {
+  angles <- seq(0, 2*pi, length.out = 360)  # Tester 360 angles de rotation
+  iou_values <- sapply(angles, function(angle) {
+    rotated_geom <- rotate_around_point(geometry1, angle, st_centroid(geometry1))
+    calculate_iou(rotated_geom, geometry2)
+  })
+  best_angle <- angles[which.max(iou_values)]
+  best_iou <- max(iou_values)
+  return(as.numeric(best_iou))
+}
+
+calculate_iou_ajust <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    # Calculer l'ajustement de la géométrie_avant
+    centroid_apres <- st_centroid(geometry_apres)
+    centroid_avant <- st_centroid(geometry_avant)
+    translation_vector <- st_coordinates(centroid_apres)[1, 1:2] - st_coordinates(centroid_avant)[1, 1:2]
+    geometry_avant_ajust <- st_geometry(geometry_avant) + translation_vector
+    
+    # Calculer IoU ajusté calculate_iou(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
+    iou_ajust <- calculate_iou(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
+    
+    return(iou_ajust)
+  } else {
+    return(NA)
+  }
+}
+
+
+joint_geom <- joint_geom %>%
+  rowwise() %>%
+  mutate(
+    translation = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+      is_translation(st_geometry(geometry_avant), st_geometry(geometry_apres))
+    } else {
+      NA
+    },
+    translation_simp = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+      is_translation(st_simplify(st_geometry(geometry_avant), dTolerance = tolerance), 
+                     st_simplify(st_geometry(geometry_apres), dTolerance = tolerance))
+    } else {
+      NA
+    },
+    iou = calculate_iou(st_geometry(geometry_avant),st_geometry(geometry_apres)),
+    iou_ajust = calculate_iou_ajust(st_geometry(geometry_avant), st_geometry(geometry_apres)),
+    hausdorff_dist_simp = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+      calculate_hausdorff_distance(
+        st_simplify(st_geometry(geometry_avant), dTolerance = tolerance), 
+        st_simplify(st_geometry(geometry_apres), dTolerance = tolerance))
+    } else {
+      NA
+    },
+    hausdorff_dist_ajust = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+      calculate_hausdorff_distance(
+        st_geometry(geometry_avant) + st_coordinates(st_centroid(geometry_apres))[1, 1:2] - st_coordinates(st_centroid(geometry_avant))[1, 1:2], 
+        st_geometry(geometry_apres))
+    } else {
+      NA
+    },
+    hausdorff_dist_simp_ajust = if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+      calculate_hausdorff_distance(
+        st_geometry(st_simplify(st_geometry(geometry_avant), dTolerance = tolerance)) + st_coordinates(st_centroid(st_simplify(st_geometry(geometry_apres), dTolerance = tolerance)))[1, 1:2] - st_coordinates(st_centroid(st_simplify(st_geometry(geometry_avant), dTolerance = tolerance)))[1, 1:2], 
+        st_geometry(st_simplify(st_geometry(geometry_apres), dTolerance = tolerance)))
+    } else {
+      NA
+    },
+    ecart_simp = hausdorff_dist - hausdorff_dist_simp,
+    ecart_ajust = hausdorff_dist - hausdorff_dist_ajust
+  )
+
+sum(joint_geom$translation_simp, na.rm=TRUE)
+# 328 / 1374
+sum(joint_geom$hausdorff_dist < 15, na.rm=TRUE)
+#1056
+sum(joint_geom$hausdorff_dist_simp < 15, na.rm=TRUE)
+#1147
+sum(joint_geom$hausdorff_dist_ajust < 15, na.rm=TRUE)
+#1100
+sum(joint_geom$hausdorff_dist_simp_ajust < 15, na.rm=TRUE)
+#1194 
+
+ggplot(na.omit(tidyr::gather(joint_geom, variable, value, ecart_simp, ecart_ajust, hausdorff_dist_simp, hausdorff_dist_ajust)), aes(x = value)) +
+  geom_histogram(aes(y = ..density..), binwidth = 1, fill = "skyblue", color = "black", alpha = 0.7) +
+  facet_wrap(~ variable, scales = "free") +
+  labs(title = "Histogrammes de différentes variables", x = "Valeurs", y = "Densité") +
+  theme_minimal()
+
+avant_geom <- avant_geom %>% 
+  left_join(joint_geom %>% select(idu, iou_ajust), by = "idu")
+
+apres_geom <- apres_geom %>% 
+  left_join(joint_geom %>% select(idu, iou_ajust), by = "idu")
+```
+
+```{r filtrage parcelle changement de communes}
+unique(sort(inter_parc_23$com_abs))
+unique(sort(inter_parc_24$com_abs))
+
+parc_com_abs_apres <- ajout_parc %>% 
+  filter(!com_abs %in% inter_parc_23$com_abs)
+# Nécessaire ?
+
+parc_com_abs_apres <- parc_com_abs_apres %>%
+  mutate(idu_avant = paste0(substr(idu,1,2),
+                            com_abs, 
+                            "000", 
+                            substr(idu,9,14))
+  )
+
+parc_com_abs_avant <- supp_parc %>% 
+  filter(idu %in% parc_com_abs_apres$idu_avant)
+
+
+df_abs <- parc_com_abs_apres %>%
+  st_filter(parc_com_abs_avant, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées mise à part le nom de commune
+
+parc_com_abs_apres <- parc_com_abs_apres %>% 
+  filter(!idu %in% df_abs$idu)
+
+parc_com_abs_avant <- parc_com_abs_avant %>% 
+  filter(!idu %in% df_abs$idu_avant)
+
+# Attention cas de parcelles crées (n'existant pas avant) mais ayant le numéro de 
+# com_abs
+```

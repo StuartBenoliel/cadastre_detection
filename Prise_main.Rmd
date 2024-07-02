@@ -1,0 +1,241 @@
+---
+title: "Prise_en_main"
+output: html_document
+date: "2024-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+## Prise en maain des données
+
+```{r package message=FALSE, warning=FALSE}
+library(sf)
+library(dplyr)
+library(lubridate)
+library(mapview)
+library(DBI)
+library(ggplot2)
+library(purrr)
+library(webshot)
+library(pracma)
+library(RColorBrewer)
+# webshot::install_phantomjs()
+source(file = "connexion_db.R")
+conn<-connecter()
+DBI::dbListTables(conn)
+```
+
+```{r prise en main translation}
+is_translation <- function(polygon1, polygon2) {
+  coords1 <- st_coordinates(polygon1)[, 1:2]
+  coords2 <- st_coordinates(polygon2)[, 1:2]
+  
+  if (nrow(coords1) != nrow(coords2)) {
+    return(FALSE)
+  }
+  
+  translation <- coords1 - coords2
+  all(translation == translation[1, ])
+}
+
+# Deux polygones visiblement en translation
+P <- apres_geom[531,]$geometry
+Q <- avant_geom[504,]$geometry
+
+# 531 (P) 504 (Q)
+
+st_area(st_geometry(P))
+st_area(st_geometry(Q))
+# Surfaces différentes
+
+ggplot() +
+  geom_sf(data = st_as_sf(P), fill = "blue", color = "blue") +
+  geom_sf(data = st_as_sf(Q), fill = "red", color = "red") +
+  theme_minimal() +
+  labs(title = "Comparaison des polygones P et Q",
+       subtitle = "Polygone P en bleu et polygone Q en rouge")
+
+is_translation(P, Q)
+hausdorff_dist(st_coordinates(P)[, 1:2], 
+               st_coordinates(Q)[, 1:2])
+
+
+# Choisir un point de référence dans P et Q 
+point_ref_P <- st_coordinates(P)[1, 1:2]
+point_ref_Q <- st_coordinates(Q)[1, 1:2]
+# Probleme du choix : ils ne sont pas forcement dans le bon ordre...
+
+translation <- point_ref_Q - point_ref_P
+
+P_adjusted <- st_geometry(P) + translation
+
+hausdorff_dist(st_coordinates(P_adjusted)[, 1:2], 
+               st_coordinates(Q)[, 1:2])
+# Non invariant par rapport à la translation
+
+ggplot() +
+  geom_sf(data = st_as_sf(st_set_crs(P_adjusted, 2154)), fill = "blue", color = "blue") +
+  geom_sf(data = st_as_sf(Q), fill = "red", color = "red") +
+  theme_minimal() +
+  labs(title = "Comparaison des polygones P ajusté et Q",
+       subtitle = "Polygone P ajusté en bleu et polygone Q en rouge")
+
+centroid_P <- st_centroid(P)
+centroid_Q <- st_centroid(Q)
+
+translation <- st_coordinates(centroid_Q)[1, 1:2] - st_coordinates(centroid_P)[1, 1:2]
+
+P_adjusted <- st_geometry(P) + translation
+
+hausdorff_dist(st_coordinates(P_adjusted)[, 1:2], 
+               st_coordinates(Q)[, 1:2])
+
+map <- mapview(st_set_crs(P, 2154), col.regions = "green", layer.name = "Polygone P") +
+  mapview(st_set_crs(P_adjusted, 2154), col.regions = "lightgreen", layer.name = "Polygone P ajusté centroide") +
+  mapview(st_set_crs(Q, 2154), col.regions = "red", layer.name = "Q") +
+  mapview(st_set_crs(centroid_P, 2154), col.regions = "blue", layer.name = "Centroid P") +
+  mapview(st_set_crs(centroid_Q, 2154), col.regions = "black", layer.name = "Centroid Q")
+
+mapshot(map, url = "cas_translation.html")
+```
+
+```{r prise en main rotation}
+# Deux polygones visiblement en rotation
+P <- apres_geom %>%
+  filter(idu == "852000000C0758") %>%
+  pull(geometry)
+
+Q <- avant_geom %>%
+  filter(idu == "852000000C0758") %>%
+  pull(geometry)
+
+st_area(st_geometry(P))
+st_area(st_geometry(Q))
+# Surfaces différentes
+
+ggplot() +
+  geom_sf(data = st_as_sf(P), fill = "blue", color = "blue") +
+  geom_sf(data = st_as_sf(Q), fill = "red", color = "red") +
+  theme_minimal() +
+  labs(title = "Comparaison des polygones P et Q",
+       subtitle = "Polygone P en bleu et polygone Q en rouge")
+
+hausdorff_dist(st_coordinates(P)[, 1:2], 
+               st_coordinates(Q)[, 1:2])
+
+centroid_P <- st_centroid(P)
+centroid_Q <- st_centroid(Q)
+
+translation <- st_coordinates(centroid_Q)[1, 1:2] - st_coordinates(centroid_P)[1, 1:2]
+
+P_adjusted <- st_geometry(P) + translation
+
+hausdorff_dist(st_coordinates(P_adjusted)[, 1:2], 
+               st_coordinates(Q)[, 1:2])
+
+rotation = function(a){
+  r = a * pi / 180 #degrées en radians
+  matrix(c(cos(r), sin(r), -sin(r), cos(r)), nrow = 2, ncol = 2)
+} 
+
+optimize_rotation <- function(geometry1, geometry2) {
+  angles <- seq(0, 360, by = 1)
+  iou_values <- sapply(angles, function(angle) {
+    rotated_geom <-  st_set_crs((geometry1 - st_centroid(geometry1)) * rotation(angle) + st_centroid(geometry1), 2154)
+    calculate_iou(rotated_geom, geometry2)
+  })
+  best_angle <- angles[which.max(iou_values)]
+  best_iou <- max(iou_values)
+  return(best_angle)
+}
+P_rotated <-  st_set_crs((P_adjusted - st_centroid(P_adjusted)) * rotation(optimize_rotation(P_adjusted,Q)) + st_centroid(P_adjusted), 2154)
+
+map <- mapview(st_set_crs(P, 2154), col.regions = "green", layer.name = "Polygone P") +
+  mapview(st_set_crs(P_adjusted, 2154), col.regions = "#7FFFD4", layer.name = "Polygone P translaté") +
+  mapview(st_set_crs(P_rotated, 2154), col.regions = "lightgreen", layer.name = "Polygone P translaté en rotation") +
+  mapview(st_set_crs(Q, 2154), col.regions = "red", layer.name = "Q") +
+  mapview(st_set_crs(centroid_P, 2154), col.regions = "blue", layer.name = "Centroid P") +
+  mapview(st_set_crs(centroid_Q, 2154), col.regions = "black", layer.name = "Centroid Q")
+
+mapshot(map, url = "cas_rotation.html")
+
+map
+```
+
+```{r prise en main simplification des polygones}
+tolerance = 0.1
+
+P_simplified <- st_simplify(P, dTolerance = tolerance)
+Q_simplified <- st_simplify(Q, dTolerance = tolerance)
+
+st_area(st_geometry(P_simplified))
+st_area(st_geometry(Q_simplified))
+
+is_translation(P_simplified, Q_simplified)
+hausdorff_dist(st_coordinates(P_simplified)[, 1:2], 
+               st_coordinates(Q_simplified)[, 1:2])
+
+
+# Choisir un point de référence dans P et Q 
+point_ref_P <- st_coordinates(P_simplified)[1, 1:2]
+point_ref_Q <- st_coordinates(Q_simplified)[1, 1:2]
+# Probleme du choix : ils ne sont pas forcement dans le bon ordre...
+
+translation <- point_ref_Q - point_ref_P
+
+P_adjusted <- st_geometry(P_simplified) + translation
+
+hausdorff_dist(st_coordinates(P_adjusted)[, 1:2], 
+               st_coordinates(Q_simplified)[, 1:2])
+# Non invariant par rapport à la translation
+
+centroid_P <- st_centroid(P_simplified)
+centroid_Q <- st_centroid(Q_simplified)
+
+translation <- st_coordinates(centroid_Q)[1, 1:2] - st_coordinates(centroid_P)[1, 1:2]
+
+P_adjusted <- st_geometry(P_simplified) + translation
+
+hausdorff_dist(st_coordinates(P_adjusted)[, 1:2], 
+               st_coordinates(Q_simplified)[, 1:2])
+
+```
+
+
+```{r mapview cas simpl nécessaire}
+P <- joint_geom[6,]$geometry_avant
+Q <- joint_geom[6,]$geometry_apres
+
+translation <- st_coordinates(Q)[1, 1:2] - st_coordinates(P)[1, 1:2]
+P_adjusted <- st_geometry(P) + translation
+P_simplified <- st_simplify(P, dTolerance = tolerance)
+Q_simplified <- st_simplify(Q, dTolerance = tolerance)
+
+calculate_hausdorff_distance(
+        P, 
+        Q)
+
+calculate_hausdorff_distance(
+        P_adjusted, 
+        Q)
+
+calculate_hausdorff_distance(
+        P_simplified, 
+        Q_simplified)
+
+# Exactement le même visuellement
+
+
+```
+
+
+```{r}
+parc_com_abs_apres[12,]
+parc_com_abs_avant[1,]
+
+mapview(parc_com_abs_apres[12,], layer.name = "Parcelles après (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parc_com_abs_avant[1,], layer.name = "Parcelles avant (état 2023)", col.regions = "pink", alpha.regions = 0.5)
+```
