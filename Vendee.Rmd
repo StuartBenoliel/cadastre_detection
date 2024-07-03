@@ -23,6 +23,7 @@ library(webshot)
 library(pracma)
 library(RColorBrewer)
 library(tidyr)
+library(stringr)
 # webshot::install_phantomjs()
 source(file = "connexion_db.R")
 conn<-connecter()
@@ -110,10 +111,12 @@ df_geom <- inter_parc_24 %>%
 
 apres_geom <- inter_parc_24 %>% 
   filter(!idu %in% df_geom$idu & !idu %in% ajout_parc$idu) %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
 
 avant_geom <- inter_parc_23 %>% 
   filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
 
 identical_columns <- c()
@@ -199,7 +202,7 @@ mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 calculate_iou <- function(geometry_avant, geometry_apres) {
   if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
     
-    intersection <- st_intersection(st_setgeometry_avant, geometry_apres)
+    intersection <- st_intersection(geometry_avant, geometry_apres)
     
     if (length(intersection) == 0) {
       return(0) # Si les géométries ne s'intersectent pas du tout, IoU est 0
@@ -274,10 +277,12 @@ df_geom_s <- supp_parc %>%
 
 ajout_parc <- ajout_parc %>% 
   filter(!idu %in% df_geom_a$idu) %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
 
 supp_parc <- supp_parc %>% 
   filter(!idu %in% df_geom_s$idu) %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
 ```
 
@@ -285,7 +290,7 @@ supp_parc <- supp_parc %>%
 calculate_iou_for_polygon <- function(polygon, ajout_parc) {
   
   intersecting_geoms <- ajout_parc %>%
-    st_filter(polygon, .predicate = st_intersects)
+    st_filter(st_buffer(polygon, -1), .predicate = st_intersects)
   
   # Récupérer les noms des polygones participants
   names_participants <- intersecting_geoms$idu
@@ -320,19 +325,116 @@ ajout_parc <- ajout_parc %>%
 
 fusion <- ajout_parc %>% 
   filter(iou > 0.99 & nchar(participants) != 14)
+# 32
+# 42 
 
 subdiv <- supp_parc %>% 
   filter(iou > 0.99 & nchar(participants) != 14)
+# 225
+# 498
 
 ajout_parc <- ajout_parc %>%
   filter(!idu %in% unlist(str_split(subdiv$participants, ",\\s*"))) %>% 
   filter(!idu %in% fusion$idu & iou < 0.99)
 
+# 1039
+# 238
 supp_parc <- supp_parc %>%
   filter(!idu %in% unlist(str_split(fusion$participants, ",\\s*"))) %>% 
   filter(!idu %in% subdiv$idu & iou < 0.99)
 
+# 590
+# 244
 ```
+
+```{r découpage compliquée}
+
+calculate_iou_multi_polygon <- function(polygon, supp_parc, ajout_parc) {
+  
+  n <- 0
+  names_participants_avant <- NULL
+  repeat {
+    # Trouver les polygones dans supp_parc qui intersectent avec le polygon actuel
+    intersecting_geoms_avant <- supp_parc %>%
+      st_filter(polygon, .predicate = st_intersects)
+    
+    if (nrow(intersecting_geoms_avant) == n) break
+    
+    # Mettre à jour le polygon en faisant l'union des géométries trouvées
+    polygon <- st_union(intersecting_geoms_avant)
+    names_participants_avant <- intersecting_geoms_avant$idu
+    n <- nrow(intersecting_geoms_avant)
+  }
+  
+  intersecting_geoms_apres <- ajout_parc %>%
+    st_filter(st_buffer(polygon, -1), .predicate = st_intersects)
+  
+  # Récupérer les noms des polygones participants
+  names_participants_apres <- intersecting_geoms_apres$idu
+  if (isempty(names_participants_apres)) {
+    return(list(iou = NA, participants_avant = NA, participants_apres = NA))
+  }
+  
+  # Faire l'union des géométries
+  combined_geom_apres <- st_union(intersecting_geoms_apres)
+  
+  # Calculer l'IOU
+  iou_value <- calculate_iou(combined_geom_apres, polygon)
+  
+  list(iou = iou_value, participants_avant = paste(names_participants_avant, collapse = ", "),
+       participants_apres = paste(names_participants_apres, collapse = ", "))
+}
+
+supp_parc <- supp_parc %>%
+  rowwise() %>%
+  mutate(result = list(calculate_iou_multi_polygon(geometry, supp_parc, ajout_parc))) %>%
+  mutate(iou_multi = result$iou,
+         participants_avant = result$participants_avant,
+         participants_apres= result$participants_apres) %>%
+  ungroup() %>%
+  select(-result)
+
+multi_subdiv <- supp_parc %>% 
+  filter(iou_multi > 0.99 & nchar(participants_avant) != nchar(participants_apres))
+
+redef_contours <- supp_parc %>% 
+  filter((iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres)) | nchar(participants_avant) == 14 & nchar(participants_apres) == 14)
+
+ajout_parc <- ajout_parc %>%
+  filter(!idu %in% unlist(str_split(multi_subdiv$participants_apres, ",\\s*"))) %>% 
+  filter(!idu %in% unlist(str_split(redef_contours$participants_apres, ",\\s*")))
+
+supp_parc <- supp_parc %>%
+  filter(!idu %in% unlist(str_split(multi_subdiv$participants_avant, ",\\s*"))) %>% 
+  filter(!idu %in% unlist(str_split(redef_contours$participants_avant, ",\\s*")))
+
+```
+
+```{r changement forme + ou découpage compliquée}
+supp_parc <- supp_parc %>%
+  rowwise() %>%
+  mutate(result = list(calculate_iou_multi_polygon(geometry, supp_parc, ajout_parc))) %>%
+  mutate(iou_multi = result$iou,
+         participants_avant = result$participants_avant,
+         participants_apres= result$participants_apres) %>%
+  ungroup() %>%
+  select(-result)
+
+# Cas d'une parcelle spécial 850040000F0149
+redef_contours <- supp_parc %>% 
+  filter(nchar(participants_avant) == 14 & nchar(participants_apres) == 14) %>% 
+  rbind(redef_contours)
+
+redef_contours <- supp_parc %>% 
+  filter(iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres)) %>% 
+  rbind(redef_contours)
+  
+  
+decoupage_et_redef_contours <- supp_parc %>% 
+  filter(iou_multi > 0.95 & )
+
+```
+
 
 ```{r mapview iou}
 
@@ -363,12 +465,23 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
           homebutton = F) +
   mapview(subdiv,  layer.name = "Parcelles avant subdivision (état 2023)", col.regions = "red", alpha.regions = 0.5,
           homebutton = F) +
+  mapview(ajout_parc_tot %>%
+            filter(idu %in% unlist(str_split(multi_subdiv$participants_apres, ",\\s*"))),  
+          layer.name = "Parcelles après multi-subdivision (état 2024)", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(multi_subdiv,  layer.name = "Parcelles avant multi-subdivision (état 2023)", col.regions = "red", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(ajout_parc_tot %>%
+            filter(idu %in% unlist(str_split(redef_contours$participants_apres, ",\\s*"))),  
+          layer.name = "Parcelles après évolution forme (état 2024)", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(redef_contours,  layer.name = "Parcelles avant évolution forme (état 2023)", col.regions = "purple", 
+          alpha.regions = 0.5,homebutton = F) +
   mapview(ajout_parc, z=c("iou"), layer.name = "Parcelles restantes (état 2024)", alpha.regions = 0.5,
           homebutton = F) +
   mapview(supp_parc, z=c("iou"), layer.name = "Parcelles restantes (état 2023)", alpha.regions = 0.5,
           homebutton = F)
 
-mapshot(map, url = "parcelles_iou_bordure_85.html")
+mapshot(map, url = "parcelles_iou_inside_bordure_85.html")
 ```
-
 

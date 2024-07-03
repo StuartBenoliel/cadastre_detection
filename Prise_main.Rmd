@@ -296,6 +296,8 @@ results <- map(polygons, ~ calculate_iou_for_polygon(.x, ajout_parc))
 ```
 
 
+
+
 ```{r focus parcelle changement de communes}
 
 parc_com_abs_apres <- ajout_parc %>% 
