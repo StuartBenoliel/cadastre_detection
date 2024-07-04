@@ -129,7 +129,7 @@ hausdorff_dist(st_coordinates(P)[, 1:2],
 centroid_P <- st_centroid(P)
 centroid_Q <- st_centroid(Q)
 
-translation <- st_coordinates(centroid_Q)[1, 1:2] - st_coordinates(centroid_P)[1, 1:2]
+translation <- st_coordinates(st_centroid(Q))[1, 1:2] - st_coordinates(st_centroid(P))[1, 1:2]
 
 P_adjusted <- st_geometry(P) + translation
 
