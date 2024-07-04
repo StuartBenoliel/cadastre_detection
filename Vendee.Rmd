@@ -7,8 +7,6 @@ date: "2024-06-18"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 rm(list = ls())
-install.packages("webshot")
-install.packages("pracma")
 ```
 
 ## Prise en maain des données
@@ -87,7 +85,6 @@ supp_parc <- supp_parc_tot %>%
 
 ```
 
-
 ```{r ggplot bordure}
 plot <- ggplot() +
   geom_sf(data = commune, aes(fill = "Communes"), color = "black", alpha = 0.5) +  
@@ -103,15 +100,22 @@ plot <- ggplot() +
 # plot
 ```
 
-```{r focus parcelle changement de communes}
-map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(inter_parc_24, layer.name = "Parcelles (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(inter_parc_23, layer.name = "Parcelles (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "lightgreen", alpha.regions = 0.5)
+```{r focus parcelle la tardiere}
 
-mapshot(map, url = "parcelles_tot.html")
+map <- mapview(commune %>% 
+                 filter(code_insee == "85289"), 
+               layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure %>% 
+            filter(code_insee == "85289"), 
+          layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(parcelle_24 %>% 
+            filter(code_com == "289"), 
+          layer.name = "Parcelles (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parcelle_23 %>% 
+            filter(code_com %in% c("289", "053", "037")), 
+          layer.name = "Parcelles (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5)
+
+# mapshot(map, url = "parcelles_tardiere.html")
 ```
 
 ```{r methode geometry base}
@@ -278,7 +282,7 @@ apres_geom <- apres_geom %>%
   left_join(modif_geom %>% select(idu, iou_ajust), by = "idu")
 ```
 
-```{r focus parcelle changement de communes}
+```{r focus parcelle fusion}
 
 ajout_parc <- ajout_parc %>% 
   st_filter(bordure, .predicate = st_within) %>% 
@@ -299,29 +303,19 @@ parc_com_abs_apres <- ajout_parc %>%
 parc_com_abs_avant <- supp_parc %>% 
   filter(idu %in% parc_com_abs_apres$idu_avant)
 
-df_abs <- parc_com_abs_apres %>%
-  st_filter(parc_com_abs_avant, .predicate = st_equals)
-# Parcelles n'ayant pas été modifiées mise à part le nom de commune
-
 parc_com_abs_apres <- parc_com_abs_apres %>% 
-  filter(!idu %in% df_abs$idu)
-
-parc_com_abs_avant <- parc_com_abs_avant %>% 
-  filter(!idu %in% df_abs$idu_avant)
-
-# Attention cas de parcelles crées (n'existant pas avant) mais ayant le numéro de 
-# com_abs
+  filter(idu_avant %in% parc_com_abs_avant$idu)
+# Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
 
 ```{r focus parcelle changement de communes}
 map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(parc_com_abs_apres, layer.name = "Parcelles abs (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parc_com_abs_apres_bis, layer.name = "Parcelles abs_bis (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
   mapview(parc_com_abs_avant, layer.name = "Parcelles abs (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "lightgreen", alpha.regions = 0.5)
+  mapview(df_abs, layer.name = "Parcelles df_abs (état 2024)", col.regions = "purple", alpha.regions = 0.5)
 
-mapshot(map, url = "parcelles_abs.html")
+# mapshot(map, url = "parcelles_abs.html")
 ```
 
 ```{r geometry 2}
@@ -336,12 +330,10 @@ df_geom_s <- supp_parc %>%
 
 ajout_parc <- ajout_parc %>% 
   filter(!idu %in% df_geom_a$idu) %>% 
-  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
 
 supp_parc <- supp_parc %>% 
   filter(!idu %in% df_geom_s$idu) %>% 
-  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
 ```
 
@@ -394,13 +386,13 @@ subdiv <- supp_parc %>%
 
 ajout_parc <- ajout_parc %>%
   filter(!idu %in% unlist(str_split(subdiv$participants, ",\\s*"))) %>% 
-  filter(!idu %in% fusion$idu & iou < 0.99)
+  filter(!idu %in% fusion$idu & iou < 0.99 | is.na(iou))
 
 # 1039
 # 238
 supp_parc <- supp_parc %>%
   filter(!idu %in% unlist(str_split(fusion$participants, ",\\s*"))) %>% 
-  filter(!idu %in% subdiv$idu & iou < 0.99)
+  filter(!idu %in% subdiv$idu & iou < 0.99 | is.na(iou))
 
 # 590
 # 244
@@ -488,6 +480,9 @@ redef_contours <- supp_parc %>%
   filter(iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres)) %>% 
   rbind(redef_contours)
 
+supp_parc <- supp_parc %>%
+  filter(!idu %in% unlist(str_split(redef_contours$participants_avant, ",\\s*")))
+
 
 #decoupage_et_redef_contours <- supp_parc %>% 
 #  filter(iou_multi > 0.95 )
@@ -535,7 +530,11 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
           layer.name = "Parcelles après évolution forme (état 2024)", alpha.regions = 0.5,
           homebutton = F) +
   mapview(redef_contours,  layer.name = "Parcelles avant évolution forme (état 2023)", col.regions = "purple", 
-          alpha.regions = 0.5,homebutton = F) +
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(parc_com_abs_apres,  layer.name = "Parcelles après fusion de communes (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(parc_com_abs_avant,  layer.name = "Parcelles avant fusion de communes (état 2023)", col.regions = "purple", 
+          alpha.regions = 0.5, homebutton = F) +
   mapview(ajout_parc, z=c("iou"), layer.name = "Parcelles restantes (état 2024)", alpha.regions = 0.5,
           homebutton = F) +
   mapview(supp_parc, z=c("iou"), layer.name = "Parcelles restantes (état 2023)", alpha.regions = 0.5,
