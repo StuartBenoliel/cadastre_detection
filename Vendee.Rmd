@@ -7,6 +7,8 @@ date: "2024-06-18"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 rm(list = ls())
+install.packages("webshot")
+install.packages("pracma")
 ```
 
 ## Prise en maain des données
@@ -99,6 +101,17 @@ plot <- ggplot() +
 
 # ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
+```
+
+```{r focus parcelle changement de communes}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(inter_parc_24, layer.name = "Parcelles (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(inter_parc_23, layer.name = "Parcelles (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "lightgreen", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_tot.html")
 ```
 
 ```{r methode geometry base}
@@ -243,10 +256,10 @@ quantiles <- quantile(modif_geom$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na
 
 plot <- ggplot(na.omit(modif_geom), aes(x = iou_ajust)) +
   geom_histogram(aes(y = after_stat(density)), binwidth = 0.005, fill = "skyblue", color = "black", alpha = 0.7) +
-  geom_segment(x = quantiles[1], xend = quantiles[1], y = 0, yend = 9, color = "blue", linetype = "dashed", size = 0.6) +
-  geom_segment(x = quantiles[2], xend = quantiles[2], y = 0, yend = 12, color = "blue", linetype = "dashed", size = 0.6) +
-  geom_segment(x = quantiles[3], xend = quantiles[3], y = 0, yend = 15, color = "blue", linetype = "dashed", size = 0.6) +
-  geom_segment(x = quantiles[4], xend = quantiles[4], y = 0, yend = 19, color = "blue", linetype = "dashed", size = 0.6) +
+  geom_segment(x = quantiles[1], xend = quantiles[1], y = 0, yend = 9, color = "blue", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[2], xend = quantiles[2], y = 0, yend = 12, color = "blue", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[3], xend = quantiles[3], y = 0, yend = 15, color = "blue", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[4], xend = quantiles[4], y = 0, yend = 19, color = "blue", linetype = "dashed", linewidth = 0.6) +
   annotate("text", x = quantiles[1], y = 10, label = paste0("1% Quantile: ", round(quantiles[1], 2)), color = "blue", vjust = -1.5) +
   annotate("text", x = quantiles[2], y = 13, label = paste0("3% Quantile: ", round(quantiles[2], 2)), color = "blue", vjust = -1.5) +
   annotate("text", x = quantiles[3], y = 16, label = paste0("5% Quantile: ", round(quantiles[3], 2)), color = "blue", vjust = -1.5) +
@@ -263,6 +276,52 @@ avant_geom <- avant_geom %>%
 
 apres_geom <- apres_geom %>% 
   left_join(modif_geom %>% select(idu, iou_ajust), by = "idu")
+```
+
+```{r focus parcelle changement de communes}
+
+ajout_parc <- ajout_parc %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
+  arrange(nom_com)
+
+supp_parc <- supp_parc %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
+  arrange(nom_com)
+
+parc_com_abs_apres <- ajout_parc %>% 
+  filter(com_abs != "000") %>%
+  mutate(idu_avant = paste0(substr(idu,1,2),
+                            com_abs, 
+                            "000", 
+                            substr(idu,9,14))
+  )
+
+parc_com_abs_avant <- supp_parc %>% 
+  filter(idu %in% parc_com_abs_apres$idu_avant)
+
+df_abs <- parc_com_abs_apres %>%
+  st_filter(parc_com_abs_avant, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées mise à part le nom de commune
+
+parc_com_abs_apres <- parc_com_abs_apres %>% 
+  filter(!idu %in% df_abs$idu)
+
+parc_com_abs_avant <- parc_com_abs_avant %>% 
+  filter(!idu %in% df_abs$idu_avant)
+
+# Attention cas de parcelles crées (n'existant pas avant) mais ayant le numéro de 
+# com_abs
+```
+
+```{r focus parcelle changement de communes}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(parc_com_abs_apres, layer.name = "Parcelles abs (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parc_com_abs_avant, layer.name = "Parcelles abs (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "lightgreen", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles_abs.html")
 ```
 
 ```{r geometry 2}
@@ -428,10 +487,10 @@ redef_contours <- supp_parc %>%
 redef_contours <- supp_parc %>% 
   filter(iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres)) %>% 
   rbind(redef_contours)
-  
-  
-decoupage_et_redef_contours <- supp_parc %>% 
-  filter(iou_multi > 0.95 & )
+
+
+#decoupage_et_redef_contours <- supp_parc %>% 
+#  filter(iou_multi > 0.95 )
 
 ```
 
