@@ -1,0 +1,444 @@
+---
+title: "Prise_en_main"
+output: html_document
+date: "2024-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+## Prise en maain des données
+
+```{r package message=FALSE, warning=FALSE}
+library(sf)
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r iou}
+calculate_iou <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    
+    intersection <- st_intersection(geometry_avant, geometry_apres)
+    
+    if (length(intersection) == 0) {
+      return(0) # Si les géométries ne s'intersectent pas du tout, IoU est 0
+    }
+    
+    area_intersection <- st_area(intersection)
+    union <- st_union(geometry_avant, geometry_apres)
+    area_union <- st_area(union)
+    
+    return(as.numeric(area_intersection / area_union))
+  } else {
+    return(NA)
+  }
+}
+
+calculate_iou_ajust <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    # Calculer l'ajustement de la géométrie_avant
+    centroid_apres <- st_centroid(geometry_apres)
+    centroid_avant <- st_centroid(geometry_avant)
+    translation_vector <- st_coordinates(centroid_apres)[1, 1:2] - st_coordinates(centroid_avant)[1, 1:2]
+    geometry_avant_ajust <- st_geometry(geometry_avant) + translation_vector
+    iou_ajust <- calculate_iou(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
+    
+    return(iou_ajust)
+  } else {
+    return(NA)
+  }
+}
+```
+
+
+```{r forme}
+create_circle <- function(center, radius, n_points = 100) {
+  angles <- seq(0, 2 * pi, length.out = n_points)
+  circle_points <- cbind(center[1] + radius * cos(angles),
+                         center[2] + radius * sin(angles))
+  # Assurez-vous que le polygone est fermé en répétant le premier point à la fin
+  circle_points <- rbind(circle_points, circle_points[1,])
+  circle <- st_polygon(list(circle_points))
+  return(circle)
+}
+
+create_square <- function(center, side_length) {
+  half_side <- side_length / 2
+  square <- st_polygon(list(rbind(c(center[1] - half_side, center[2] - half_side),
+                                  c(center[1] + half_side, center[2] - half_side),
+                                  c(center[1] + half_side, center[2] + half_side),
+                                  c(center[1] - half_side, center[2] + half_side),
+                                  c(center[1] - half_side, center[2] - half_side))))
+  return(square)
+}
+
+create_square <- function(center, side_length) {
+  half_side <- side_length / 2
+  square <- st_polygon(list(rbind(c(center[1] - half_side, center[2] - half_side),
+                                  c(center[1] + half_side, center[2] - half_side),
+                                  c(center[1] + half_side, center[2] + half_side),
+                                  c(center[1] - half_side, center[2] + half_side),
+                                  c(center[1] - half_side, center[2] - half_side))))
+  return(square)
+}
+
+create_rectangle <- function(center, width, height) {
+  half_width <- width / 2
+  half_height <- height / 2
+  rectangle <- st_polygon(list(rbind(c(center[1] - half_width, center[2] - half_height),
+                                     c(center[1] + half_width, center[2] - half_height),
+                                     c(center[1] + half_width, center[2] + half_height),
+                                     c(center[1] - half_width, center[2] + half_height),
+                                     c(center[1] - half_width, center[2] - half_height))))
+  return(rectangle)
+}
+
+create_diamond <- function(center, width, height) {
+  half_width <- width / 2
+  half_height <- height / 2
+  diamond <- st_polygon(list(rbind(c(center[1], center[2] - half_height),
+                                   c(center[1] + half_width, center[2]),
+                                   c(center[1], center[2] + half_height),
+                                   c(center[1] - half_width, center[2]),
+                                   c(center[1], center[2] - half_height))))
+  return(diamond)
+}
+
+```
+
+```{r cas translation N}
+
+# Définir les centres pour espacer les formes
+centers_1 <- list(
+  circle_center = c(0, 0),
+  square_center = c(3, 0),
+  rectangle_center = c(6, 0),
+  diamond_center = c(9, 0),
+  L_b_center = c(12, 0),
+  L_h_center = c(13, 1.5)
+)
+
+centers_2 <- list(
+  circle_center = c(0, 0.1),
+  square_center = c(3, 0.1),
+  rectangle_center = c(6, 0.1),
+  diamond_center = c(9, 0.1),
+  L_b_center = c(12, 0.1),
+  L_h_center = c(13, 1.6)
+)
+
+# Créer les formes avec les centres espacés
+circle_1 <- create_circle(centers_1$circle_center, radius = 1)
+square_1 <- create_square(centers_1$square_center, side_length = 2)
+rectangle_1 <- create_rectangle(centers_1$rectangle_center, width = 2, height = 4)
+diamond_1 <- create_diamond(centers_1$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_1$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_1$L_h_center, width = 3, height = 0.5)
+
+L_1 <- st_union(L_b, L_h)
+
+geometries <- st_sfc(circle_1, square_1, rectangle_1, diamond_1, L_1, crs = 4326)
+geometries_sf_1 <- st_sf(geometry = geometries)
+
+circle_2 <- create_circle(centers_2$circle_center, radius = 1)
+square_2 <- create_square(centers_2$square_center, side_length = 2)
+rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
+diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
+
+L_2 <- st_union(L_b, L_h)
+
+geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
+geometries_sf_2 <- st_sf(geometry = geometries)
+
+iou <- list(
+  circle = calculate_iou(circle_1, circle_2),
+  square = calculate_iou(square_1, square_2),
+  rectangle = calculate_iou(rectangle_1, rectangle_2),
+  diamond = calculate_iou(rectangle_1, rectangle_2),
+  L = calculate_iou(L_1, L_2)
+)
+
+# Affichage avec ggplot2
+plot1 <- ggplot() +
+  geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
+  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha = 0.5) +
+  theme_minimal() +
+  ggtitle("Translation centre de 0.1 unité N") +
+  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
+  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
+  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
+  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+plot1
+
+```
+
+
+```{r cas translation intersection N}
+
+# Définir les centres pour espacer les formes
+centers_2 <- list(
+  circle_center = c(0, 0.1),
+  square_center = c(3, 0.1),
+  rectangle_center = c(6, 0.1),
+  diamond_center = c(9, 0.1),
+  L_b_center = c(12, 0.1),
+  L_h_center = c(13, 1.6)
+)
+
+circle_2 <- create_circle(centers_2$circle_center, radius = 1)
+square_2 <- create_square(centers_2$square_center, side_length = 2)
+rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
+diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
+
+L_2 <- st_union(L_b, L_h)
+
+
+circle_2 <- st_intersection(circle_1, circle_2)
+square_2 <- st_intersection(square_1, square_2)
+rectangle_2 <- st_intersection(rectangle_1, rectangle_2)
+diamond_2 <- st_intersection(diamond_1, diamond_2)
+L_2 <- st_intersection(L_1, L_2)
+
+geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
+geometries_sf_2 <- st_sf(geometry = geometries)
+
+iou <- list(
+  circle = calculate_iou(circle_1, circle_2),
+  square = calculate_iou(square_1, square_2),
+  rectangle = calculate_iou(rectangle_1, rectangle_2),
+  diamond = calculate_iou(rectangle_1, rectangle_2),
+  L = calculate_iou(L_1, L_2)
+)
+
+# Affichage avec ggplot2
+plot2 <- ggplot() +
+  geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
+  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  theme_minimal() +
+  ggtitle("Translation centre de 0.1 unité N + Intersection") +
+  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
+  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
+  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
+  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+```
+
+```{r cas translation E}
+
+# Définir les centres pour espacer les formes
+centers_2 <- list(
+  circle_center = c(0.1, 0),
+  square_center = c(3.1, 0),
+  rectangle_center = c(6.1, 0),
+  diamond_center = c(9.1, 0),
+  L_b_center = c(12.1, 0),
+  L_h_center = c(13.1, 1.5)
+)
+
+circle_2 <- create_circle(centers_2$circle_center, radius = 1)
+square_2 <- create_square(centers_2$square_center, side_length = 2)
+rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
+diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
+
+L_2 <- st_union(L_b, L_h)
+
+geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
+geometries_sf_2 <- st_sf(geometry = geometries)
+
+iou <- list(
+  circle = calculate_iou(circle_1, circle_2),
+  square = calculate_iou(square_1, square_2),
+  rectangle = calculate_iou(rectangle_1, rectangle_2),
+  diamond = calculate_iou(rectangle_1, rectangle_2),
+  L = calculate_iou(L_1, L_2)
+)
+
+# Affichage avec ggplot2
+plot3 <- ggplot() +
+  geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
+  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  theme_minimal() +
+  ggtitle("Translation centre de 0.1 unité E") +
+  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
+  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
+  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
+  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+```
+
+
+```{r cas translation intersection E}
+
+# Définir les centres pour espacer les formes
+centers_2 <- list(
+  circle_center = c(0.1, 0),
+  square_center = c(3.1, 0),
+  rectangle_center = c(6.1, 0),
+  diamond_center = c(9.1, 0),
+  L_b_center = c(12.1, 0),
+  L_h_center = c(13.1, 1.5)
+)
+
+circle_2 <- create_circle(centers_2$circle_center, radius = 1)
+square_2 <- create_square(centers_2$square_center, side_length = 2)
+rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
+diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
+
+L_2 <- st_union(L_b, L_h)
+
+circle_2 <- st_intersection(circle_1, circle_2)
+square_2 <- st_intersection(square_1, square_2)
+rectangle_2 <- st_intersection(rectangle_1, rectangle_2)
+diamond_2 <- st_intersection(diamond_1, diamond_2)
+L_2 <- st_intersection(L_1, L_2)
+
+geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
+geometries_sf_2 <- st_sf(geometry = geometries)
+
+iou <- list(
+  circle = calculate_iou(circle_1, circle_2),
+  square = calculate_iou(square_1, square_2),
+  rectangle = calculate_iou(rectangle_1, rectangle_2),
+  diamond = calculate_iou(rectangle_1, rectangle_2),
+  L = calculate_iou(L_1, L_2)
+)
+
+# Affichage avec ggplot2
+plot4 <- ggplot() +
+  geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
+  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  theme_minimal() +
+  ggtitle("Translation centre de 0.1 unité E + Intersection") +
+  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
+  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
+  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
+  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+```
+
+```{r cas translation NE}
+
+# Définir les centres pour espacer les formes
+centers_2 <- list(
+  circle_center = c(0.1, 0.1),
+  square_center = c(3.1, 0.1),
+  rectangle_center = c(6.1, 0.1),
+  diamond_center = c(9.1, 0.1),
+  L_b_center = c(12.1, 0.1),
+  L_h_center = c(13.1, 1.6)
+)
+
+circle_2 <- create_circle(centers_2$circle_center, radius = 1)
+square_2 <- create_square(centers_2$square_center, side_length = 2)
+rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
+diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
+
+L_2 <- st_union(L_b, L_h)
+
+geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
+geometries_sf_2 <- st_sf(geometry = geometries)
+
+iou <- list(
+  circle = calculate_iou(circle_1, circle_2),
+  square = calculate_iou(square_1, square_2),
+  rectangle = calculate_iou(rectangle_1, rectangle_2),
+  diamond = calculate_iou(rectangle_1, rectangle_2),
+  L = calculate_iou(L_1, L_2)
+)
+
+# Affichage avec ggplot2
+plot5 <- ggplot() +
+  geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
+  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  theme_minimal() +
+  ggtitle("Translation centre de 0.1 unité NE") +
+  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
+  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
+  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
+  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+```
+
+
+```{r cas translation NE}
+
+centers_2 <- list(
+  circle_center = c(0.1, 0.1),
+  square_center = c(3.1, 0.1),
+  rectangle_center = c(6.1, 0.1),
+  diamond_center = c(9.1, 0.1),
+  L_b_center = c(12.1, 0.1),
+  L_h_center = c(13.1, 1.6)
+)
+
+circle_2 <- create_circle(centers_2$circle_center, radius = 1)
+square_2 <- create_square(centers_2$square_center, side_length = 2)
+rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
+diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
+
+L_2 <- st_union(L_b, L_h)
+
+circle_2 <- st_intersection(circle_1, circle_2)
+square_2 <- st_intersection(square_1, square_2)
+rectangle_2 <- st_intersection(rectangle_1, rectangle_2)
+diamond_2 <- st_intersection(diamond_1, diamond_2)
+L_2 <- st_intersection(L_1, L_2)
+
+geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
+geometries_sf_2 <- st_sf(geometry = geometries)
+
+iou <- list(
+  circle = calculate_iou(circle_1, circle_2),
+  square = calculate_iou(square_1, square_2),
+  rectangle = calculate_iou(rectangle_1, rectangle_2),
+  diamond = calculate_iou(rectangle_1, rectangle_2),
+  L = calculate_iou(L_1, L_2)
+)
+
+# Affichage avec ggplot2
+plot6 <- ggplot() +
+  geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
+  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  theme_minimal() +
+  ggtitle("Translation centre de 0.1 unité NE + Intersection") +
+  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
+  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
+  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
+  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+```
+
+```{r}
+plot <- grid.arrange(plot1, plot2, plot3, plot4, plot5, plot6, ncol = 2)
+ggsave("Forme_iou_translation.png", plot = plot, width = 14, height = 8, dpi = 300)
+```
+
+
