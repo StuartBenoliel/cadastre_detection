@@ -154,32 +154,6 @@ for (col in intersect(names(avant_geom), names(apres_geom))) {
 modif_geom <- avant_geom %>% as.data.frame() %>% 
   full_join(apres_geom, by = identical_columns, suffix = c("_avant", "_apres"))
 
-evol_sup <- modif_geom %>% 
-  mutate(superficie_apres = st_area(geometry_apres),
-         superficie_avant = st_area(geometry_avant)) %>% 
-  group_by(code_com) %>% 
-  summarise(modif_superficie_apres = round(sum(superficie_apres),2),
-            modif_superficie_avant = round(sum(superficie_avant),2),
-            modif_evolution_superficie = modif_superficie_apres - modif_superficie_avant)
-
-ajout_sup <- ajout_parc %>% 
-  mutate(superficie = st_area(geometry)) %>% 
-  group_by(code_com) %>% 
-  summarise(superficie_ajoute = round(sum(superficie),2)) %>% 
-  st_drop_geometry()
-
-supprime_sup <- supp_parc %>% 
-  mutate(superficie = st_area(geometry)) %>% 
-  group_by(code_com) %>% 
-  summarise(superficie_supprime = round(sum(superficie),2)) %>% 
-  st_drop_geometry()
-
-evol_sup <- evol_sup %>% 
-  full_join(ajout_sup, by = "code_com") %>% 
-  full_join(supprime_sup, by = "code_com") %>% 
-  mutate(across(everything(), ~ replace_na(.x, units::set_units(0, m*m)))) %>% 
-  mutate(tot_evolution_superficie = round(modif_evolution_superficie + superficie_ajoute - superficie_supprime,2))
-
 ```
 
 ```{r ggplot methode geometry}
@@ -253,11 +227,52 @@ calculate_iou_ajust <- function(geometry_avant, geometry_apres) {
 modif_geom <- modif_geom %>%
   rowwise() %>% 
   mutate(
+    iou = calculate_iou(st_geometry(geometry_avant), st_geometry(geometry_apres)),
     iou_ajust = calculate_iou_ajust(st_geometry(geometry_avant), st_geometry(geometry_apres)),
   )
 
+modif_geom <- modif_geom %>% 
+  filter(iou < 0.99)
+
 quantiles <- quantile(modif_geom$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na.rm = TRUE)
 
+apres_geom <- modif_geom %>% select(idu, iou, iou_ajust) %>%
+  left_join(apres_geom, by = "idu") %>% 
+  st_as_sf() %>% 
+  st_set_crs(2154)
+
+avant_geom <- modif_geom %>% select(idu, iou, iou_ajust) %>% 
+  left_join(avant_geom, by = "idu") %>% 
+  st_as_sf() %>% 
+  st_set_crs(2154)
+
+translation_apres <- apres_geom %>% 
+  filter(iou_ajust > 0.99) %>% 
+  select(-iou) %>% 
+  mutate(idu_translate = idu)
+
+redef_contours_apres <- apres_geom %>% 
+  filter(iou > 0.95 & iou_ajust < 0.99)
+
+redef_contours_et_translation <- apres_geom %>% 
+  filter(iou < 0.95 & iou_ajust > 0.95 & iou_ajust < 0.99) %>% 
+  select(-iou) %>% 
+  mutate(idu_translate = idu)
+
+apres_geom <- apres_geom %>%
+  filter(!idu %in% translation_apres$idu) %>% 
+  filter(!idu %in% redef_contours_apres$idu) %>% 
+  filter(!idu %in% redef_contours_et_translation$idu) %>% 
+  filter(!is.na(iou))
+
+avant_geom <- avant_geom %>%
+  filter(!idu %in% translation_apres$idu) %>% 
+  filter(!idu %in% redef_contours_apres$idu) %>% 
+  filter(!idu %in% redef_contours_et_translation$idu)
+```
+
+
+```{r distib iou}
 plot <- ggplot(na.omit(modif_geom), aes(x = iou_ajust)) +
   geom_histogram(aes(y = after_stat(density)), binwidth = 0.005, fill = "skyblue", color = "black", alpha = 0.7) +
   geom_segment(x = quantiles[1], xend = quantiles[1], y = 0, yend = 9, color = "blue", linetype = "dashed", linewidth = 0.6) +
@@ -274,13 +289,8 @@ plot <- ggplot(na.omit(modif_geom), aes(x = iou_ajust)) +
   theme_bw()
 
 # ggsave("Distribution_iou.png", plot = plot, width = 12, height = 8, dpi = 300)
-
-avant_geom <- avant_geom %>% 
-  left_join(modif_geom %>% select(idu, iou_ajust), by = "idu")
-
-apres_geom <- apres_geom %>% 
-  left_join(modif_geom %>% select(idu, iou_ajust), by = "idu")
 ```
+
 
 ```{r focus parcelle fusion}
 
@@ -319,7 +329,6 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
 ```
 
 ```{r geometry 2}
-
 # Méthode au niveau de la géomètrie des parcelles
 df_geom_a <- ajout_parc %>%
   st_filter(supp_parc, .predicate = st_equals)
@@ -548,22 +557,16 @@ ajout_parc <- ajout_parc %>%
          idu_translate = result$idu_translate) %>%
   ungroup() %>%
   select(-result)
-
-
-translation_apres <- apres_geom %>% 
-  filter(iou_ajust > quantiles[4]) %>% 
-  mutate(idu_translate = idu)
   
 translation_apres <- ajout_parc %>% 
-  filter(iou_ajust > quantiles[4]) %>% 
+  filter(iou_ajust > 0.99) %>% 
   select(-iou,-participants) %>% 
   rbind(translation_apres)
 
-apres_geom <- apres_geom %>%
-  filter(!idu %in% translation_apres$idu)
-
-avant_geom <- avant_geom %>%
-  filter(!idu %in% translation_apres$idu_translate)
+redef_contours_et_translation <- ajout_parc %>% 
+  filter(iou_ajust > 0.95 & iou_ajust < 0.99) %>% 
+  select(-iou,-participants) %>% 
+  rbind(redef_contours_et_translation)
 
 ajout_parc<- ajout_parc %>%
   filter(!idu %in% translation_apres$idu)
@@ -580,20 +583,20 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5,
           homebutton = F) +
   mapview(apres_geom,
-          z=c("iou_ajust"), layer.name = "Parcelles modifiées iou < Q_10% = 0.953 (état 2024)", 
+          z=c("iou_ajust"), layer.name = "Parcelles modifiées restantes (état 2024)", 
           alpha.regions = 0.5,
           homebutton = F) +
   mapview(avant_geom, 
-          z=c("iou_ajust"), layer.name = "Parcelles modifiées iou < Q_10% = 0.953 (état 2023)", 
+          z=c("iou_ajust"), layer.name = "Parcelles modifiées restantes (état 2023)", 
           alpha.regions = 0.5,
           homebutton = F) +
   mapview(translation_apres,
-          z=c("iou_ajust"), layer.name = "Parcelles peu modifiées iou > Q_5% = 0.934 (état 2024)", 
+          z=c("iou_ajust"), layer.name = "Parcelles translatées (état 2024)", 
           alpha.regions = 0.5,
           homebutton = F) +
   mapview(inter_parc_23 %>%
             filter(idu %in% translation_apres$idu_translate), 
-          layer.name = "Parcelles peu modifiées iou > Q_5% = 0.934 (état 2023)", 
+          layer.name = "Parcelles translatées (état 2023)", 
           alpha.regions = 0.5,
           homebutton = F) +
   mapview(fusion, layer.name = "Parcelles fusionnéees (état 2024)", col.regions = "orange", alpha.regions = 0.5,
@@ -620,12 +623,26 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
           homebutton = F) +
   mapview(redef_contours,  layer.name = "Parcelles avant évolution forme (état 2023)", col.regions = "purple", 
           alpha.regions = 0.5, homebutton = F) +
+  mapview(redef_contours_apres,  
+          layer.name = "Parcelles après évolution forme (état 2024)", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(inter_parc_23 %>%
+            filter(idu %in% redef_contours_apres$idu),  
+          layer.name = "Parcelles avant évolution forme (état 2023)", col.regions = "purple", 
+          alpha.regions = 0.5, homebutton = F) +
   mapview(ajout_parc_tot %>%
             filter(idu %in% unlist(str_split(redef_contours_et_transfo$participants_apres, ",\\s*"))),  
           layer.name = "Parcelles ayant transfo + évolution forme (état 2024)", alpha.regions = 0.5,
           homebutton = F) +
   mapview(redef_contours_et_transfo,
           layer.name = "Parcelles ayant transfo + évolution forme (état 2023)", col.regions = "orange", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(redef_contours_et_translation,  
+          layer.name = "Parcelles ayant translatées + évolution forme (état 2024)", alpha.regions = 0.5,
+          homebutton = F) +
+  mapview(inter_parc_23 %>%
+            filter(idu %in% redef_contours_et_translation$idu_translate),
+          layer.name = "Parcelles ayant translatées + évolution forme (état 2023)", col.regions = "orange", 
           alpha.regions = 0.5, homebutton = F) +
   mapview(parc_com_abs_apres,  layer.name = "Parcelles après fusion de communes (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
@@ -642,3 +659,33 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
 
 mapshot(map, url = "parcelles_iou_inside_bordure_85.html")
 ```
+
+
+```{r evolution superficie}
+evol_sup <- modif_geom %>% 
+  mutate(superficie_apres = st_area(geometry_apres),
+         superficie_avant = st_area(geometry_avant)) %>% 
+  group_by(code_com) %>% 
+  summarise(modif_superficie_apres = round(sum(superficie_apres),2),
+            modif_superficie_avant = round(sum(superficie_avant),2),
+            modif_evolution_superficie = modif_superficie_apres - modif_superficie_avant)
+
+ajout_sup <- ajout_parc %>% 
+  mutate(superficie = st_area(geometry)) %>% 
+  group_by(code_com) %>% 
+  summarise(superficie_ajoute = round(sum(superficie),2)) %>% 
+  st_drop_geometry()
+
+supprime_sup <- supp_parc %>% 
+  mutate(superficie = st_area(geometry)) %>% 
+  group_by(code_com) %>% 
+  summarise(superficie_supprime = round(sum(superficie),2)) %>% 
+  st_drop_geometry()
+
+evol_sup <- evol_sup %>% 
+  full_join(ajout_sup, by = "code_com") %>% 
+  full_join(supprime_sup, by = "code_com") %>% 
+  mutate(across(everything(), ~ replace_na(.x, units::set_units(0, m*m)))) %>% 
+  mutate(tot_evolution_superficie = round(modif_evolution_superficie + superficie_ajoute - superficie_supprime,2))
+```
+
