@@ -239,12 +239,14 @@ quantiles <- quantile(modif_geom$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na
 apres_geom <- modif_geom %>% select(idu, iou, iou_ajust) %>%
   left_join(apres_geom, by = "idu") %>% 
   st_as_sf() %>% 
-  st_set_crs(2154)
+  st_set_crs(2154) %>% 
+  ungroup()
 
 avant_geom <- modif_geom %>% select(idu, iou, iou_ajust) %>% 
   left_join(avant_geom, by = "idu") %>% 
   st_as_sf() %>% 
-  st_set_crs(2154)
+  st_set_crs(2154) %>% 
+  ungroup()
 
 translation_apres <- apres_geom %>% 
   filter(iou_ajust > 0.99) %>% 
@@ -252,7 +254,10 @@ translation_apres <- apres_geom %>%
   mutate(idu_translate = idu)
 
 redef_contours_apres <- apres_geom %>% 
-  filter(iou > 0.95 & iou_ajust < 0.99)
+  filter(iou > 0.95 & iou_ajust < 0.99) %>% 
+  mutate(iou_multi = iou,
+         participants_avant = idu,
+         participants_apres = idu)
 
 redef_contours_et_translation <- apres_geom %>% 
   filter(iou < 0.95 & iou_ajust > 0.95 & iou_ajust < 0.99) %>% 
@@ -569,10 +574,46 @@ redef_contours_et_translation <- ajout_parc %>%
   rbind(redef_contours_et_translation)
 
 ajout_parc<- ajout_parc %>%
-  filter(!idu %in% translation_apres$idu)
+  filter(!idu %in% translation_apres$idu) %>% 
+  filter(!idu %in% redef_contours_et_translation$idu)
 
 supp_parc <- supp_parc %>%
-  filter(!idu %in% translation_apres$idu_translate)
+  filter(!idu %in% translation_apres$idu_translate)%>% 
+  filter(!idu %in% redef_contours_et_translation$idu_translate)
+```
+
+
+```{r}
+apres_geom <- apres_geom %>%
+  rowwise() %>%
+  mutate(result = list(calculate_iou_multi_polygon(geometry, apres_geom, avant_geom))) %>%
+  mutate(iou_multi = result$iou,
+         participants_avant = result$participants_avant,
+         participants_apres= result$participants_apres) %>%
+  ungroup() %>%
+  select(-result)
+
+redef_contours_apres <- apres_geom %>% 
+  filter(iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres) | 
+           nchar(participants_avant) == 14 & nchar(participants_apres) == 14 & iou > iou_ajust) %>% 
+  rbind(redef_contours_apres)
+
+redef_contours_et_translation <- apres_geom %>% 
+  filter(nchar(participants_avant) == 14 & nchar(participants_apres) == 14 & iou < iou_ajust |
+           is.na(iou_multi)) %>% 
+  select(-iou, -participants_avant, -participants_apres, -iou_multi) %>% 
+  mutate(idu_translate = idu) %>% 
+  rbind(redef_contours_et_translation)
+
+apres_geom <- apres_geom %>%
+  filter(!idu %in% redef_contours_apres$idu) %>% 
+  filter(!idu %in% redef_contours_et_translation$idu) %>% 
+  filter(!is.na(iou))
+
+avant_geom <- avant_geom %>%
+  filter(!idu %in% redef_contours_apres$idu) %>% 
+  filter(!idu %in% redef_contours_et_translation$idu)
+
 ```
 
 
