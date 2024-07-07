@@ -101,11 +101,11 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
   return(parc)
 }
 
-parc_85 <- process_departement(num_departements, "2024")
+parc_85_24 <- process_departement(num_departements, "2024")
 parc_85_23 <- process_departement(num_departements, "2023")
 com_85 <- process_departement(num_departements, "2024", F)
 
-parc_21 <- process_departement("021", "2022")
+parc_21_22 <- process_departement("021", "2022")
 parc_21_23 <- process_departement("021", "2023")
 com_21 <- process_departement("021", "2024", F)
 
@@ -185,7 +185,7 @@ constru_table <- function(table_sf, indic_parc = T) {
   
 }
 
-constru_table(parc_85)
+constru_table(parc_85_24)
 constru_table(parc_85_23)
 constru_table(com_85, F)
 
@@ -194,7 +194,7 @@ parc_21_23 <- parc_21_23 %>%
   filter(!(IDU == "213200000B0081" & FEUILLE == "5"))
 # Doublon de ligne bizarre
 
-constru_table(parc_21)
+constru_table(parc_21_22)
 constru_table(parc_21_23)
 constru_table(com_21, F)
 
