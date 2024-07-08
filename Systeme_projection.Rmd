@@ -1,0 +1,19 @@
+---
+title: "Prise_en_main"
+output: html_document
+date: "2024-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+## Prise en maain des données
+
+```{r package message=FALSE, warning=FALSE}
+library(sf)
+library(ggplot2)
+```
+
+
