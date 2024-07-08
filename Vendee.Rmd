@@ -274,7 +274,7 @@ map <- mapview(commune,
   mapview(bordure_sql, 
           layer.name = "Bordures étendues bis", col.regions = "lightgreen", alpha.regions = 0.5) +
   mapview(df_diff, 
-          layer.name = "Parcelles pas dans la bordure SQL", col.regions = "lightgreen", alpha.regions = 0.5)
+          layer.name = "Parcelles pas dans la bordure SQL", col.regions = "red", alpha.regions = 0.5)
 
 # mapshot(map, url = "diff_sql.html")
 map
