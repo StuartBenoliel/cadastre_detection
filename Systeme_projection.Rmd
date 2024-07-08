@@ -14,6 +14,49 @@ rm(list = ls())
 ```{r package message=FALSE, warning=FALSE}
 library(sf)
 library(ggplot2)
+library(leaflet)
+source(file = "connexion_db.R")
+conn <- connecter()
 ```
 
+
+```{r import}
+parcelle_24 <- st_read(conn, query = "SELECT * FROM parc_85_24 WHERE IDU = '852000000C0758';")
+parcelle_23 <- st_read(conn, query = "SELECT * FROM parc_85_23 WHERE IDU = '852000000C0758';")
+st_crs(parcelle_24)
+parcelle_23_lambert_93_v1 <- parcelle_23 %>% 
+  st_transform(2154)
+parcelle_23_lambert_93_v2 <- parcelle_23 %>% 
+  st_transform(9794)
+parcelle_23_lambert_2_etendue <- parcelle_23 %>% 
+  st_transform(27572)
+parcelle_23_world_mercator_WGS84 <- parcelle_23 %>% 
+  st_transform(3395)
+parcelle_23_pseudo_mercator_WGS84 <- parcelle_23 %>% 
+  st_transform(3857)
+parcelle_23_LAEA_Europe <- parcelle_23 %>% 
+  st_transform(3035)
+```
+
+```{r}
+map <- mapview(parcelle_24, 
+               layer.name = "Parcelle 2024", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parcelle_23, 
+          layer.name = "Parcelle 2023", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(parcelle_23_lambert_93_v1, 
+          layer.name = "Parcelle 2023 Lambert 93 v1", col.regions = "blue", alpha.regions = 0.5) +
+  mapview(parcelle_23_lambert_93_v2, 
+          layer.name = "Parcelle 2023 Lambert 93 v2", col.regions = "red", alpha.regions = 0.5) +
+  mapview(parcelle_23_lambert_2_etendue, 
+          layer.name = "Parcelle 2023 Lambert 2 étendue", col.regions = "orange", alpha.regions = 0.5) +
+  mapview(parcelle_23_world_mercator_WGS84, 
+          layer.name = "Parcelle 2023 World Mercator WGS84", col.regions = "yellow", alpha.regions = 0.5) +
+  mapview(parcelle_23_pseudo_mercator_WGS84, 
+          layer.name = "Parcelle 2023 Pseudo Mercator WGS84", col.regions = "pink", alpha.regions = 0.5) +
+  mapview(parcelle_23_LAEA_Europe, 
+          layer.name = "Parcelle 2023 LAEA Europe", col.regions = "cyan", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelle_projection.html")
+map
+```
 

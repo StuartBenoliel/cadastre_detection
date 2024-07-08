@@ -105,6 +105,8 @@ parc_85_24 <- process_departement(num_departements, "2024")
 parc_85_23 <- process_departement(num_departements, "2023")
 com_85 <- process_departement(num_departements, "2024", F)
 
+parc_85_22 <- process_departement(num_departements, "2022")
+
 parc_21_22 <- process_departement("021", "2022")
 parc_21_23 <- process_departement("021", "2023")
 com_21 <- process_departement("021", "2024", F)
@@ -189,6 +191,7 @@ constru_table(parc_85_24)
 constru_table(parc_85_23)
 constru_table(com_85, F)
 
+constru_table(parc_85_22)
 
 parc_21_23 <- parc_21_23 %>% 
   filter(!(IDU == "213200000B0081" & FEUILLE == "5"))

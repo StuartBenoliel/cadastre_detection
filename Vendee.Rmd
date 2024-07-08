@@ -26,7 +26,7 @@ library(tidyr)
 library(stringr)
 # webshot::install_phantomjs()
 source(file = "connexion_db.R")
-conn<-connecter()
+conn <- connecter()
 DBI::dbListTables(conn)
 ```
 
@@ -200,7 +200,8 @@ bordure <- do.call(rbind, bordure$extended) %>%
   st_sf()
 
 ins_parc_24 <- parcelle_24 %>%
-  st_filter(bordure, .predicate = st_intersects)
+  st_filter(bordure, .predicate = st_intersects) %>% 
+  st_filter(bordure, .predicate = st_within)
 
 # intersect puis within pour une raison de rapidité
 
@@ -222,6 +223,63 @@ supp <- supp_tot %>%
   arrange(nom_com)
 ```
 
+```{r bordure_sql}
+# Méthode SQL qui ne donne pas les memes résultats
+# Marche pas avec mapview
+dbSendQuery(conn, "
+  CREATE TEMP TABLE extended_borders AS
+  SELECT
+      code_insee, nom_com, code_dep,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
+  FROM
+      com_85;
+")
+
+bordure_sql <- st_read(conn, query = "
+  SELECT 
+      *
+  FROM
+      extended_borders;
+") %>%
+  mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+
+dbSendQuery(conn, "
+  CREATE INDEX idx_extended_borders_geometry ON extended_borders USING GIST(geometry);
+")
+
+ins_parc_24_sql <- st_read(conn, query = "
+  SELECT DISTINCT
+      parc_85_24.*
+  FROM
+      parc_85_24
+  JOIN
+      extended_borders
+  ON
+      ST_WITHIN(parc_85_24.geometry, extended_borders.geometry);
+") %>%
+  mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+```
+
+
+```{r}
+df_diff <- ins_parc_24 %>% 
+  filter(!idu %in% ins_parc_24_sql$idu)
+
+map <- mapview(commune, 
+               layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, 
+          layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(bordure_sql, 
+          layer.name = "Bordures étendues bis", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(df_diff, 
+          layer.name = "Parcelles pas dans la bordure SQL", col.regions = "lightgreen", alpha.regions = 0.5)
+
+# mapshot(map, url = "diff_sql.html")
+map
+```
+
 # Carte des parcelles appartenant + croisant la bordure
 
 ```{r ggplot bordure}
@@ -236,7 +294,7 @@ plot <- ggplot() +
        subtitle = "Les bordures des communes sont élargies d'un rayon de 250m de chaque côté de celles définies par l'IGN")
 
 # ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
-# plot
+plot
 ```
 
 # Focus sur une commune ayant fusionné avec d'autres communes limitrophes
@@ -308,6 +366,7 @@ modif <- modif %>%
     iou = calcul_iou(st_geometry(geometry_avant), st_geometry(geometry_apres)),
     iou_ajust = calcul_iou_ajust(st_geometry(geometry_avant), st_geometry(geometry_apres)),
   )
+
 
 modif <- modif %>% 
   filter(iou < 0.99)
