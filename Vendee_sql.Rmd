@@ -1,5 +1,5 @@
 ---
-title: "Vendée 2024-2023"
+title: "Vendée_sql 2024-2023"
 output: html_document
 date: "2024-06-18"
 ---
@@ -174,52 +174,215 @@ calcul_iou_multi_translate <- function(polygon, supp, ajout) {
 }
 ```
 
+```{r}
+dbSendQuery(conn, "
+  CREATE OR REPLACE FUNCTION calcul_iou(geometry_avant geometry, geometry_apres geometry)
+  RETURNS numeric AS $$
+  DECLARE
+      intersection geometry;
+      aire_intersection numeric;
+      union geometry;
+      aire_union numeric;
+      iou numeric;
+  BEGIN
+      -- Vérifier si les géométries ne sont pas vides
+      IF NOT ST_IsEmpty(geometry_avant) AND NOT ST_IsEmpty(geometry_apres) THEN
+          intersection := ST_Intersection(geometry_avant, geometry_apres);
+        
+          -- Si l'intersection est vide, IoU = 0
+          IF ST_IsEmpty(intersection) THEN
+              RETURN 0;
+          END IF;
+        
+          aire_intersection := ST_Area(intersection);
+          union := ST_Union(geometry_avant, geometry_apres);
+          aire_union := ST_Area(union);
+        
+          -- Calculer l'IoU
+          iou := aire_intersection / aire_union;
+          RETURN iou;
+      ELSE
+          RETURN NULL;
+      END IF;
+  END;
+  $$ LANGUAGE plpgsql;
+")
+
+dbSendQuery(conn, "
+  CREATE OR REPLACE FUNCTION calcul_iou_ajust(geometry_avant geometry, geometry_apres geometry)
+  RETURNS numeric AS $$
+  DECLARE
+      centroid_apres geometry;
+      centroid_avant geometry;
+      translation_vector geometry;
+      geometry_avant_ajust geometry;
+      iou_ajust numeric;
+  BEGIN
+      -- Vérifier si les géométries ne sont pas vides
+      IF NOT ST_IsEmpty(geometry_avant) AND NOT ST_IsEmpty(geometry_apres) THEN
+          centroid_apres := ST_Centroid(geometry_apres);
+          centroid_avant := ST_Centroid(geometry_avant);
+          translation_vector := ST_Translate(geometry_avant, ST_X(centroid_apres) - ST_X(centroid_avant), ST_Y(centroid_apres) - ST_Y(centroid_avant));
+        
+          -- Calculer l'IoU ajusté avec la géométrie avant ajustée
+          geometry_avant_ajust := ST_SetSRID(geometry_avant + translation_vector, ST_SRID(geometry_avant));
+          iou_ajust := calcul_iou(geometry_avant_ajust, geometry_apres);
+        
+          RETURN iou_ajust;
+      ELSE
+          RETURN NULL;
+      END IF;
+  END;
+  $$ LANGUAGE plpgsql;
+")
+```
+
+
 # Importation des parcelles sur l'ensemble du département et des périodes données
 
-```{r import}
+
+```{r import sql}
 parcelle_24 <- st_read(conn, query = "SELECT * FROM parc_85_24;")
 parcelle_23 <- st_read(conn, query = "SELECT * FROM parc_85_23;")
 commune <- st_read(conn, query = "SELECT * FROM com_85;")
 
-ajout_tot <- parcelle_24 %>% 
-  filter(!idu %in% parcelle_23$idu)
+dbSendQuery(conn, "
+  CREATE TEMP TABLE ajout_tot AS
+  SELECT * 
+  FROM parc_85_24
+  WHERE idu NOT IN (SELECT idu FROM parc_85_23);
+")
 
-supp_tot <- parcelle_23 %>% 
-  filter(!idu %in% parcelle_24$idu)
+dbSendQuery(conn, "
+  CREATE INDEX idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE supp_tot AS
+  SELECT * 
+  FROM parc_85_23
+  WHERE idu NOT IN (SELECT idu FROM parc_85_24);
+")
+
+dbSendQuery(conn, "
+  CREATE INDEX idx_supp_tot_geometry ON supp_tot USING GIST(geometry);
+")
+
+ajout_tot <- st_read(conn, query = "
+  SELECT * 
+  FROM ajout_tot;
+")
+
+supp_tot <- st_read(conn, query = "
+  SELECT * 
+  FROM supp_tot;
+")
 ```
+
 
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
 
-```{r bordure}
-bordure <- commune %>%
-  group_by(code_insee) %>%  
-  do(extended = creer_bordure_etendue(., 250))
+```{r}
+dbSendQuery(conn, "
+  CREATE TEMP TABLE bordure AS
+  SELECT
+      code_insee, nom_com, code_dep,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
+  FROM
+      com_85;
+")
 
-bordure <- do.call(rbind, bordure$extended) %>%
-  select(-c(4,5,6)) %>% 
-  st_sf()
+dbSendQuery(conn, "
+  CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);
+")
 
-ins_parc_24 <- parcelle_24 %>%
-  st_filter(bordure, .predicate = st_intersects)
+dbSendQuery(conn, "
+  CREATE TEMP TABLE ins_parc_24 AS
+  SELECT DISTINCT
+      parc_85_24.*
+  FROM
+      parc_85_24
+  JOIN
+      bordure
+  ON
+      ST_WITHIN(parc_85_24.geometry, bordure.geometry);
+")
 
-# intersect puis within pour une raison de rapidité
+dbSendQuery(conn, "
+  CREATE TEMP TABLE ins_parc_23 AS
+  SELECT DISTINCT
+      parc_85_23.*
+  FROM
+      parc_85_23
+  JOIN
+      bordure
+  ON
+      ST_WITHIN(parc_85_23.geometry, bordure.geometry);
+")
 
-ins_parc_23 <- parcelle_23 %>%
-  st_filter(bordure, .predicate = st_intersects)
+dbSendQuery(conn, "
+  CREATE TEMP TABLE ajout AS
+  SELECT 
+      ajout_tot.*
+  FROM
+      ajout_tot
+  JOIN
+      bordure
+  ON
+      ST_WITHIN(ajout_tot.geometry, bordure.geometry)
+  ORDER BY ajout_tot.nom_com;
+")
 
-#ajout_bad <- ins_parc_24 %>% 
-#  filter(!idu %in% ins_parc_23$idu)
-# Parcelle modifié n'étant plus dans la zone tampon considérée comme ajoutée
+dbSendQuery(conn, "
+  CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);
+")
 
-ajout <- ajout_tot %>%
-  st_filter(bordure, .predicate = st_intersects) %>% 
-  st_filter(bordure, .predicate = st_within) %>% 
-  arrange(nom_com)
+dbSendQuery(conn, "
+  CREATE TEMP TABLE supp AS
+  SELECT 
+      supp_tot.*
+  FROM
+      supp_tot
+  JOIN
+      bordure
+  ON
+      ST_WITHIN(supp_tot.geometry, bordure.geometry)
+  ORDER BY supp_tot.nom_com;
+")
 
-supp <- supp_tot %>%
-  st_filter(bordure, .predicate = st_intersects) %>% 
-  st_filter(bordure, .predicate = st_within) %>% 
-  arrange(nom_com)
+dbSendQuery(conn, "
+  CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);
+")
+```
+
+
+```{r bordure sql}
+
+bordure_sql <- st_read(conn, query = "
+  SELECT 
+      *
+  FROM
+      bordure;
+") %>%
+  mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+
+ins_parc_24 <- st_read(conn, query = "
+  SELECT * FROM ins_parc_24;
+")
+
+ins_parc_23 <- st_read(conn, query = "
+   SELECT * FROM ins_parc_23;
+")
+
+ajout <- st_read(conn, query = "
+  SELECT * FROM ajout;
+")
+
+supp <- st_read(conn, query = "
+  SELECT * FROM supp;
+")
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS bordure;")
 ```
 
 # Carte des parcelles appartenant + croisant la bordure
@@ -262,56 +425,127 @@ map <- mapview(commune %>%
 
 ## Elimination des parcelles IDENTIQUES en tout point du polygone (méthode de base pour enlever les cas reconnaissables facilement)
 
+```{r modif geometry egal sql}
+# Requête SQL pour créer la table temporaire identique
+query_identique <- "
+CREATE TEMP TABLE identique AS
+SELECT ins_parc_24.*
+FROM ins_parc_24
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM ajout
+    WHERE ins_parc_24.idu = ajout.idu
+)
+AND EXISTS (
+    SELECT 1
+    FROM ins_parc_23 
+    WHERE ins_parc_24.idu = ins_parc_23.idu
+    AND ST_Equals(p24.geom, ins_parc_23.geom)
+);
+"
+dbSendQuery(conn, query_identique)
+
+query_modif_apres <- "
+CREATE TEMP TABLE modif_apres AS
+SELECT ins_parc_24.*
+FROM ins_parc_24
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM identique
+    WHERE ins_parc_24.idu = identique.idu
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM ajout
+    WHERE ins_parc_24.idu = ajout.idu
+)
+ORDER BY p24.nom_com;
+"
+dbSendQuery(conn, query_modif_apres)
+
+query_modif_avant <- "
+CREATE TEMP TABLE modif_avant AS
+SELECT ins_parc_23.*
+FROM ins_parc_23
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM identique
+    WHERE ins_parc_23.idu = identique.idu
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM supp
+    WHERE ins_parc_23.idu = supp.idu
+)
+ORDER BY ins_parc_23.nom_com;
+"
+dbSendQuery(conn, query_modif_avant)
+
+query_modif <- "
+CREATE TEMP TABLE modif AS
+SELECT
+    COALESCE(avant.idu, apres.idu) AS idu,
+    COALESCE(avant.geometry, apres.geometry) AS geometry,
+    COALESCE(avant.contenance, apres.contenance) AS contenance,
+    -- Sélectionner toutes les colonnes des deux tables
+    avant.*, apres.*
+FROM
+    modif_avant avant
+FULL JOIN
+    modif_apres apres ON avant.idu = apres.idu
+WHERE
+    -- Filtrer les lignes où les colonnes geometry et contenance sont identiques
+    avant.geometry = apres.geometry
+    AND avant.contenance = apres.contenance;
+"
+dbSendQuery(conn, query_modif)
+```
+
+
 ```{r modif geometry egal}
-identique <- ins_parc_24 %>%
-  filter(!idu %in% ajout$idu) %>% 
-  st_filter(ins_parc_23, .predicate = st_equals)
-# Parcelles ayant reçu aucune modification
-# Attention : doit etre invariant en changeant l'ordre des tables (ins...)
 
-modif_apres <- ins_parc_24 %>% 
-  filter(!idu %in% identique$idu & !idu %in% ajout$idu) %>% 
-  st_filter(bordure, .predicate = st_within) %>%
-  arrange(nom_com)
+identique <- st_read(conn, query = "
+   SELECT * FROM identique;
+")
 
-modif_avant <- ins_parc_23 %>% 
-  filter(!idu %in% identique$idu & !idu %in% supp$idu) %>% 
-  st_filter(bordure, .predicate = st_within) %>%
-  arrange(nom_com)
+modif_apres <- st_read(conn, query = "
+  SELECT * FROM modif_apres;
+")
 
-col_identique <- c()
-# Comparer les colonnes en commun
-for (col in intersect(names(modif_avant), names(modif_apres))) {
-  merged <- full_join(
-    select(modif_avant %>% as.data.frame(), idu, !!sym(col)),
-    select(modif_apres, idu, !!sym(col)),
-    by = "idu",
-    suffix = c("_avant", "_apres")
-  )
-  # Vérifier si les colonnes sont identiques
-  if (all(merged[[paste0(col, "_avant")]] == merged[[paste0(col, "_apres")]], na.rm = TRUE)) {
-    col_identique <- c(col_identique, col)
-  }
-}
+modif_avant <- st_read(conn, query = "
+  SELECT * FROM modif_avant;
+")
 
-modif <- modif_avant %>% as.data.frame() %>% 
-  full_join(modif_apres, by = col_identique, suffix = c("_avant", "_apres"))
+```
 
-rm(col_identique, identique, merged)
+```{r}
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_calcul AS
+  SELECT
+      modif.*,
+      calcul_iou(modif.geometry_avant, modif.geometry_apres) AS iou,
+      calcul_iou_ajust(modif.geometry_avant, modif.geometry_apres) AS iou_ajust
+  FROM
+      modif;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_filtrer AS
+  SELECT
+      *
+  FROM
+      modif_calcul
+  WHERE
+      iou < 0.99;
+")
 ```
 
 
 ```{r modif iou et iou_ajust}
-modif <- modif %>%
-  rowwise() %>% 
-  mutate(
-    iou = calcul_iou(st_geometry(geometry_avant), st_geometry(geometry_apres)),
-    iou_ajust = calcul_iou_ajust(st_geometry(geometry_avant), st_geometry(geometry_apres)),
-  )
 
-
-modif <- modif %>% 
-  filter(iou < 0.99)
+modif <- st_read(conn, query = "
+   SELECT * FROM modif_filtrer;
+")
 # Elimine les parcelles "sans changement manifeste" plus les parcelles sans iou = parcelles n'étant plus entièrement dans la bordure lors d'un changement d'une année sur l'autre
 
 quantiles <- quantile(modif$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na.rm = TRUE)
