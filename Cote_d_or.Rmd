@@ -1,5 +1,5 @@
 ---
-title: "Prise_en_main"
+title: "Vendée 2024-2023"
 output: html_document
 date: "2024-06-18"
 ---
@@ -9,9 +9,9 @@ knitr::opts_chunk$set(echo = TRUE)
 rm(list = ls())
 ```
 
-## Prise en maain des données
+# Import package + fonction utilisés après
 
-```{r}
+```{r package message=FALSE, warning=FALSE}
 library(sf)
 library(dplyr)
 library(lubridate)
@@ -20,177 +20,786 @@ library(DBI)
 library(ggplot2)
 library(purrr)
 library(webshot)
+library(pracma)
+library(RColorBrewer)
+library(tidyr)
+library(stringr)
 # webshot::install_phantomjs()
 source(file = "connexion_db.R")
-conn<-connecter()
+conn <- connecter()
 DBI::dbListTables(conn)
 ```
 
-```{r}
-parcelle_23<-st_read(conn, query = "SELECT * FROM parc_21_23;")
-parcelle_22<-st_read(conn, query = "SELECT * FROM parc_21;")
-commune<-st_read(conn, query = "SELECT * FROM com_21;")
-
-ajout_parc_tot <- parcelle_23 %>% 
-  filter(!idu %in% parcelle_22$idu)
-
-supp_parc_tot <- parcelle_22 %>% 
-  filter(!idu %in% parcelle_23$idu)
-```
-
-```{r}
-create_extended_borders <- function(commune, buffer_distance) {
-  buffer_positive <- st_buffer(commune, buffer_distance)
-  buffer_negative <- st_buffer(commune, -buffer_distance)
+```{r fonction commun}
+creer_bordure_etendue <- function(commune, buffer_distance) {
+  buffer_positif <- st_buffer(commune, buffer_distance)
+  buffer_negatif <- st_buffer(commune, -buffer_distance)
   suppressWarnings({
-    buffer_difference <- st_difference(buffer_positive, buffer_negative)
+    buffer_difference <- st_difference(buffer_positif, buffer_negatif)
   })
   return(buffer_difference)
 }
 
+calcul_iou <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    
+    intersection <- st_intersection(geometry_avant, geometry_apres)
+    
+    if (length(intersection) == 0) {
+      return(0) # Si les géométries ne s'intersectent pas du tout, IoU = 0
+    }
+    
+    aire_intersection <- st_area(intersection)
+    union <- st_union(geometry_avant, geometry_apres)
+    aire_union <- st_area(union)
+    
+    return(as.numeric(aire_intersection / aire_union))
+  } else {
+    return(NA)
+  }
+}
+
+calcul_iou_ajust <- function(geometry_avant, geometry_apres) {
+  if (!st_is_empty(geometry_avant) & !st_is_empty(geometry_apres)) {
+    # Calculer l'ajustement de la géométrie_avant
+    centroid_apres <- st_centroid(geometry_apres)
+    centroid_avant <- st_centroid(geometry_avant)
+    translation_vector <- st_coordinates(centroid_apres)[1, 1:2] - st_coordinates(centroid_avant)[1, 1:2]
+    geometry_avant_ajust <- st_geometry(geometry_avant) + translation_vector
+    iou_ajust <- calcul_iou(st_set_crs(geometry_avant_ajust, 2154), geometry_apres)
+    
+    return(iou_ajust)
+  } else {
+    return(NA)
+  }
+}
+
+calcul_iou_intersec <- function(polygon, ajout) {
+  
+  parcelles_intersectant <- ajout %>%
+    st_filter(st_buffer(polygon, -1), .predicate = st_intersects)
+  # seuil à choisir
+  
+  nom_participants <- parcelles_intersectant$idu
+  if (isempty(nom_participants)) {
+    return(list(iou = NA, participants = NA))
+  }
+  
+  union_parcelles <- st_union(parcelles_intersectant)
+  iou <- calcul_iou(union_parcelles, polygon)
+  
+  list(iou = iou, participants = paste(nom_participants, collapse = ", "))
+}
+
+calcul_iou_multi <- function(polygon, supp, ajout) {
+  n <- 0
+  nom_participants_avant <- NULL
+  repeat {
+    # Trouver les parcelles dans supp qui intersectent la parcelle actuelle
+    parcelles_intersectant_avant <- supp %>%
+      st_filter(polygon, .predicate = st_intersects)
+    
+    # Condition de sortie : on retrouve le même nombre de parcelles
+    if (nrow(parcelles_intersectant_avant) == n) break
+    
+    # Mettre à jour la parcelle en faisant l'union des parcelles trouvées
+    polygon <- st_union(parcelles_intersectant_avant)
+    nom_participants_avant <- parcelles_intersectant_avant$idu
+    n <- nrow(parcelles_intersectant_avant)
+  }
+  
+  iou_intersect <- calcul_iou_intersec(polygon, ajout)
+  
+  list(iou = iou_intersect$iou, 
+       participants_avant = paste(nom_participants_avant, collapse = ", "),
+       participants_apres = iou_intersect$participants)
+}
+
+calcul_iou_intersec_translate <- function(polygon, ajout) {
+  
+  parcelles_intersectant <- ajout %>%
+    st_filter(st_buffer(polygon, -1), .predicate = st_intersects)
+  
+  # Récupérer les noms des parcelles intersectants
+  nom_participants <- parcelles_intersectant$idu
+  if (isempty(nom_participants)) {
+    return(list(iou_ajust = NA, idu_translate = NA))
+  }
+  
+  max_iou <- -Inf
+  best_idu <- NA
+  
+  # Boucler sur chaque parcelle intersectant
+  for (i in seq_len(nrow(parcelles_intersectant))) {
+    parcelle_actuelle <- parcelles_intersectant[i, ]
+    
+    # Calculer l'IoU entre la parcelle courante et la parcelle initiale
+    iou_value <- suppressWarnings({calcul_iou(parcelle_actuelle, polygon)})
+    
+    # Si l'IoU courant est plus élevé que l'IoU maximum trouvé jusqu'à présent
+    if (iou_value > max_iou) {
+      max_iou <- iou_value
+      best_indice <- i
+      best_idu <- parcelle_actuelle$idu
+    }
+  }
+  parcelle <- parcelles_intersectant[best_indice, ]
+  iou_ajust <- calcul_iou_ajust(parcelle, polygon)
+  
+  list(iou_ajust = iou_ajust, idu_translate = parcelle$idu)
+}
+
+calcul_iou_multi_translate <- function(polygon, supp, ajout) {
+  n <- 0
+  nom_participants_avant <- NULL
+  repeat {
+    # Trouver les parcelles dans supp qui intersectent la parcelle actuelle
+    parcelles_intersectant_avant <- supp %>%
+      st_filter(polygon, .predicate = st_intersects)
+    
+    # Condition de sortie : on retrouve le même nombre de parcelles
+    if (nrow(parcelles_intersectant_avant) == n) break
+    
+    # Mettre à jour la parcelle en faisant l'union des parcelles trouvées
+    polygon <- st_union(parcelles_intersectant_avant)
+    nom_participants_avant <- parcelles_intersectant_avant$idu
+    n <- nrow(parcelles_intersectant_avant)
+  }
+  
+  iou_intersect <- calcul_iou_intersec_translate(polygon, ajout)
+  
+  list(iou = iou_intersect$iou_ajust, 
+       participants_avant = paste(nom_participants_avant, collapse = ", "),
+       participants_apres = iou_intersect$idu_translate)
+}
+```
+
+# Importation des parcelles sur l'ensemble du département et des périodes données
+
+```{r import}
+parcelle_24 <- st_read(conn, query = "SELECT * FROM parc_21_24;")
+parcelle_23 <- st_read(conn, query = "SELECT * FROM parc_21_23;")
+commune <- st_read(conn, query = "SELECT * FROM com_21;")
+
+ajout_tot <- parcelle_24 %>% 
+  filter(!idu %in% parcelle_23$idu)
+
+supp_tot <- parcelle_23 %>% 
+  filter(!idu %in% parcelle_24$idu)
+```
+
+# Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
+
+```{r bordure}
 bordure <- commune %>%
   group_by(code_insee) %>%  
-  do(extended = create_extended_borders(., 50))
+  do(extended = creer_bordure_etendue(., 250))
 
 bordure <- do.call(rbind, bordure$extended) %>%
   select(-c(4,5,6)) %>% 
   st_sf()
 
-inter_parc_22 <- parcelle_22 %>%
+ins_parc_24 <- parcelle_24 %>%
   st_filter(bordure, .predicate = st_intersects)
 
-inter_parc_23 <- parcelle_23 %>%
+# intersect puis within pour une raison de rapidité
+
+ins_parc_23 <- parcelle_23 %>%
   st_filter(bordure, .predicate = st_intersects)
 
-#ajout_parc_bad <- inter_parc_24 %>% 
-#  filter(!idu %in% inter_parc_23$idu)
+#ajout_bad <- ins_parc_24 %>% 
+#  filter(!idu %in% ins_parc_23$idu)
 # Parcelle modifié n'étant plus dans la zone tampon considérée comme ajoutée
 
-ajout_parc <- ajout_parc_tot %>%
+ajout <- ajout_tot %>%
   st_filter(bordure, .predicate = st_intersects) %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
 
-#supp_parc_bad <- inter_parc_23 %>% 
-#  filter(!idu %in% inter_parc_24$idu)
-# Parcelle modifié n'étant plus dans la zone tampon considérée comme supprimée
-
-supp_parc <- supp_parc_tot %>%
+supp <- supp_tot %>%
   st_filter(bordure, .predicate = st_intersects) %>% 
+  st_filter(bordure, .predicate = st_within) %>% 
   arrange(nom_com)
-
 ```
 
+# Carte des parcelles appartenant + croisant la bordure
 
-```{r}
+```{r ggplot bordure}
 plot <- ggplot() +
   geom_sf(data = commune, aes(fill = "Communes"), color = "black", alpha = 0.5) +  
   geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = inter_parc_23, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = ins_parc_24, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
   scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
   theme_minimal() +
-  labs(title = "Parcelles cadastrales (2023) croisant les frontières étendues des communes de Côte d'or", 
+  labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Vendée", 
        fill ="Légende",
-       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
+       subtitle = "Les bordures des communes sont élargies d'un rayon de 250m de chaque côté de celles définies par l'IGN")
 
-# ggsave("parcelles_croisant_bordures_21.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 plot
 ```
 
+# Focus sur une commune ayant fusionné avec d'autres communes limitrophes
 
+```{r focus parcelle la tardiere}
+map <- mapview(commune %>% 
+                 filter(code_insee == "85289"), 
+               layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure %>% 
+            filter(code_insee == "85289"), 
+          layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(parcelle_24 %>% 
+            filter(code_com == "289"), 
+          layer.name = "Parcelles (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parcelle_23 %>% 
+            filter(code_com %in% c("289", "053", "037")), 
+          layer.name = "Parcelles (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5)
 
-
-```{r}
-# Méthode au niveau de la géomètrie des parcelles
-
-test <- inter_parc_23 %>%
-  filter(idu == "21001000ZA0001")
-
-st_within(inter_parc_22%>%
-  filter(idu == "21001000ZA0001") %>% select(geometry), test$geometry)
-
-st_contains(test, test)
-
-mat1 <- as.matrix(inter_parc_22[[11]][[5954]][[1]][[1]])
-mat2 <- as.matrix(inter_parc_23[[11]][[97247]][[1]][[1]])
-
-# Comparaison composante par composante
-comparison_result <- (abs(mat1 - mat2) < 1e-8)
-
-st_is_within_distance(test$geometry, inter_parc_22$geometry, dist = 0)
-
-mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(test, layer.name = "Parcelles modifiées (état 2023)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(inter_parc_22[c(5954, 54766),], layer.name = "Parcelles modifiées (état 2022)", col.regions = "pink", alpha.regions = 0.5)
-# Parcelles n'ayant pas été modifiées
-# Attention : doit etre invariant en changeant l'ordre des tables
-
-apres_geom <- inter_parc_23 %>% 
-  filter(!idu %in% df_geom$idu & !idu %in% ajout_parc$idu) %>% 
-  arrange(nom_com)
-
-avant_geom <- inter_parc_22 %>% 
-  filter(!idu %in% df_geom$idu & !idu %in% supp_parc$idu) %>% 
-  arrange(nom_com)
-
+# mapshot(map, url = "parcelles_tardiere.html")
 ```
 
-```{r}
+# Focus sur les parcelles dont je peux comparer l'état sur les deux périodes facilement (cad parcelles ayant conservé leur identifiant)
+
+## Elimination des parcelles IDENTIQUES en tout point du polygone (méthode de base pour enlever les cas reconnaissables facilement)
+
+```{r modif geometry egal}
+identique <- ins_parc_24 %>%
+  filter(!idu %in% ajout$idu) %>% 
+  st_filter(ins_parc_23, .predicate = st_equals)
+# Parcelles ayant reçu aucune modification
+# Attention : doit etre invariant en changeant l'ordre des tables (ins...)
+
+modif_apres <- ins_parc_24 %>% 
+  filter(!idu %in% identique$idu & !idu %in% ajout$idu) %>% 
+  st_filter(bordure, .predicate = st_within) %>%
+  arrange(nom_com)
+
+modif_avant <- ins_parc_23 %>% 
+  filter(!idu %in% identique$idu & !idu %in% supp$idu) %>% 
+  st_filter(bordure, .predicate = st_within) %>%
+  arrange(nom_com)
+
+col_identique <- c()
+# Comparer les colonnes en commun
+for (col in intersect(names(modif_avant), names(modif_apres))) {
+  merged <- full_join(
+    select(modif_avant %>% as.data.frame(), idu, !!sym(col)),
+    select(modif_apres, idu, !!sym(col)),
+    by = "idu",
+    suffix = c("_avant", "_apres")
+  )
+  # Vérifier si les colonnes sont identiques
+  if (all(merged[[paste0(col, "_avant")]] == merged[[paste0(col, "_apres")]], na.rm = TRUE)) {
+    col_identique <- c(col_identique, col)
+  }
+}
+
+modif <- modif_avant %>% as.data.frame() %>% 
+  full_join(modif_apres, by = col_identique, suffix = c("_avant", "_apres"))
+
+rm(col_identique, identique, merged)
+```
+
+
+```{r modif iou et iou_ajust}
+modif <- modif %>%
+  rowwise() %>% 
+  mutate(
+    iou = calcul_iou(st_geometry(geometry_avant), st_geometry(geometry_apres)),
+    iou_ajust = calcul_iou_ajust(st_geometry(geometry_avant), st_geometry(geometry_apres)),
+  )
+
+
+modif <- modif %>% 
+  filter(iou < 0.99)
+# Elimine les parcelles "sans changement manifeste" plus les parcelles sans iou = parcelles n'étant plus entièrement dans la bordure lors d'un changement d'une année sur l'autre
+
+quantiles <- quantile(modif$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na.rm = TRUE)
+```
+
+# Visualisation cas base (avec défaut notamment sur ajout/supp) 
+
+```{r ggplot methode geometry}
 plot <- ggplot() +
   geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
-  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = apres_geom, aes(fill = "Parcelles modifiées (état 2023)"), alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = avant_geom, aes(fill = "Parcelles modifiées (état 2022)"), alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = ajout_parc, aes(fill = "Parcelles ajoutées"), alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = supp_parc, aes(fill = "Parcelles supprimées"), alpha = 0.5, color = "black", size = 0.01) +
-  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles modifiées (état 2023)" = "purple", "Parcelles modifiées (état 2022)" = "pink", "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
+  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", 
+          alpha = 0.5, color = "lightblue") +  
+  geom_sf(data = modif_apres, aes(fill = "Parcelles modifiées (2024)"), 
+          alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = modif_avant, aes(fill = "Parcelles modifiées (2023)"), 
+          alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = ajout, aes(fill = "Parcelles ajoutées"), 
+          alpha = 0.5, color = "black", size = 0.01) +
+  geom_sf(data = supp, aes(fill = "Parcelles supprimées"), 
+          alpha = 0.5, color = "black", size = 0.01) +
+  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", 
+                               "Parcelles modifiées (2024)" = "purple",
+                               "Parcelles modifiées (2023)" = "pink", 
+                               "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
   theme_minimal() +
-  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Côte d'or, modifiés au niveau de la geometry en 2023", 
+  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Vendée, modifiés au niveau de la geometry en 2024", 
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-ggsave("parcelles_bordures_modifiées_21.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("parcelles_bordures_modifiées_21.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
 ```
 
-
-```{r}
+```{r mapview methode geometry}
 map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(apres_geom, layer.name = "Parcelles modifiées (état 2023)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(avant_geom, layer.name = "Parcelles modifiées (état 2022)", col.regions = "pink", alpha.regions = 0.5) +
-  mapview(ajout_parc, layer.name = "Parcelles ajoutées", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(supp_parc, layer.name = "Parcelles supprimées", col.regions = "red", alpha.regions = 0.5)
+  mapview(bordure, layer.name = "Bordures étendues", 
+          col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(modif_apres, layer.name = "Parcelles modifiées (état 2024)", 
+          col.regions = "purple", alpha.regions = 0.5) +
+  mapview(modif_avant, layer.name = "Parcelles modifiées (état 2023)", 
+          col.regions = "pink", alpha.regions = 0.5) +
+  mapview(ajout, layer.name = "Parcelles ajoutées", 
+          col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(supp, layer.name = "Parcelles supprimées",
+          col.regions = "red", alpha.regions = 0.5)
 
-mapshot(map, url = "parcelles_modifiées_bordure_21.html")
+mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ```
 
+## Reconnaissances des cas de translation, modification de contour et les deux à la fois
 
-```{r}
-unique(sort(inter_parc_23$com_abs))
-unique(sort(inter_parc_24$com_abs))
+```{r modif iou et iou_ajust -> translation, modification de contour et les deux à la fois}
+modif_apres <- modif %>% select(idu, iou, iou_ajust) %>%
+  left_join(modif_apres, by = "idu") %>% 
+  st_as_sf() %>% 
+  st_set_crs(2154) %>% 
+  ungroup()
 
-parc_com_abs_apres <- inter_parc_24 %>% 
-  filter(!com_abs %in% inter_parc_23$com_abs)
+modif_avant <- modif %>% select(idu, iou, iou_ajust) %>% 
+  left_join(modif_avant, by = "idu") %>% 
+  st_as_sf() %>% 
+  st_set_crs(2154) %>% 
+  ungroup()
 
-parc_com_abs_apres <- parc_com_abs_apres %>%
+translation <- modif_apres %>% 
+  filter(iou_ajust > 0.99) %>% 
+  select(-iou) %>% 
+  mutate(idu_translate = idu)
+
+contour_apres <- modif_apres %>% 
+  filter(iou > 0.95 & iou_ajust < 0.99) %>% 
+  mutate(iou_multi = iou,
+         participants_avant = idu,
+         participants_apres = idu)
+
+contour_translation <- modif_apres %>% 
+  filter(iou < 0.95 & iou_ajust > 0.95 & iou_ajust < 0.99) %>% 
+  select(-iou) %>% 
+  mutate(idu_translate = idu)
+
+modif_apres <- modif_apres %>%
+  filter(!idu %in% translation$idu) %>% 
+  filter(!idu %in% contour_apres$idu) %>% 
+  filter(!idu %in% contour_translation$idu)
+
+modif_avant <- modif_avant %>%
+  filter(!idu %in% translation$idu) %>% 
+  filter(!idu %in% contour_apres$idu) %>% 
+  filter(!idu %in% contour_translation$idu)
+```
+
+## Cas plus compliqués de détection des mêmes cas
+
+```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis}
+modif_apres <- modif_apres %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_multi(geometry, modif_apres, modif_avant))) %>%
+  mutate(iou_multi = result$iou,
+         participants_avant = result$participants_avant,
+         participants_apres= result$participants_apres) %>%
+  ungroup() %>%
+  select(-result)
+
+contour_apres <- modif_apres %>% 
+  filter(iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres) | 
+           nchar(participants_avant) == 14 & nchar(participants_apres) == 14 & iou > iou_ajust) %>% 
+  rbind(contour_apres)
+
+contour_translation <- modif_apres %>% 
+  filter(nchar(participants_avant) == 14 & nchar(participants_apres) == 14 & iou < iou_ajust | is.na(iou_multi)) %>% 
+  select(-iou, -participants_avant, -participants_apres, -iou_multi) %>% 
+  mutate(idu_translate = idu) %>% 
+  rbind(contour_translation)
+
+modif_apres <- modif_apres %>%
+  filter(!idu %in% contour_apres$idu) %>% 
+  filter(!idu %in% contour_translation$idu)
+
+modif_avant <- modif_avant %>%
+  filter(!idu %in% contour_apres$idu) %>% 
+  filter(!idu %in% contour_translation$idu)
+# Manque un iou multi translate
+```
+
+## Distribution de l'IoU après translation des parcelles
+
+```{r distib iou}
+plot <- ggplot(na.omit(modif), aes(x = iou_ajust)) +
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.005, fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_segment(x = quantiles[1], xend = quantiles[1], y = 0, yend = 9, color = "blue", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[2], xend = quantiles[2], y = 0, yend = 12, color = "blue", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[3], xend = quantiles[3], y = 0, yend = 15, color = "blue", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[4], xend = quantiles[4], y = 0, yend = 19, color = "blue", linetype = "dashed", linewidth = 0.6) +
+  annotate("text", x = quantiles[1], y = 10, label = paste0("1% Quantile: ", round(quantiles[1], 2)), color = "blue", vjust = -1.5) +
+  annotate("text", x = quantiles[2], y = 13, label = paste0("3% Quantile: ", round(quantiles[2], 2)), color = "blue", vjust = -1.5) +
+  annotate("text", x = quantiles[3], y = 16, label = paste0("5% Quantile: ", round(quantiles[3], 2)), color = "blue", vjust = -1.5) +
+  annotate("text", x = quantiles[4], y = 20, label = paste0("10% Quantile: ", round(quantiles[4], 2)), color = "blue", vjust = -1.5) +
+  labs(title = "Histogramme de la variable iou_ajust avec quantiles",
+       x = "iou_ajust",
+       y = "Fréquence") +
+  theme_bw()
+
+# ggsave("Distribution_iou.png", plot = plot, width = 12, height = 8, dpi = 300)
+```
+
+# Focus des parcelles ayant changé de communes
+
+## Cas des parcelles dans le cas d'une fusion de communes
+
+```{r ajout/supp -> focus fusion commune}
+com_abs_apres <- ajout %>% 
+  filter(com_abs != "000") %>%
   mutate(idu_avant = paste0(substr(idu,1,2),
                             com_abs, 
                             "000", 
                             substr(idu,9,14))
-         )
+  )
 
-parc_com_abs_avant <- inter_parc_23 %>% 
-  filter(idu %in% parc_com_abs_apres$idu_avant)
+com_abs_avant <- supp %>% 
+  filter(idu %in% com_abs_apres$idu_avant)
+
+com_abs_apres <- com_abs_apres %>% 
+  filter(idu_avant %in% com_abs_avant$idu)
+# Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
+
+
+```{r focus parcelle changement de communes}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(com_abs_apres_bis, layer.name = "Parcelles abs_bis (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(com_abs_avant, layer.name = "Parcelles abs (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
+  mapview(df_abs, layer.name = "Parcelles df_abs (état 2024)", col.regions = "purple", alpha.regions = 0.5)
+
+# mapshot(map, url = "parcelles_abs.html")
+```
+
+# Focus parcelles avec changement "majeur" lié à un changement impactant l'identifiant des parcelles
+
+## Elimination des parcelles IDENTIQUES en tout point du polygone (méthode de base pour enlever les cas reconnaissables facilement)
+
+```{r ajout/supp geometry egal}
+ajout_identique <- ajout %>%
+  st_filter(supp, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées
+
+supp_identique <- supp %>%
+  st_filter(ajout, .predicate = st_equals)
+# Parcelles n'ayant pas été modifiées
+
+ajout <- ajout %>% 
+  filter(!idu %in% ajout_identique$idu) %>% 
+  arrange(nom_com)
+
+supp <- supp %>% 
+  filter(!idu %in% supp_identique$idu) %>% 
+  arrange(nom_com)
+
+rm(ajout_identique, supp_identique)
+```
+
+## Reconnaissances des cas de fusion (peu fréquent) ou subdivision (plus courant)
+
+```{r ajout/supp iou -> fusion/subdivision}
+
+supp <- supp %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_intersec(geometry, ajout))) %>%
+  mutate(iou = result$iou,
+         participants = result$participants) %>%
+  ungroup() %>%
+  select(-result)
+
+ajout <- ajout %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_intersec(geometry, supp))) %>%
+  mutate(iou = result$iou,
+         participants = result$participants) %>%
+  ungroup() %>%
+  select(-result)
+
+fusion <- ajout %>% 
+  filter(iou > 0.99 & nchar(participants) != 14)
+
+subdiv <- supp %>% 
+  filter(iou > 0.99 & nchar(participants) != 14)
+
+ajout <- ajout %>%
+  filter(!idu %in% unlist(str_split(subdiv$participants, ",\\s*"))) %>% 
+  filter(!idu %in% fusion$idu & iou < 0.99 | is.na(iou))
+
+supp <- supp %>%
+  filter(!idu %in% unlist(str_split(fusion$participants, ",\\s*"))) %>% 
+  filter(!idu %in% subdiv$idu & iou < 0.99 | is.na(iou))
+```
+
+## Reconnaissances des cas de multi-subdivision (ex : 2 -> 3) ou modification de contours
+
+```{r ajout/supp iou_multi -> multi-subdivision et contours}
+
+supp <- supp %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_multi(geometry, supp, ajout))) %>%
+  mutate(iou_multi = result$iou,
+         participants_avant = result$participants_avant,
+         participants_apres= result$participants_apres) %>%
+  ungroup() %>%
+  select(-result)
+
+multi_subdiv <- supp %>% 
+  filter(iou_multi > 0.99 & nchar(participants_avant) != nchar(participants_apres))
+
+contour <- supp %>% 
+  filter((iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres)) | nchar(participants_avant) == 14 & nchar(participants_apres) == 14)
+
+ajout <- ajout %>%
+  filter(!idu %in% unlist(str_split(multi_subdiv$participants_apres, ",\\s*"))) %>% 
+  filter(!idu %in% unlist(str_split(contour$participants_apres, ",\\s*")))
+
+supp <- supp %>%
+  filter(!idu %in% unlist(str_split(multi_subdiv$participants_avant, ",\\s*"))) %>% 
+  filter(!idu %in% unlist(str_split(contour$participants_avant, ",\\s*")))
+```
+
+## Reconnaissances des cas de modification de contours plus compliquée
+
+```{r changement forme + ou découpage compliquée}
+supp <- supp %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_multi(geometry, supp, ajout))) %>%
+  mutate(iou_multi = result$iou,
+         participants_avant = result$participants_avant,
+         participants_apres= result$participants_apres) %>%
+  ungroup() %>%
+  select(-result)
+
+# Cas d'une parcelle spécial 850040000F0149
+contour <- supp %>% 
+  filter((iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres)) | nchar(participants_avant) == 14 & nchar(participants_apres) == 14) %>% 
+  rbind(contour)
+
+ajout <- ajout %>%
+  filter(!idu %in% unlist(str_split(contour$participants_apres, ",\\s*")))
+
+supp <- supp %>%
+  filter(!idu %in% unlist(str_split(contour$participants_avant, ",\\s*")))
+
+contour_transfo <- supp %>% 
+  filter(iou_multi > 0.95)
+
+ajout <- ajout %>%
+  filter(!idu %in% unlist(str_split(contour_transfo$participants_apres, ",\\s*")))
+
+supp <- supp %>%
+  filter(!idu %in% unlist(str_split(contour_transfo$participants_avant, ",\\s*")))
+```
+
+## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation, modification de contour avec translation
+
+```{r ajout/supp iou_ajust -> translation, contour + translation}
+
+ajout <- ajout %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_intersec_translate(geometry, supp))) %>%
+  mutate(iou_ajust = result$iou_ajust,
+         idu_translate = result$idu_translate) %>%
+  ungroup() %>%
+  select(-result)
+
+translation <- ajout %>% 
+  filter(iou_ajust > 0.99) %>% 
+  select(-iou,-participants) %>% 
+  rbind(translation)
+
+contour_translation <- ajout %>% 
+  filter(iou_ajust > 0.95 & iou_ajust < 0.99) %>% 
+  select(-iou,-participants) %>% 
+  rbind(contour_translation)
+
+ajout <- ajout %>%
+  filter(!idu %in% translation$idu) %>% 
+  filter(!idu %in% contour_translation$idu)
+
+supp <- supp %>%
+  filter(!idu %in% translation$idu_translate)%>% 
+  filter(!idu %in% contour_translation$idu_translate)
+```
+
+## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
+
+```{r ajout/supp iou_ajust -> contour_fusion_translation}
+supp <- supp %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_multi_translate(geometry, supp, ajout))) %>%
+  mutate(iou_multi_translate = result$iou,
+         participants_avant_multi_translate = result$participants_avant,
+         participants_apres_multi_translate = result$participants_apres) %>%
+  ungroup() %>%
+  select(-result)
+
+contour_fusion_translation <- supp %>% 
+  filter(iou_multi_translate > 0.95)
+
+ajout <- ajout %>%
+  filter(!idu %in% contour_fusion_translation$participants_apres_multi_translate)
+
+supp <- supp %>%
+  filter(!idu %in% contour_fusion_translation$participants_avant_multi_translate)
+```
+
+## Recalcul de l'IoU pour détecter les parcelles maintenant isolées -> Véritable ajout ou suppression
 
 ```{r}
-mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(parc_com_abs_apres, layer.name = "Parcelles après (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(parc_com_abs_avant, layer.name = "Parcelles avant (état 2023)", col.regions = "pink", alpha.regions = 0.5)
+supp <- supp %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_intersec(geometry, ajout))) %>%
+  mutate(iou = result$iou,
+         participants = result$participants) %>%
+  ungroup() %>%
+  select(-result)
+
+ajout <- ajout %>%
+  rowwise() %>%
+  mutate(result = list(calcul_iou_intersec(geometry, supp))) %>%
+  mutate(iou = result$iou,
+         participants = result$participants) %>%
+  ungroup() %>%
+  select(-result)
+
+vrai_ajout <- ajout %>%
+  filter(is.na(iou))
+
+vrai_supp <- supp %>%
+  filter(is.na(iou))
+
+ajout <- ajout %>%
+  filter(!is.na(iou))
+
+supp <- supp %>%
+  filter(!is.na(iou))
 ```
 
+# Visualisation finale sur une carte du département
 
+```{r mapview typologie parcelles}
+map <- mapview(commune, layer.name = "Communes", col.regions = "white", 
+               alpha.regions = 0.5, homebutton = F) +
+  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(translation,
+          layer.name = "Parcelles translatées (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(ins_parc_23 %>%
+            filter(idu %in% translation$idu_translate), 
+          layer.name = "Parcelles translatées (état 2023)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(fusion, layer.name = "Parcelles fusionnéees (état 2024)", 
+          col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
+  mapview(supp_tot %>%
+            filter(idu %in% unlist(str_split(fusion$participants, ",\\s*"))),  
+          layer.name = "Parcelles avant fusion (état 2023)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(ajout_tot %>%
+            filter(idu %in% unlist(str_split(subdiv$participants, ",\\s*"))),  
+          layer.name = "Parcelles subdivisées (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(subdiv,  layer.name = "Parcelles avant subdivision (état 2023)", 
+          col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
+  mapview(ajout_tot %>%
+            filter(idu %in% unlist(str_split(multi_subdiv$participants_apres, ",\\s*"))),
+          layer.name = "Parcelles après multi-subdivision (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(multi_subdiv,  
+          layer.name = "Parcelles avant multi-subdivision (état 2023)", 
+          col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
+  mapview(ajout_tot %>%
+            filter(idu %in% unlist(str_split(contour$participants_apres, ",\\s*"))),  
+          layer.name = "Parcelles après évolution forme (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(contour,
+          layer.name = "Parcelles avant évolution forme (état 2023)",
+          col.regions = "purple", alpha.regions = 0.5, homebutton = F) +
+  mapview(contour_apres,  
+          layer.name = "Parcelles après évolution forme (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(ins_parc_23 %>%
+            filter(idu %in% contour_apres$idu),  
+          layer.name = "Parcelles avant évolution forme (état 2023)", 
+          col.regions = "purple", alpha.regions = 0.5, homebutton = F) +
+  mapview(ajout_tot %>%
+            filter(idu %in% unlist(str_split(contour_transfo$participants_apres, ",\\s*"))),  
+          layer.name = "Parcelles ayant transfo + évolution forme (état 2024)",
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(contour_transfo,
+          layer.name = "Parcelles ayant transfo + évolution forme (état 2023)", 
+          col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
+  mapview(contour_translation,  
+          layer.name = "Parcelles ayant translatées + évolution forme (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(ins_parc_23 %>%
+            filter(idu %in% contour_translation$idu_translate),
+          layer.name = "Parcelles ayant translatées + évolution forme (état 2023)", 
+          col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
+  mapview(vrai_ajout, layer.name = "Parcelles véritablement ajoutées", 
+          col.regions = "green", alpha.regions = 0.5, homebutton = F) +
+  mapview(vrai_supp, layer.name = "Parcelles véritablement supprimées",
+          col.regions = "red", alpha.regions = 0.5, homebutton = F) +
+  mapview(ajout, z = c("iou_ajust"), layer.name = "Parcelles restantes (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(supp, z = c("iou_multi"), layer.name = "Parcelles restantes (état 2023)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(modif_apres, z = c("iou_ajust"), 
+          layer.name = "Parcelles modifiées restantes (état 2024)", 
+          alpha.regions = 0.5, homebutton = F) +
+  mapview(modif_avant, z = c("iou_ajust"), 
+          layer.name = "Parcelles modifiées restantes (état 2023)", 
+          alpha.regions = 0.5, homebutton = F)
 
+mapshot(map, url = "parcelles_iou_inside_bordure_21.html")
+```
+
+# Tableau de comparaison de superficie entre les deux années
+
+```{r evolution superficie}
+evol_sup <- modif %>% 
+  mutate(superficie_apres = st_area(geometry_apres),
+         superficie_avant = st_area(geometry_avant)) %>% 
+  group_by(code_com) %>% 
+  summarise(modif_superficie_apres = round(sum(superficie_apres),2),
+            modif_superficie_avant = round(sum(superficie_avant),2),
+            modif_evolution_superficie = modif_superficie_apres - modif_superficie_avant)
+
+ajout_sup <- ajout %>% 
+  mutate(superficie = st_area(geometry)) %>% 
+  group_by(code_com) %>% 
+  summarise(superficie_ajoute = round(sum(superficie),2)) %>% 
+  st_drop_geometry()
+
+supp_sup <- supp %>% 
+  mutate(superficie = st_area(geometry)) %>% 
+  group_by(code_com) %>% 
+  summarise(superficie_supprime = round(sum(superficie),2)) %>% 
+  st_drop_geometry()
+
+evol_sup <- evol_sup %>% 
+  full_join(ajout_sup, by = "code_com") %>% 
+  full_join(supp_sup, by = "code_com") %>% 
+  mutate(across(everything(), ~ replace_na(.x, units::set_units(0, m*m)))) %>% 
+  mutate(tot_evolution_superficie = round(modif_evolution_superficie + superficie_ajoute - superficie_supprime,2))
+```
 

@@ -107,9 +107,13 @@ com_85 <- process_departement(num_departements, "2024", F)
 
 parc_85_22 <- process_departement(num_departements, "2022")
 
-parc_21_22 <- process_departement("021", "2022")
+parc_21_24 <- process_departement("021", "2024")
 parc_21_23 <- process_departement("021", "2023")
 com_21 <- process_departement("021", "2024", F)
+
+parc_13_24 <- process_departement("013", "2024")
+parc_13_23 <- process_departement("013", "2023")
+com_13 <- process_departement("013", "2024", F)
 
 # Appliquer la fonction à chaque département
 # list_parc <-lapply(num_departements,num_annees, process_departement)
@@ -205,10 +209,13 @@ parc_21_23 <- parc_21_23 %>%
   filter(!(IDU == "213200000B0081" & FEUILLE == "5"))
 # Doublon de ligne bizarre
 
-constru_table(parc_21_22)
+constru_table(parc_21_24)
 constru_table(parc_21_23)
 constru_table(com_21, F)
 
+constru_table(parc_13_24)
+constru_table(parc_13_23)
+constru_table(com_13, F)
 
 dbListTables(conn)
 
