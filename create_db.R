@@ -158,6 +158,8 @@ constru_table <- function(table_sf, indic_parc = T) {
   }
   
   # Création de la table (structure vide) ####
+  dbSendQuery(conn, "CREATE INDEX idx_parc_85_24_idu ON parc_85_24(idu);")
+  dbSendQuery(conn, "CREATE INDEX idx_parc_85_23_idu ON parc_85_23(idu);")
   dbSendQuery(conn, 
               paste0('DROP TABLE IF EXISTS ',
                      deparse(substitute(table_sf)),
@@ -165,7 +167,12 @@ constru_table <- function(table_sf, indic_parc = T) {
   dbSendQuery(conn, query)
   dbSendQuery(conn,
               paste0('CREATE INDEX ',
-                     paste0('idx_',deparse(substitute(table_sf))),
+                     paste0('idx_',deparse(substitute(table_sf)),'_idu'),
+                     ' ON ',
+                     paste0(deparse(substitute(table_sf)),'(idu);')))
+  dbSendQuery(conn,
+              paste0('CREATE INDEX ',
+                     paste0('idx_',deparse(substitute(table_sf)),'_geometry'),
                      ' ON ',
                      deparse(substitute(table_sf)),
                      ' USING GIST(geometry);'))

@@ -188,6 +188,34 @@ supp_tot <- parcelle_23 %>%
   filter(!idu %in% parcelle_24$idu)
 ```
 
+```{r import sql}
+dbSendQuery(conn, "
+  CREATE TEMP TABLE ajout_tot AS
+  SELECT * 
+  FROM parc_85_24
+  WHERE idu NOT IN (SELECT idu FROM parc_85_23);
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE supp_tot AS
+  SELECT * 
+  FROM parc_85_23
+  WHERE idu NOT IN (SELECT idu FROM parc_85_24);
+")
+
+
+ajout_tot_sql <- st_read(conn, query = "
+  SELECT * 
+  FROM ajout_tot;
+")
+
+supp_tot_sql <- st_read(conn, query = "
+  SELECT * 
+  FROM supp_tot;
+")
+```
+
+
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
 
 ```{r bordure}
@@ -200,8 +228,7 @@ bordure <- do.call(rbind, bordure$extended) %>%
   st_sf()
 
 ins_parc_24 <- parcelle_24 %>%
-  st_filter(bordure, .predicate = st_intersects) %>% 
-  st_filter(bordure, .predicate = st_within)
+  st_filter(bordure, .predicate = st_intersects)
 
 # intersect puis within pour une raison de rapidité
 
@@ -223,11 +250,11 @@ supp <- supp_tot %>%
   arrange(nom_com)
 ```
 
-```{r bordure_sql}
+```{r bordure sql}
 # Méthode SQL qui ne donne pas les memes résultats
 # Marche pas avec mapview
 dbSendQuery(conn, "
-  CREATE TEMP TABLE extended_borders AS
+  CREATE TEMP TABLE bordure AS
   SELECT
       code_insee, nom_com, code_dep,
       ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
@@ -239,12 +266,12 @@ bordure_sql <- st_read(conn, query = "
   SELECT 
       *
   FROM
-      extended_borders;
+      bordure;
 ") %>%
   mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
 
 dbSendQuery(conn, "
-  CREATE INDEX idx_extended_borders_geometry ON extended_borders USING GIST(geometry);
+  CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);
 ")
 
 ins_parc_24_sql <- st_read(conn, query = "
@@ -253,13 +280,65 @@ ins_parc_24_sql <- st_read(conn, query = "
   FROM
       parc_85_24
   JOIN
-      extended_borders
+      bordure
   ON
-      ST_WITHIN(parc_85_24.geometry, extended_borders.geometry);
-") %>%
-  mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
+      ST_WITHIN(parc_85_24.geometry, bordure.geometry);
+")
 
-dbSendQuery(conn, "DROP TABLE IF EXISTS extended_borders;")
+ins_parc_23_sql <- st_read(conn, query = "
+  SELECT DISTINCT
+      parc_85_23.*
+  FROM
+      parc_85_23
+  JOIN
+      bordure
+  ON
+      ST_WITHIN(parc_85_23.geometry, bordure.geometry);
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE ajout AS
+  SELECT 
+      ajout_tot.*
+  FROM
+      ajout_tot
+  JOIN
+      bordure
+  ON
+      ST_WITHIN(ajout_tot.geometry, bordure.geometry)
+  ORDER BY ajout_tot.nom_com;
+")
+
+dbSendQuery(conn, "
+  CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);
+")
+
+ajout_sql <- st_read(conn, query = "
+  SELECT * FROM ajout;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE supp AS
+  SELECT 
+      supp_tot.*
+  FROM
+      supp_tot
+  JOIN
+      bordure
+  ON
+      ST_WITHIN(supp_tot.geometry, bordure.geometry)
+  ORDER BY supp_tot.nom_com;
+")
+
+dbSendQuery(conn, "
+  CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);
+")
+
+supp_sql <- st_read(conn, query = "
+  SELECT * FROM supp;
+")
+
+dbSendQuery(conn, "DROP TABLE IF EXISTS bordure;")
 ```
 
 
@@ -677,7 +756,7 @@ ajout <- ajout %>%
          idu_translate = result$idu_translate) %>%
   ungroup() %>%
   select(-result)
-  
+
 translation <- ajout %>% 
   filter(iou_ajust > 0.99) %>% 
   select(-iou,-participants) %>% 
