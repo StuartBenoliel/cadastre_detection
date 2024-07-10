@@ -110,7 +110,7 @@ calcul_iou_multi <- function(polygon, supp, ajout) {
   
   iou_intersect <- calcul_iou_intersec(polygon, ajout)
   
-  list(iou = iou_intersect$iou, 
+  list(iou_multi = iou_intersect$iou, 
        participants_avant = paste(nom_participants_avant, collapse = ", "),
        participants_apres = iou_intersect$participants)
 }
@@ -409,7 +409,7 @@ modif_avant <- modif_avant %>%
 modif_apres <- modif_apres %>%
   rowwise() %>%
   mutate(result = list(calcul_iou_multi(geometry, modif_apres, modif_avant))) %>%
-  mutate(iou_multi = result$iou,
+  mutate(iou_multi = result$iou_multi,
          participants_avant = result$participants_avant,
          participants_apres= result$participants_apres) %>%
   ungroup() %>%
@@ -554,7 +554,7 @@ supp <- supp %>%
 supp <- supp %>%
   rowwise() %>%
   mutate(result = list(calcul_iou_multi(geometry, supp, ajout))) %>%
-  mutate(iou_multi = result$iou,
+  mutate(iou_multi = result$iou_multi,
          participants_avant = result$participants_avant,
          participants_apres= result$participants_apres) %>%
   ungroup() %>%
@@ -581,7 +581,7 @@ supp <- supp %>%
 supp <- supp %>%
   rowwise() %>%
   mutate(result = list(calcul_iou_multi(geometry, supp, ajout))) %>%
-  mutate(iou_multi = result$iou,
+  mutate(iou_multi = result$iou_multi,
          participants_avant = result$participants_avant,
          participants_apres= result$participants_apres) %>%
   ungroup() %>%
