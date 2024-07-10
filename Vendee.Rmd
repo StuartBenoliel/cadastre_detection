@@ -235,7 +235,7 @@ plot <- ggplot() +
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 250m de chaque côté de celles définies par l'IGN")
 
-# ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("PNG/parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 plot
 ```
 
@@ -341,7 +341,7 @@ plot <- ggplot() +
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+ggsave("PNG/parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
 ```
 
@@ -453,7 +453,7 @@ plot <- ggplot(na.omit(modif), aes(x = iou_ajust)) +
        y = "Fréquence") +
   theme_bw()
 
-# ggsave("Distribution_iou.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("PNG/Distribution_iou.png", plot = plot, width = 12, height = 8, dpi = 300)
 ```
 
 # Focus des parcelles ayant changé de communes

@@ -167,14 +167,6 @@ constru_table <- function(table_sf, indic_parc = T) {
                      deparse(substitute(table_sf)),
                      ';'))
   dbSendQuery(conn, query)
-  if(indic_parc) {
-    dbSendQuery(conn,
-                paste0('CREATE INDEX ',
-                       paste0('idx_',deparse(substitute(table_sf)),'_idu'),
-                       ' ON ',
-                       paste0(deparse(substitute(table_sf)),'(idu);')))
-  }
-  
   dbSendQuery(conn,
               paste0('CREATE INDEX ',
                      paste0('idx_',deparse(substitute(table_sf)),'_geometry'),

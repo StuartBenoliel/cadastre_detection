@@ -30,6 +30,57 @@ conn <- connecter()
 DBI::dbListTables(conn)
 ```
 
+```{r voir les index}
+dbGetQuery(conn, " SELECT 
+    tablename, 
+    indexname, 
+    indexdef 
+FROM 
+    pg_indexes 
+WHERE 
+    schemaname LIKE 'pg_temp_%' 
+    OR schemaname = 'public';
+           ")
+```
+
+```{r voir les tables temporaires}
+dbGetQuery(conn, " SELECT 
+    schemaname AS schema_name,
+    tablename AS table_name
+FROM 
+    pg_tables
+WHERE 
+    schemaname LIKE 'pg_temp_%'
+ORDER BY 
+    schemaname, tablename;
+           ")
+```
+
+```{r supprimer toutes les tables temporaires}
+query_list <- "
+SELECT 
+    tablename
+FROM 
+    pg_tables
+WHERE 
+    schemaname LIKE 'pg_temp_%';
+"
+
+# Exécution de la requête pour obtenir les noms des tables temporaires
+tables_temporaires <- dbGetQuery(conn, query_list)
+
+# Générer les commandes de suppression
+drop_queries <- lapply(tables_temporaires$tablename, function(table) {
+    paste("DROP TABLE IF EXISTS", table, "CASCADE;")
+})
+
+# Exécution des commandes de suppression
+for (query in drop_queries) {
+    dbSendQuery(conn, query)
+}
+```
+
+
 ```{r fonction commun}
 creer_bordure_etendue <- function(commune, buffer_distance) {
   buffer_positif <- st_buffer(commune, buffer_distance)
@@ -181,7 +232,7 @@ dbSendQuery(conn, "
   DECLARE
       intersection geometry;
       aire_intersection numeric;
-      union geometry;
+      geom_union geometry;
       aire_union numeric;
       iou numeric;
   BEGIN
@@ -195,8 +246,8 @@ dbSendQuery(conn, "
           END IF;
         
           aire_intersection := ST_Area(intersection);
-          union := ST_Union(geometry_avant, geometry_apres);
-          aire_union := ST_Area(union);
+          geom_union := ST_Union(geometry_avant, geometry_apres);
+          aire_union := ST_Area(geom_union);
         
           -- Calculer l'IoU
           iou := aire_intersection / aire_union;
@@ -214,7 +265,8 @@ dbSendQuery(conn, "
   DECLARE
       centroid_apres geometry;
       centroid_avant geometry;
-      translation_vector geometry;
+      translation_vector_x double precision;
+      translation_vector_y double precision;
       geometry_avant_ajust geometry;
       iou_ajust numeric;
   BEGIN
@@ -222,12 +274,15 @@ dbSendQuery(conn, "
       IF NOT ST_IsEmpty(geometry_avant) AND NOT ST_IsEmpty(geometry_apres) THEN
           centroid_apres := ST_Centroid(geometry_apres);
           centroid_avant := ST_Centroid(geometry_avant);
-          translation_vector := ST_Translate(geometry_avant, ST_X(centroid_apres) - ST_X(centroid_avant), ST_Y(centroid_apres) - ST_Y(centroid_avant));
-        
+          translation_vector_x := ST_X(centroid_apres) - ST_X(centroid_avant);
+          translation_vector_y := ST_Y(centroid_apres) - ST_Y(centroid_avant);
+          
+          -- Calculer la géométrie avant ajustée en utilisant ST_Translate
+          geometry_avant_ajust := ST_Translate(geometry_avant, translation_vector_x, translation_vector_y);
+          
           -- Calculer l'IoU ajusté avec la géométrie avant ajustée
-          geometry_avant_ajust := ST_SetSRID(geometry_avant + translation_vector, ST_SRID(geometry_avant));
           iou_ajust := calcul_iou(geometry_avant_ajust, geometry_apres);
-        
+          
           RETURN iou_ajust;
       ELSE
           RETURN NULL;
@@ -250,7 +305,11 @@ dbSendQuery(conn, "
   CREATE TEMP TABLE ajout_tot AS
   SELECT * 
   FROM parc_85_24
-  WHERE idu NOT IN (SELECT idu FROM parc_85_23);
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM parc_85_23 
+    WHERE parc_85_24.idu = parc_85_23.idu
+  );
 ")
 
 dbSendQuery(conn, "
@@ -261,7 +320,11 @@ dbSendQuery(conn, "
   CREATE TEMP TABLE supp_tot AS
   SELECT * 
   FROM parc_85_23
-  WHERE idu NOT IN (SELECT idu FROM parc_85_24);
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM parc_85_24
+    WHERE parc_85_23.idu = parc_85_24.idu
+  );
 ")
 
 dbSendQuery(conn, "
@@ -358,7 +421,7 @@ dbSendQuery(conn, "
 
 ```{r bordure sql}
 
-bordure_sql <- st_read(conn, query = "
+bordure <- st_read(conn, query = "
   SELECT 
       *
   FROM
@@ -427,119 +490,85 @@ map <- mapview(commune %>%
 
 ```{r modif geometry egal sql}
 # Requête SQL pour créer la table temporaire identique
-query_identique <- "
-CREATE TEMP TABLE identique AS
-SELECT ins_parc_24.*
-FROM ins_parc_24
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM ajout
-    WHERE ins_parc_24.idu = ajout.idu
-)
-AND EXISTS (
-    SELECT 1
-    FROM ins_parc_23 
-    WHERE ins_parc_24.idu = ins_parc_23.idu
-    AND ST_Equals(p24.geom, ins_parc_23.geom)
-);
-"
-dbSendQuery(conn, query_identique)
-
-query_modif_apres <- "
-CREATE TEMP TABLE modif_apres AS
-SELECT ins_parc_24.*
-FROM ins_parc_24
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM identique
-    WHERE ins_parc_24.idu = identique.idu
-)
-AND NOT EXISTS (
-    SELECT 1
-    FROM ajout
-    WHERE ins_parc_24.idu = ajout.idu
-)
-ORDER BY p24.nom_com;
-"
-dbSendQuery(conn, query_modif_apres)
-
-query_modif_avant <- "
-CREATE TEMP TABLE modif_avant AS
-SELECT ins_parc_23.*
-FROM ins_parc_23
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM identique
-    WHERE ins_parc_23.idu = identique.idu
-)
-AND NOT EXISTS (
-    SELECT 1
-    FROM supp
-    WHERE ins_parc_23.idu = supp.idu
-)
-ORDER BY ins_parc_23.nom_com;
-"
-dbSendQuery(conn, query_modif_avant)
-
-query_modif <- "
-CREATE TEMP TABLE modif AS
-SELECT
-    COALESCE(avant.idu, apres.idu) AS idu,
-    COALESCE(avant.geometry, apres.geometry) AS geometry,
-    COALESCE(avant.contenance, apres.contenance) AS contenance,
-    -- Sélectionner toutes les colonnes des deux tables
-    avant.*, apres.*
-FROM
-    modif_avant avant
-FULL JOIN
-    modif_apres apres ON avant.idu = apres.idu
-WHERE
-    -- Filtrer les lignes où les colonnes geometry et contenance sont identiques
-    avant.geometry = apres.geometry
-    AND avant.contenance = apres.contenance;
-"
-dbSendQuery(conn, query_modif)
-```
-
-
-```{r modif geometry egal}
-
-identique <- st_read(conn, query = "
-   SELECT * FROM identique;
-")
-
-modif_apres <- st_read(conn, query = "
-  SELECT * FROM modif_apres;
-")
-
-modif_avant <- st_read(conn, query = "
-  SELECT * FROM modif_avant;
-")
-
-```
-
-```{r}
 dbSendQuery(conn, "
-  CREATE TEMP TABLE modif_calcul AS
-  SELECT
-      modif.*,
-      calcul_iou(modif.geometry_avant, modif.geometry_apres) AS iou,
-      calcul_iou_ajust(modif.geometry_avant, modif.geometry_apres) AS iou_ajust
-  FROM
-      modif;
+  CREATE TEMP TABLE identique AS
+  SELECT ins_parc_24.*
+  FROM ins_parc_24
+  WHERE NOT EXISTS (
+      SELECT 1
+      FROM ajout
+      WHERE ins_parc_24.idu = ajout.idu
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM ins_parc_23 
+      WHERE ins_parc_24.idu = ins_parc_23.idu
+      AND ST_Equals(ins_parc_24.geometry, ins_parc_23.geometry)
+  );
 ")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_apres AS
+  SELECT ins_parc_24.*
+  FROM ins_parc_24
+  WHERE NOT EXISTS (
+      SELECT 1
+      FROM identique
+      WHERE ins_parc_24.idu = identique.idu
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM ajout
+      WHERE ins_parc_24.idu = ajout.idu
+  )
+  ORDER BY ins_parc_24.nom_com;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_avant AS
+  SELECT ins_parc_23.*
+  FROM ins_parc_23
+  WHERE NOT EXISTS (
+      SELECT 1
+      FROM identique
+      WHERE ins_parc_23.idu = identique.idu
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM supp
+      WHERE ins_parc_23.idu = supp.idu
+  )
+  ORDER BY ins_parc_23.nom_com;
+")
+
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif AS
+  SELECT
+      apres.idu,
+      apres.geometry AS geometry_apres,
+      avant.geometry AS geometry_avant,
+      calcul_iou(avant.geometry, apres.geometry) AS iou,
+      calcul_iou_ajust(avant.geometry, apres.geometry) AS iou_ajust
+  FROM
+      modif_avant avant
+  FULL JOIN
+      modif_apres apres ON avant.idu = apres.idu;
+")
+
 
 dbSendQuery(conn, "
   CREATE TEMP TABLE modif_filtrer AS
   SELECT
       *
   FROM
-      modif_calcul
+      modif
   WHERE
       iou < 0.99;
 ")
-```
 
+dbSendQuery(conn, "DROP TABLE IF EXISTS identique;")
+```
 
 ```{r modif iou et iou_ajust}
 
@@ -596,6 +625,67 @@ mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ```
 
 ## Reconnaissances des cas de translation, modification de contour et les deux à la fois
+
+```{r}
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_apres_jointure AS
+  SELECT modif_apres.*, modif.iou, modif.iou_ajust
+  FROM modif
+  LEFT JOIN modif_apres ON modif.idu = modif_apres.idu;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_avant_jointure AS
+  SELECT modif_avant.*, modif.iou, modif.iou_ajust
+  FROM modif
+  LEFT JOIN modif_avant ON modif.idu = modif_avant.idu;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE translation AS
+  SELECT idu, ?
+         idu AS idu_translate
+  FROM modif_apres_jointure
+  WHERE iou_ajust > 0.99;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE contour_apres AS
+  SELECT modif_apres_jointure.*,
+         iou AS iou_multi,
+         idu AS participants_avant,
+         idu AS participants_apres
+  FROM modif_apres_jointure
+  WHERE iou > 0.95 AND iou_ajust < 0.99;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE contour_translation AS
+  SELECT idu, ?
+         idu AS idu_translate
+  FROM modif_apres_jointure
+  WHERE iou < 0.95 AND iou_ajust > 0.95 AND iou_ajust < 0.99;
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_apres_filtered AS
+  SELECT *
+  FROM modif_apres_jointure
+  WHERE idu NOT IN (SELECT idu FROM translation)
+    AND idu NOT IN (SELECT idu FROM contour_apres)
+    AND idu NOT IN (SELECT idu FROM contour_translation);
+")
+
+dbSendQuery(conn, "
+  CREATE TEMP TABLE modif_avant_filtered AS
+  SELECT *
+  FROM modif_avant_jointure
+  WHERE idu NOT IN (SELECT idu FROM translation)
+    AND idu NOT IN (SELECT idu FROM contour_apres)
+    AND idu NOT IN (SELECT idu FROM contour_translation);
+")
+```
+
 
 ```{r modif iou et iou_ajust -> translation, modification de contour et les deux à la fois}
 modif_apres <- modif %>% select(idu, iou, iou_ajust) %>%

@@ -1,5 +1,5 @@
 ---
-title: "Vendée 2024-2023"
+title: "Cote d'or 2024-2023"
 output: html_document
 date: "2024-06-18"
 ---
@@ -692,6 +692,7 @@ ajout <- ajout %>%
 
 supp <- supp %>%
   filter(!is.na(iou))
+# Iou supérieur à 95 dans ajout
 ```
 
 # Visualisation finale sur une carte du département
