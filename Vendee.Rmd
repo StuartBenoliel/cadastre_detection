@@ -258,6 +258,23 @@ map <- mapview(commune %>%
 # mapshot(map, url = "parcelles_tardiere.html")
 ```
 
+```{r focus parcelle la tardiere}
+map <- mapview(commune %>% 
+                 filter(code_insee == "85081"), 
+               layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
+  mapview(bordure %>% 
+            filter(code_insee == "85081"), 
+          layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
+  mapview(parcelle_24 %>% 
+            filter(code_com == "081"), 
+          layer.name = "Parcelles (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
+  mapview(parcelle_23 %>% 
+            filter(code_com %in% "081"), 
+          layer.name = "Parcelles (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5)
+
+mapshot(map, url = "parcelles.html")
+```
+
 # Focus sur les parcelles dont je peux comparer l'état sur les deux périodes facilement (cad parcelles ayant conservé leur identifiant)
 
 ## Elimination des parcelles IDENTIQUES en tout point du polygone (méthode de base pour enlever les cas reconnaissables facilement)
@@ -279,25 +296,10 @@ modif_avant <- ins_parc_23 %>%
   st_filter(bordure, .predicate = st_within) %>%
   arrange(nom_com)
 
-col_identique <- c()
-# Comparer les colonnes en commun
-for (col in intersect(names(modif_avant), names(modif_apres))) {
-  merged <- full_join(
-    select(modif_avant %>% as.data.frame(), idu, !!sym(col)),
-    select(modif_apres, idu, !!sym(col)),
-    by = "idu",
-    suffix = c("_avant", "_apres")
-  )
-  # Vérifier si les colonnes sont identiques
-  if (all(merged[[paste0(col, "_avant")]] == merged[[paste0(col, "_apres")]], na.rm = TRUE)) {
-    col_identique <- c(col_identique, col)
-  }
-}
+modif <- modif_avant %>% as.data.frame() %>% select(idu,code_com,geometry) %>% 
+  full_join(modif_apres %>% select(idu,code_com,geometry), by = c('idu', 'code_com'), suffix = c("_avant", "_apres"))
 
-modif <- modif_avant %>% as.data.frame() %>% 
-  full_join(modif_apres, by = col_identique, suffix = c("_avant", "_apres"))
-
-rm(col_identique, identique, merged)
+rm(identique)
 ```
 
 
@@ -308,7 +310,6 @@ modif <- modif %>%
     iou = calcul_iou(st_geometry(geometry_avant), st_geometry(geometry_apres)),
     iou_ajust = calcul_iou_ajust(st_geometry(geometry_avant), st_geometry(geometry_apres)),
   )
-
 
 modif <- modif %>% 
   filter(iou < 0.99)
@@ -453,7 +454,7 @@ plot <- ggplot(na.omit(modif), aes(x = iou_ajust)) +
        y = "Fréquence") +
   theme_bw()
 
-# ggsave("PNG/Distribution_iou.png", plot = plot, width = 12, height = 8, dpi = 300)
+ggsave("PNG/Distribution_iou.png", plot = plot, width = 12, height = 8, dpi = 300)
 ```
 
 # Focus des parcelles ayant changé de communes
@@ -537,6 +538,7 @@ fusion <- ajout %>%
 
 subdiv <- supp %>% 
   filter(iou > 0.99 & nchar(participants) != 14)
+
 
 ajout <- ajout %>%
   filter(!idu %in% unlist(str_split(subdiv$participants, ",\\s*"))) %>% 
@@ -655,10 +657,10 @@ contour_fusion_translation <- supp %>%
   filter(iou_multi_translate > 0.95)
 
 ajout <- ajout %>%
-  filter(!idu %in% contour_fusion_translation$participants_apres_multi_translate)
+  filter(!idu %in% unlist(str_split(contour_fusion_translation$participants_apres_multi_translate, ",\\s*")))
 
 supp <- supp %>%
-  filter(!idu %in% contour_fusion_translation$participants_avant_multi_translate)
+  filter(!idu %in% unlist(str_split(contour_fusion_translation$participants_avant_multi_translate, ",\\s*")))
 ```
 
 ## Recalcul de l'IoU pour détecter les parcelles maintenant isolées -> Véritable ajout ou suppression

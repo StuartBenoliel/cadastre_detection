@@ -34,6 +34,7 @@ parcelle_23_world_mercator_WGS84 <- parcelle_23 %>%
   st_transform(3395)
 parcelle_23_pseudo_mercator_WGS84 <- parcelle_23 %>% 
   st_transform(3857)
+#4326
 parcelle_23_LAEA_Europe <- parcelle_23 %>% 
   st_transform(3035)
 ```

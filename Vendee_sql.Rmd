@@ -14,75 +14,19 @@ rm(list = ls())
 ```{r package message=FALSE, warning=FALSE}
 library(sf)
 library(dplyr)
-library(lubridate)
 library(mapview)
 library(DBI)
 library(ggplot2)
-library(purrr)
 library(webshot)
-library(pracma)
-library(RColorBrewer)
-library(tidyr)
-library(stringr)
 # webshot::install_phantomjs()
 source(file = "connexion_db.R")
 conn <- connecter()
 DBI::dbListTables(conn)
 ```
 
-```{r voir les index}
-dbGetQuery(conn, " SELECT 
-    tablename, 
-    indexname, 
-    indexdef 
-FROM 
-    pg_indexes 
-WHERE 
-    schemaname LIKE 'pg_temp_%' 
-    OR schemaname = 'public';
-           ")
-```
-
-```{r voir les tables temporaires}
-dbGetQuery(conn, " SELECT 
-    schemaname AS schema_name,
-    tablename AS table_name
-FROM 
-    pg_tables
-WHERE 
-    schemaname LIKE 'pg_temp_%'
-ORDER BY 
-    schemaname, tablename;
-           ")
-```
-
-```{r supprimer toutes les tables temporaires}
-query_list <- "
-SELECT 
-    tablename
-FROM 
-    pg_tables
-WHERE 
-    schemaname LIKE 'pg_temp_%';
-"
-
-# Exécution de la requête pour obtenir les noms des tables temporaires
-tables_temporaires <- dbGetQuery(conn, query_list)
-
-# Générer les commandes de suppression
-drop_queries <- lapply(tables_temporaires$tablename, function(table) {
-    paste("DROP TABLE IF EXISTS", table, "CASCADE;")
-})
-
-# Exécution des commandes de suppression
-for (query in drop_queries) {
-    dbSendQuery(conn, query)
-}
-```
-
 ```{r}
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou(geometry_avant geometry, geometry_apres geometry)
   RETURNS numeric AS $$
   DECLARE
@@ -115,7 +59,7 @@ dbSendQuery(conn, "
   $$ LANGUAGE plpgsql;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_ajust(geometry_avant geometry, geometry_apres geometry)
   RETURNS numeric AS $$
   DECLARE
@@ -147,7 +91,7 @@ dbSendQuery(conn, "
   $$ LANGUAGE plpgsql;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_intersec(polygon geometry, ajout_table_name text)
   RETURNS TABLE (iou numeric, participants text) AS $$
   DECLARE
@@ -200,7 +144,7 @@ dbSendQuery(conn, "
   $$ LANGUAGE plpgsql;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_multi(polygon geometry, supp_table_name text, ajout_table_name text)
   RETURNS TABLE (iou_multi numeric, participants_avant text, participants_apres text) AS $$
   DECLARE
@@ -256,94 +200,170 @@ dbSendQuery(conn, "
   $$ LANGUAGE plpgsql;
 ")
 
-dbSendQuery(conn, "
-CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(polygon geometry, ajout geometry)
-RETURNS TABLE (iou_ajust numeric, idu_translate text) AS $$
-DECLARE
-    parcelle RECORD;
-    max_iou numeric := -Inf;
-    iou_value numeric;
-BEGIN
-    -- Sélectionner les parcelles intersectant avec la zone tampon de polygon
-    FOR parcelle IN
-        SELECT idu, geometry
-        FROM ajout
-        WHERE ST_Intersects(geometry, ST_Buffer(polygon, -1))
-    LOOP
-        -- Calculer l'IoU entre la parcelle courante et polygon
-        BEGIN
-            iou_value := calcul_iou(parcelle.geometry, polygon);
-        EXCEPTION WHEN others THEN
-            iou_value := NULL; -- Ignorer les erreurs de calcul d'IoU
-        END;
-        
-        -- Mettre à jour si on trouve un IoU plus élevé
-        IF iou_value > max_iou THEN
-            max_iou := iou_value;
-            idu_translate := parcelle.idu;
-        END IF;
-    END LOOP;
-    
-    -- Si aucune parcelle intersecte, retourner NA
-    IF max_iou = -Inf THEN
-        RETURN QUERY SELECT NULL::numeric, NULL::text;
-    END IF;
-    
-    -- Calculer l'IoU ajusté avec la meilleure parcelle trouvée
-    iou_ajust := calcul_iou_ajust((SELECT geometry FROM ajout WHERE idu = idu_translate), polygon);
-    
-    -- Retourner les résultats
-    RETURN QUERY SELECT iou_ajust, idu_translate;
-END;
-$$ LANGUAGE plpgsql;
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(polygon geometry, ajout_table text)
+  RETURNS TABLE (iou_ajust numeric, idu_translate text) AS $$
+  DECLARE
+      parcelle RECORD;
+      max_iou numeric := NULL;
+      iou_value numeric;
+      query_text text;
+  BEGIN
+      -- Construire la requête pour sélectionner les parcelles intersectant avec la zone tampon de polygon
+      query_text := '
+          SELECT idu, geometry
+          FROM ' || quote_ident(ajout_table) || '
+          WHERE ST_Intersects(geometry, ST_Buffer($1, -1))
+      ';
+      
+      -- Sélectionner les parcelles intersectant avec la zone tampon de polygon
+      FOR parcelle IN EXECUTE query_text USING polygon
+      LOOP
+          -- Calculer l'IoU entre la parcelle courante et polygon
+          BEGIN
+              iou_value := calcul_iou(parcelle.geometry, polygon);
+          EXCEPTION WHEN others THEN
+              iou_value := NULL; -- Ignorer les erreurs de calcul d'IoU
+          END;
+          
+          -- Mettre à jour si on trouve un IoU plus élevé
+          IF max_iou IS NULL OR iou_value > max_iou THEN
+              max_iou := iou_value;
+              idu_translate := parcelle.idu;
+          END IF;
+      END LOOP;
+      
+      -- Si aucune parcelle intersecte, retourner NA
+      IF max_iou IS NULL THEN
+          RETURN QUERY SELECT NULL::numeric, NULL::text;
+      END IF;
+      
+      query_text := '
+          SELECT geometry
+          FROM ' || quote_ident(ajout_table) || '
+          WHERE idu = $1
+      ';
+      
+      -- Calculer l'IoU ajusté avec la meilleure parcelle trouvée
+      EXECUTE query_text INTO parcelle.geometry USING idu_translate;
+      iou_ajust := calcul_iou_ajust(parcelle.geometry, polygon);
+      
+      -- Retourner les résultats
+      RETURN QUERY SELECT iou_ajust, idu_translate;
+  END;
+  $$ LANGUAGE plpgsql;
 ")
 
-dbSendQuery(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate(polygon geometry, supp geometry, ajout geometry)
-  RETURNS TABLE (iou numeric, participants_avant text, participants_apres text) AS $$
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate(polygon geometry, supp_table_name text, ajout_table_name text)
+  RETURNS TABLE (iou_multi_translate numeric, participants_avant_multi_translate text, participants_apres_multi_translate text) AS $$
   DECLARE
       n integer := 0;
       polygon_maj geometry := polygon;
-      nom_participants_avant text;
+      nom_participants_avant text := '';
       iou_intersect RECORD;
+      query_text text;
+      current_n integer := 0;
   BEGIN
       -- Boucle pour mettre à jour polygon_maj avec l'union des géométries dans supp
       LOOP
-          -- Sélectionner les parcelles dans supp qui intersectent avec polygon_maj
-          SELECT ST_Union(geometry) INTO polygon_maj
-          FROM supp
-          WHERE ST_Intersects(geometry, polygon_maj);
-  
-          -- Condition de sortie : le nombre de parcelles reste le même
-          EXIT WHEN n = (SELECT COUNT(*) FROM supp WHERE ST_Intersects(geometry, polygon_maj));
+          -- Construire la requête pour sélectionner les parcelles dans supp qui intersectent avec polygon_maj
+          query_text := '
+              SELECT ST_Union(geometry)
+              FROM ' || quote_ident(supp_table_name) || '
+              WHERE ST_Intersects(geometry, $1)
+          ';
+          EXECUTE query_text INTO polygon_maj USING polygon_maj;
   
           -- Mettre à jour le nombre de parcelles
-          n := (SELECT COUNT(*) FROM supp WHERE ST_Intersects(geometry, polygon_maj));
+          query_text := '
+              SELECT COUNT(*)
+              FROM ' || quote_ident(supp_table_name) || '
+              WHERE ST_Intersects(geometry, $1)
+          ';
+          EXECUTE query_text INTO current_n USING polygon_maj;
+  
+          -- Condition de sortie : le nombre de parcelles reste le même
+          EXIT WHEN n = current_n;
+  
+          -- Mettre à jour n pour la prochaine itération
+          n := current_n;
       END LOOP;
   
       -- Sélectionner les noms des participants avant
-      SELECT string_agg(idu::text, ', ') INTO nom_participants_avant
-      FROM supp
-      WHERE ST_Intersects(geometry, polygon_maj);
+      query_text := '
+          SELECT string_agg(idu::text, '', '')
+          FROM ' || quote_ident(supp_table_name) || '
+          WHERE ST_Intersects(geometry, $1)
+      ';
+      EXECUTE query_text INTO nom_participants_avant USING polygon_maj;
   
       -- Calculer l'IoU intersection ajusté avec ajout
-      SELECT * INTO iou_intersect
-      FROM calcul_iou_intersec_translate(polygon_maj, ajout);
+      EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_maj, ajout_table_name;
   
       -- Retourner les résultats
       RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, nom_participants_avant AS participants_avant, iou_intersect.idu_translate AS participants_apres;
   END;
   $$ LANGUAGE plpgsql;
 ")
+
+```
+```{r voir les index}
+dbGetQuery(conn, " SELECT 
+    tablename, 
+    indexname, 
+    indexdef 
+FROM 
+    pg_indexes 
+WHERE 
+    schemaname LIKE 'pg_temp_%' 
+    OR schemaname = 'public';
+           ")
 ```
 
+```{r voir les tables temporaires}
+dbGetQuery(conn, " SELECT 
+    schemaname AS schema_name,
+    tablename AS table_name
+FROM 
+    pg_tables
+WHERE 
+    schemaname LIKE 'pg_temp_%'
+ORDER BY 
+    schemaname, tablename;
+           ")
+```
+
+```{r supprimer toutes les tables temporaires}
+query_list <- "
+SELECT 
+    tablename
+FROM 
+    pg_tables
+WHERE 
+    schemaname LIKE 'pg_temp_%';
+"
+
+# Exécution de la requête pour obtenir les noms des tables temporaires
+tables_temporaires <- dbGetQuery(conn, query_list)
+
+# Générer les commandes de suppression
+drop_queries <- lapply(tables_temporaires$tablename, function(table) {
+    paste("DROP TABLE IF EXISTS", table, "CASCADE;")
+})
+
+# Exécution des commandes de suppression
+for (query in drop_queries) {
+    dbExecute(conn, query)
+}
+```
 
 # Importation des parcelles sur l'ensemble du département et des périodes données
 
 
 ```{r import sql}
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE ajout_tot AS
   SELECT * 
   FROM parc_85_24
@@ -354,11 +374,11 @@ dbSendQuery(conn, "
   );
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE INDEX idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE supp_tot AS
   SELECT * 
   FROM parc_85_23
@@ -369,15 +389,13 @@ dbSendQuery(conn, "
   );
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE INDEX idx_supp_tot_geometry ON supp_tot USING GIST(geometry);
 ")
 
 ```
 
 ```{r}
-parcelle_24 <- st_read(conn, query = "SELECT * FROM parc_85_24;")
-parcelle_23 <- st_read(conn, query = "SELECT * FROM parc_85_23;")
 commune <- st_read(conn, query = "SELECT * FROM com_85;")
 
 ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
@@ -388,7 +406,7 @@ supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
 
 ```{r}
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE bordure AS
   SELECT
       code_insee, nom_com, code_dep,
@@ -397,11 +415,11 @@ dbSendQuery(conn, "
       com_85;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE ins_parc_24 AS
   SELECT DISTINCT
       parc_85_24.*
@@ -413,7 +431,7 @@ dbSendQuery(conn, "
       ST_WITHIN(parc_85_24.geometry, bordure.geometry);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE ins_parc_23 AS
   SELECT DISTINCT
       parc_85_23.*
@@ -425,9 +443,9 @@ dbSendQuery(conn, "
       ST_WITHIN(parc_85_23.geometry, bordure.geometry);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE ajout AS
-  SELECT 
+  SELECT DISTINCT
       ajout_tot.*
   FROM
       ajout_tot
@@ -438,13 +456,13 @@ dbSendQuery(conn, "
   ORDER BY ajout_tot.nom_com;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE supp AS
-  SELECT 
+  SELECT DISTINCT
       supp_tot.*
   FROM
       supp_tot
@@ -455,7 +473,7 @@ dbSendQuery(conn, "
   ORDER BY supp_tot.nom_com;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);
 ")
 ```
@@ -479,51 +497,7 @@ ins_parc_23 <- st_read(conn, query = "
    SELECT * FROM ins_parc_23;
 ")
 
-ajout <- st_read(conn, query = "
-  SELECT * FROM ajout;
-")
-
-supp <- st_read(conn, query = "
-  SELECT * FROM supp;
-")
-
-dbSendQuery(conn, "DROP TABLE IF EXISTS bordure;")
-```
-
-# Carte des parcelles appartenant + croisant la bordure
-
-```{r ggplot bordure}
-plot <- ggplot() +
-  geom_sf(data = commune, aes(fill = "Communes"), color = "black", alpha = 0.5) +  
-  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = ins_parc_24, aes(fill = "Parcelles croisées"), alpha = 0.5, color = "black", size = 0.01) +
-  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", "Parcelles croisées" = "purple")) +
-  theme_minimal() +
-  labs(title = "Parcelles cadastrales (2024) croisant les frontières étendues des communes de Vendée", 
-       fill ="Légende",
-       subtitle = "Les bordures des communes sont élargies d'un rayon de 250m de chaque côté de celles définies par l'IGN")
-
-# ggsave("parcelles_croisant_bordures_85.png", plot = plot, width = 12, height = 8, dpi = 300)
-plot
-```
-
-# Focus sur une commune ayant fusionné avec d'autres communes limitrophes
-
-```{r focus parcelle la tardiere}
-map <- mapview(commune %>% 
-                 filter(code_insee == "85289"), 
-               layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure %>% 
-            filter(code_insee == "85289"), 
-          layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(parcelle_24 %>% 
-            filter(code_com == "289"), 
-          layer.name = "Parcelles (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(parcelle_23 %>% 
-            filter(code_com %in% c("289", "053", "037")), 
-          layer.name = "Parcelles (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5)
-
-# mapshot(map, url = "parcelles_tardiere.html")
+dbExecute(conn, "DROP TABLE IF EXISTS bordure;")
 ```
 
 # Focus sur les parcelles dont je peux comparer l'état sur les deux périodes facilement (cad parcelles ayant conservé leur identifiant)
@@ -532,7 +506,7 @@ map <- mapview(commune %>%
 
 ```{r modif geometry egal sql}
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE identique AS
   SELECT ins_parc_24.*
   FROM ins_parc_24
@@ -549,7 +523,7 @@ dbSendQuery(conn, "
   );
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE modif_apres AS
   SELECT ins_parc_24.*
   FROM ins_parc_24
@@ -566,7 +540,7 @@ dbSendQuery(conn, "
   ORDER BY ins_parc_24.nom_com;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE modif_avant AS
   SELECT ins_parc_23.*
   FROM ins_parc_23
@@ -584,34 +558,36 @@ dbSendQuery(conn, "
 ")
 
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE modif AS
   SELECT
       COALESCE(avant.idu, apres.idu) AS idu,
       apres.geometry AS geometry_apres,
       avant.geometry AS geometry_avant,
       calcul_iou(apres.geometry, avant.geometry) AS iou,
-      calcul_iou_ajust(apres.geometry, avant.geometry) AS iou_ajust,
-      (calcul_iou_multi(apres.geometry, 'modif_apres' , 'modif_avant')).*
+      calcul_iou_ajust(apres.geometry, avant.geometry) AS iou_ajust
   FROM
       modif_avant avant
   FULL JOIN
       modif_apres apres ON avant.idu = apres.idu;
 ")
 
-dbSendQuery(conn, "
-  DELETE FROM modif
-  WHERE iou > 0.99;
-")
-
-dbSendQuery(conn, "DROP TABLE IF EXISTS identique;")
+dbExecute(conn, "DROP TABLE IF EXISTS identique;")
 ```
+
+```{r}
+dbExecute(conn, "
+  DELETE FROM modif
+  WHERE iou > 0.99 OR iou IS NULL;
+")
+```
+
 
 ```{r modif iou et iou_ajust}
 
-modif <- st_read(conn, query = "
-   SELECT * FROM modif;
-")
+# 85130000AH0055 et 85130000AH0017 supplémentaire dans sql
+#modif <- st_read(conn, query = "SELECT * FROM modif;")
+
 # Elimine les parcelles "sans changement manifeste" plus les parcelles sans iou = parcelles n'étant plus entièrement dans la bordure lors d'un changement d'une année sur l'autre
 
 quantiles <- quantile(modif$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na.rm = TRUE)
@@ -664,22 +640,21 @@ mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ## Reconnaissances des cas de translation, modification de contour et les deux à la fois
 
 ```{r}
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE modif_apres_jointure AS
-  SELECT modif_apres.*, modif.iou, modif.iou_ajust, modif.iou_multi, 
-    modif.participants_avant, modif.participants_apres
+  SELECT modif_apres.*, modif.iou, modif.iou_ajust
   FROM modif
   LEFT JOIN modif_apres ON modif.idu = modif_apres.idu;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE modif_avant_jointure AS
   SELECT modif_avant.*, modif.iou, modif.iou_ajust
   FROM modif
   LEFT JOIN modif_avant ON modif.idu = modif_avant.idu;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE translation AS
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
@@ -688,7 +663,7 @@ dbSendQuery(conn, "
   WHERE iou_ajust > 0.99;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE contour_apres AS
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
@@ -699,7 +674,7 @@ dbSendQuery(conn, "
   WHERE iou > 0.95 AND iou_ajust < 0.99;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE contour_translation AS
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
@@ -708,14 +683,14 @@ dbSendQuery(conn, "
   WHERE iou < 0.95 AND iou_ajust > 0.95 AND iou_ajust < 0.99;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   DELETE FROM modif_apres_jointure
   WHERE idu IN (SELECT idu FROM translation)
     OR idu IN (SELECT idu FROM contour_apres)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   DELETE FROM modif_avant_jointure
   WHERE idu IN (SELECT idu FROM translation)
     OR idu IN (SELECT idu FROM contour_apres)
@@ -723,18 +698,22 @@ dbSendQuery(conn, "
 ")
 ```
 
-
 ## Cas plus compliqués de détection des mêmes cas
 
 ```{r}
 dbExecute(conn, "
+  CREATE TEMP TABLE modif_apres_jointure_multi AS
+  SELECT modif_apres_jointure.*, 
+    (calcul_iou_multi(modif_apres_jointure.geometry, 'modif_apres_jointure' , 'modif_avant_jointure')).*
+  FROM modif_apres_jointure;
+")
+
+dbExecute(conn, "
   INSERT INTO contour_apres
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
-         iou AS iou_multi,
-         idu AS participants_avant,
-         idu AS participants_apres
-  FROM modif_apres_jointure
+         iou_multi, participants_avant,participants_apres
+  FROM modif_apres_jointure_multi
   WHERE (iou_multi > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres))
      OR (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou > iou_ajust);
 ")
@@ -744,18 +723,18 @@ dbExecute(conn, "
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry, 
          idu AS idu_translate
-  FROM modif_apres_jointure
+  FROM modif_apres_jointure_multi
   WHERE ((LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou < iou_ajust))
      OR iou_multi IS NULL;
 ")
 
-dbSendQuery(conn, "
-  DELETE FROM modif_apres_jointure
+dbExecute(conn, "
+  DELETE FROM modif_apres_jointure_multi
   WHERE idu IN (SELECT idu FROM contour_apres)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   DELETE FROM modif_avant_jointure
   WHERE idu IN (SELECT idu FROM contour_apres)
     OR idu IN (SELECT idu FROM contour_translation);
@@ -765,11 +744,11 @@ dbSendQuery(conn, "
 
 ```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis}
 
-translation <- st_read(conn, query = "SELECT * FROM translation;")
+contour_apres_sql <- st_read(conn, query = "SELECT * FROM contour_apres;")
 
-contour_apres <- st_read(conn, query = "SELECT * FROM contour_apres;")
+modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_jointure_multi;")
 
-contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
+modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_jointure;")
 ```
 
 ## Distribution de l'IoU après translation des parcelles
@@ -823,8 +802,8 @@ dbExecute(conn, "
 ```
 
 ```{r}
-com_abs_apres <- st_read(conn, query = "SELECT * FROM com_abs_apres;")
-com_abs_avant <- st_read(conn, query = "SELECT * FROM com_abs_avant;")
+com_abs_apres_sql <- st_read(conn, query = "SELECT * FROM com_abs_apres;")
+com_abs_avant_sql <- st_read(conn, query = "SELECT * FROM com_abs_avant;")
 
 ```
 
@@ -845,6 +824,7 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
 
 ```{r ajout/supp geometry egal}
 # Parcelles ajoutées n'ayant pas été modifiées
+
 dbExecute(conn, "
   CREATE TEMP TABLE ajout_identique AS
   SELECT ajout.*
@@ -873,16 +853,11 @@ dbExecute(conn, "
 dbExecute(conn, "DROP TABLE IF EXISTS ajout_identique, supp_identique;")
 ```
 
-```{r}
-ajout <- st_read(conn, query = "SELECT * FROM ajout;")
-supp <- st_read(conn, query = "SELECT * FROM supp;")
-```
-
 ## Reconnaissances des cas de fusion (peu fréquent) ou subdivision (plus courant)
 
 ```{r ajout/supp iou -> fusion/subdivision}
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE supp_iou AS
   SELECT
       supp.*,
@@ -891,7 +866,7 @@ dbSendQuery(conn, "
       supp;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE ajout_iou AS
   SELECT
       ajout.*,
@@ -900,14 +875,14 @@ dbSendQuery(conn, "
       ajout;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE fusion AS
   SELECT *
   FROM ajout_iou
   WHERE iou > 0.99 AND LENGTH(participants) != 14;
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE subdiv AS
   SELECT *
   FROM supp_iou
@@ -916,26 +891,23 @@ dbSendQuery(conn, "
 
 dbExecute(conn, "
   DELETE FROM ajout_iou
-  WHERE idu IN (SELECT unnest(string_to_array(participants, ',\\s*')) FROM subdiv)
-    OR idu IN (SELECT idu FROM fusion)
-    OR (iou > 0.99 OR iou IS NOT NULL);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) FROM subdiv)
+   OR idu IN (SELECT idu FROM fusion)
+   OR iou > 0.99;
 ")
 
 dbExecute(conn, "
   DELETE FROM supp_iou
-  WHERE idu IN (SELECT unnest(string_to_array(participants, ',\\s*')) FROM fusion)
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) FROM fusion)
     OR idu IN (SELECT idu FROM subdiv)
-    OR (iou > 0.99 OR iou IS NOT NULL);
+    OR iou > 0.99;
 ")
 
 ```
 
 ```{r}
-ajout <- st_read(conn, query = "SELECT * FROM ajout_iou;")
-supp <- st_read(conn, query = "SELECT * FROM supp_iou;")
-
-subdiv <- st_read(conn, query = "SELECT * FROM subdiv;")
-fusion <- st_read(conn, query = "SELECT * FROM fusion;")
+subdiv_sql <- st_read(conn, query = "SELECT * FROM subdiv;")
+fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
 ```
 
 
@@ -943,169 +915,247 @@ fusion <- st_read(conn, query = "SELECT * FROM fusion;")
 
 ```{r ajout/supp iou_multi -> multi-subdivision et contours}
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE supp_iou_multi AS
   SELECT
       supp_iou.*,
-      (calcul_iou_multi(supp_iou.geometry, 'supp, 'ajout')).*
+      (calcul_iou_multi(supp_iou.geometry, 'supp_iou', 'ajout_iou')).*
   FROM
       supp_iou;
 ")
 
-
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE multi_subdiv AS
   SELECT *
   FROM supp_iou_multi
   WHERE iou_multi > 0.99 AND LENGTH(participants_apres) != LENGTH(participants_avant);
 ")
 
-dbSendQuery(conn, "
+dbExecute(conn, "
   CREATE TEMP TABLE contour AS
   SELECT *
   FROM supp_iou_multi
-  WHERE (iou_multi > 0.99 AND LENGTH(participants_apres) != LENGTH(participants_avant))
-    OR (LENGTH(participants_apres) = 14 & LENGTH(participants_avant) = 14);
+  WHERE (iou_multi > 0.95 AND LENGTH(participants_apres) = LENGTH(participants_avant))
+    OR (LENGTH(participants_apres) = 14 AND LENGTH(participants_avant) = 14);
 ")
 
 dbExecute(conn, "
   DELETE FROM ajout_iou
-  WHERE idu IN (SELECT unnest(string_to_array(participants_apres, ',\\s*')) FROM multi_subdiv)
-    OR (SELECT unnest(string_to_array(participants_apres, ',\\s*')) FROM contour);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM multi_subdiv)
+    OR idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour);
 ")
 
 dbExecute(conn, "
   DELETE FROM supp_iou_multi
-  WHERE idu IN (SELECT unnest(string_to_array(participants_avant, ',\\s*')) FROM multi_subdiv)
-    OR idu IN (SELECT unnest(string_to_array(participant_avants, ',\\s*')) FROM contour);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM multi_subdiv)
+    OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour);
 ")
 
 ```
 
 ```{r}
-ajout <- st_read(conn, query = "SELECT * FROM ajout_iou;")
-supp <- st_read(conn, query = "SELECT * FROM supp_iou_multi;")
-
-multi_subdiv <- st_read(conn, query = "SELECT * FROM multi_subdiv;")
-contour <- st_read(conn, query = "SELECT * FROM contour;")
+multi_subdiv_sql <- st_read(conn, query = "SELECT * FROM multi_subdiv;")
 ```
 
 ## Reconnaissances des cas de modification de contours plus compliquée
 
 ```{r changement forme + ou découpage compliquée}
-supp <- supp %>%
-  rowwise() %>%
-  mutate(result = list(calcul_iou_multi(geometry, supp, ajout))) %>%
-  mutate(iou_multi = result$iou,
-         participants_avant = result$participants_avant,
-         participants_apres= result$participants_apres) %>%
-  ungroup() %>%
-  select(-result)
+
+dbExecute(conn, "
+  CREATE TEMP TABLE supp_iou_multi_bis AS
+  SELECT
+      idu, numero, feuille, section, code_dep, nom_com, code_com, 
+      com_abs, code_arr, contenance, geometry, iou, participants,
+      (calcul_iou_multi(supp_iou_multi.geometry, 'supp_iou_multi', 'ajout_iou')).*
+  FROM
+      supp_iou_multi;
+")
 
 # Cas d'une parcelle spécial 850040000F0149
-contour <- supp %>% 
-  filter((iou_multi > 0.95 & nchar(participants_avant) == nchar(participants_apres)) | nchar(participants_avant) == 14 & nchar(participants_apres) == 14) %>% 
-  rbind(contour)
+dbExecute(conn, "
+  INSERT INTO contour
+  SELECT *
+  FROM supp_iou_multi_bis
+  WHERE (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14)
+     OR (iou_multi > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres));
+")
 
-ajout <- ajout %>%
-  filter(!idu %in% unlist(str_split(contour$participants_apres, ",\\s*")))
+dbExecute(conn, "
+  DELETE FROM ajout_iou
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour);
+")
 
-supp <- supp %>%
-  filter(!idu %in% unlist(str_split(contour$participants_avant, ",\\s*")))
+dbExecute(conn, "
+  DELETE FROM supp_iou_multi_bis
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour);
+")
 
-contour_transfo <- supp %>% 
-  filter(iou_multi > 0.95)
+dbExecute(conn, "
+  CREATE TEMP TABLE contour_transfo AS
+  SELECT *
+  FROM supp_iou_multi_bis
+  WHERE iou_multi > 0.95;
+")
 
-ajout <- ajout %>%
-  filter(!idu %in% unlist(str_split(contour_transfo$participants_apres, ",\\s*")))
+dbExecute(conn, "
+  DELETE FROM ajout_iou
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour_transfo);
+")
 
-supp <- supp %>%
-  filter(!idu %in% unlist(str_split(contour_transfo$participants_avant, ",\\s*")))
+dbExecute(conn, "
+  DELETE FROM supp_iou_multi_bis
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour_transfo);
+")
+
+```
+
+```{r}
+contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
+contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation, modification de contour avec translation
 
+####### A PARTIR D'ICI C'est plus vérifié
 ```{r ajout/supp iou_ajust -> translation, contour + translation}
 
-ajout <- ajout %>%
-  rowwise() %>%
-  mutate(result = list(calcul_iou_intersec_translate(geometry, supp))) %>%
-  mutate(iou_ajust = result$iou_ajust,
-         idu_translate = result$idu_translate) %>%
-  ungroup() %>%
-  select(-result)
+dbExecute(conn, "
+  CREATE TEMP TABLE ajout_iou_translate AS
+  SELECT DISTINCT
+      ajout_iou.*,
+      (calcul_iou_intersec_translate(ajout_iou.geometry, 'supp_iou_multi')).*
+  FROM
+      ajout_iou;
+")
 
-translation <- ajout %>% 
-  filter(iou_ajust > 0.99) %>% 
-  select(-iou,-participants) %>% 
-  rbind(translation)
+dbExecute(conn, "
+  INSERT INTO translation
+  SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
+         code_arr, contenance, iou_ajust, geometry, idu_translate
+  FROM ajout_iou_translate
+  WHERE iou_ajust > 0.99;
+")
 
-contour_translation <- ajout %>% 
-  filter(iou_ajust > 0.95 & iou_ajust < 0.99) %>% 
-  select(-iou,-participants) %>% 
-  rbind(contour_translation)
+dbExecute(conn, "
+  INSERT INTO contour_translation
+  SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
+         code_arr, contenance, iou_ajust, geometry, idu_translate
+  FROM ajout_iou_translate
+  WHERE (iou_ajust > 0.95 AND iou_ajust < 0.99);
+")
 
-ajout <- ajout %>%
-  filter(!idu %in% translation$idu) %>% 
-  filter(!idu %in% contour_translation$idu)
+dbExecute(conn, "
+  DELETE FROM ajout_iou_translate
+  WHERE idu IN (SELECT idu FROM translation)
+    OR idu IN (SELECT idu FROM contour_translation);
+")
 
-supp <- supp %>%
-  filter(!idu %in% translation$idu_translate)%>% 
-  filter(!idu %in% contour_translation$idu_translate)
+dbExecute(conn, "
+  DELETE FROM supp_iou_multi_bis
+  WHERE idu IN (SELECT idu_translate FROM translation)
+    OR idu IN (SELECT idu_translate FROM contour_translation);
+")
+
+```
+
+```{r}
+contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
 
 ```{r ajout/supp iou_ajust -> contour_fusion_translation}
-supp <- supp %>%
-  rowwise() %>%
-  mutate(result = list(calcul_iou_multi_translate(geometry, supp, ajout))) %>%
-  mutate(iou_multi_translate = result$iou,
-         participants_avant_multi_translate = result$participants_avant,
-         participants_apres_multi_translate = result$participants_apres) %>%
-  ungroup() %>%
-  select(-result)
 
-contour_fusion_translation <- supp %>% 
-  filter(iou_multi_translate > 0.95)
+dbExecute(conn, "
+  CREATE TEMP TABLE supp_iou_multi_translate AS
+  SELECT 
+      supp_iou_multi_bis.*,
+      (calcul_iou_multi_translate(supp_iou_multi_bis.geometry, 'supp_iou_multi_bis', 'ajout_iou_translate')).*
+  FROM
+      supp_iou_multi_bis;
+")
 
-ajout <- ajout %>%
-  filter(!idu %in% contour_fusion_translation$participants_apres_multi_translate)
+dbExecute(conn, "
+  CREATE TEMP TABLE contour_fusion_translation AS
+  SELECT *
+  FROM supp_iou_multi_translate
+  WHERE iou_multi_translate > 0.95;
+")
 
-supp <- supp %>%
-  filter(!idu %in% contour_fusion_translation$participants_avant_multi_translate)
+dbExecute(conn, "
+  DELETE FROM ajout_iou_translate
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres_multi_translate, ',\\s*')) FROM contour_fusion_translation);
+")
+
+dbExecute(conn, "
+  DELETE FROM supp_iou_multi_translate
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant_multi_translate, ',\\s*')) FROM contour_fusion_translation);
+")
+
+```
+
+```{r}
+contour_fusion_translation_sql <- st_read(conn, query = "SELECT * FROM contour_fusion_translation;")
 ```
 
 ## Recalcul de l'IoU pour détecter les parcelles maintenant isolées -> Véritable ajout ou suppression
 
 ```{r}
-supp <- supp %>%
-  rowwise() %>%
-  mutate(result = list(calcul_iou_intersec(geometry, ajout))) %>%
-  mutate(iou = result$iou,
-         participants = result$participants) %>%
-  ungroup() %>%
-  select(-result)
 
-ajout <- ajout %>%
-  rowwise() %>%
-  mutate(result = list(calcul_iou_intersec(geometry, supp))) %>%
-  mutate(iou = result$iou,
-         participants = result$participants) %>%
-  ungroup() %>%
-  select(-result)
+dbExecute(conn, "
+  CREATE TEMP TABLE supp_iou_restant AS
+  SELECT
+      idu, numero, feuille, section, code_dep, nom_com, code_com, 
+      com_abs, code_arr, contenance, geometry, iou_multi, participants_avant, participants_apres, 
+      iou_multi_translate, participants_avant_multi_translate, participants_apres_multi_translate,
+      (calcul_iou_intersec(supp_iou_multi_translate.geometry, 'ajout_iou_translate')).* 
+  FROM
+      supp_iou_multi_translate;
+")
 
-vrai_ajout <- ajout %>%
-  filter(is.na(iou))
+dbExecute(conn, "
+  CREATE TEMP TABLE ajout_iou_restant AS
+  SELECT
+      idu, numero, feuille, section, code_dep, nom_com, code_com, 
+      com_abs, code_arr, contenance, geometry, iou_ajust, idu_translate,
+      (calcul_iou_intersec(ajout_iou_translate.geometry, 'supp_iou_multi_translate')).*
+  FROM
+      ajout_iou_translate;
+")
 
-vrai_supp <- supp %>%
-  filter(is.na(iou))
+dbExecute(conn, "
+  CREATE TEMP TABLE vrai_ajout AS
+  SELECT *
+  FROM ajout_iou_restant
+  WHERE iou IS NULL;
+")
 
-ajout <- ajout %>%
-  filter(!is.na(iou))
+dbExecute(conn, "
+  CREATE TEMP TABLE vrai_supp AS
+  SELECT *
+  FROM supp_iou_restant
+  WHERE iou IS NULL;
+")
 
-supp <- supp %>%
-  filter(!is.na(iou))
+dbExecute(conn, "
+  DELETE FROM ajout_iou_restant
+  WHERE idu IN (SELECT idu FROM vrai_ajout);
+")
+
+dbExecute(conn, "
+  DELETE FROM supp_iou_restant
+  WHERE idu IN (SELECT idu FROM vrai_supp);
+")
+```
+
+
+```{r}
+ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
+supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+
+vrai_ajout_sql <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
+vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 ```
 
 # Visualisation finale sur une carte du département
