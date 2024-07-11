@@ -24,7 +24,7 @@ conn <- connecter()
 DBI::dbListTables(conn)
 ```
 
-```{r}
+```{r fonction sql}
 
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou(geometry_avant geometry, geometry_apres geometry)
@@ -308,6 +308,7 @@ dbExecute(conn, "
 ")
 
 ```
+
 ```{r voir les index}
 dbGetQuery(conn, " SELECT 
     tablename, 
@@ -335,17 +336,16 @@ ORDER BY
 ```
 
 ```{r supprimer toutes les tables temporaires}
-query_list <- "
-SELECT 
-    tablename
-FROM 
-    pg_tables
-WHERE 
-    schemaname LIKE 'pg_temp_%';
-"
 
 # Exécution de la requête pour obtenir les noms des tables temporaires
-tables_temporaires <- dbGetQuery(conn, query_list)
+tables_temporaires <- dbGetQuery(conn, "
+  SELECT 
+      tablename
+  FROM 
+      pg_tables
+  WHERE 
+      schemaname LIKE 'pg_temp_%';
+")
 
 # Générer les commandes de suppression
 drop_queries <- lapply(tables_temporaires$tablename, function(table) {
@@ -360,9 +360,8 @@ for (query in drop_queries) {
 
 # Importation des parcelles sur l'ensemble du département et des périodes données
 
-
-```{r import sql}
-
+```{r ajout/supp_tot sql}
+dbExecute(conn, "DROP TABLE IF EXISTS ajout_tot, supp_tot CASCADE;")
 dbExecute(conn, "
   CREATE TEMP TABLE ajout_tot AS
   SELECT * 
@@ -372,10 +371,6 @@ dbExecute(conn, "
     FROM parc_85_23 
     WHERE parc_85_24.idu = parc_85_23.idu
   );
-")
-
-dbExecute(conn, "
-  CREATE INDEX idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);
 ")
 
 dbExecute(conn, "
@@ -389,13 +384,12 @@ dbExecute(conn, "
   );
 ")
 
-dbExecute(conn, "
-  CREATE INDEX idx_supp_tot_geometry ON supp_tot USING GIST(geometry);
-")
+dbExecute(conn, "CREATE INDEX idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX idx_supp_tot_geometry ON supp_tot USING GIST(geometry);")
 
 ```
 
-```{r}
+```{r import commune}
 commune <- st_read(conn, query = "SELECT * FROM com_85;")
 
 ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
@@ -405,7 +399,9 @@ supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
 
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
 
-```{r}
+```{r creation inside bordure}
+dbExecute(conn, "DROP TABLE IF EXISTS bordure, ins_parc_24, ins_parc_23, ajout, supp CASCADE;")
+
 dbExecute(conn, "
   CREATE TEMP TABLE bordure AS
   SELECT
@@ -415,9 +411,7 @@ dbExecute(conn, "
       com_85;
 ")
 
-dbExecute(conn, "
-  CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);
-")
+dbExecute(conn, "CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);")
 
 dbExecute(conn, "
   CREATE TEMP TABLE ins_parc_24 AS
@@ -457,10 +451,6 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);
-")
-
-dbExecute(conn, "
   CREATE TEMP TABLE supp AS
   SELECT DISTINCT
       supp_tot.*
@@ -473,29 +463,69 @@ dbExecute(conn, "
   ORDER BY supp_tot.nom_com;
 ")
 
+dbExecute(conn, "CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);")
+```
+
+```{r creation sans bordure}
+dbExecute(conn, "DROP TABLE IF EXISTS bordure, ins_parc_24, ins_parc_23, ajout, supp CASCADE;")
+
 dbExecute(conn, "
-  CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);
+  CREATE TEMP TABLE bordure AS
+  SELECT
+      code_insee, nom_com, code_dep,
+      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
+  FROM
+      com_85;
 ")
+
+dbExecute(conn, "CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);")
+
+dbExecute(conn, "
+  CREATE TEMP TABLE ins_parc_24 AS
+  SELECT DISTINCT
+      parc_85_24.*
+  FROM
+      parc_85_24;
+")
+
+dbExecute(conn, "
+  CREATE TEMP TABLE ins_parc_23 AS
+  SELECT DISTINCT
+      parc_85_23.*
+  FROM
+      parc_85_23;
+")
+
+dbExecute(conn, "
+  CREATE TEMP TABLE ajout AS
+  SELECT DISTINCT
+      ajout_tot.*
+  FROM
+      ajout_tot
+  ORDER BY ajout_tot.nom_com;
+")
+
+dbExecute(conn, "
+  CREATE TEMP TABLE supp AS
+  SELECT DISTINCT
+      supp_tot.*
+  FROM
+      supp_tot
+  ORDER BY supp_tot.nom_com;
+")
+
+dbExecute(conn, "CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);")
 ```
 
 
 ```{r bordure sql}
-
-bordure <- st_read(conn, query = "
-  SELECT 
-      *
-  FROM
-      bordure;
-") %>%
+bordure <- st_read(conn, query = "SELECT * FROM bordure;") %>%
   mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
 
-ins_parc_24 <- st_read(conn, query = "
-  SELECT * FROM ins_parc_24;
-")
-
-ins_parc_23 <- st_read(conn, query = "
-   SELECT * FROM ins_parc_23;
-")
+ins_parc_24 <- st_read(conn, query = "SELECT * FROM ins_parc_24;")
+ins_parc_23 <- st_read(conn, query = "SELECT * FROM ins_parc_23;")
 
 dbExecute(conn, "DROP TABLE IF EXISTS bordure;")
 ```
@@ -505,6 +535,7 @@ dbExecute(conn, "DROP TABLE IF EXISTS bordure;")
 ## Elimination des parcelles IDENTIQUES en tout point du polygone (méthode de base pour enlever les cas reconnaissables facilement)
 
 ```{r modif geometry egal sql}
+dbExecute(conn, "DROP TABLE IF EXISTS identique, modif_apres, modif_avant, modif;")
 
 dbExecute(conn, "
   CREATE TEMP TABLE identique AS
@@ -557,7 +588,6 @@ dbExecute(conn, "
   ORDER BY ins_parc_23.nom_com;
 ")
 
-
 dbExecute(conn, "
   CREATE TEMP TABLE modif AS
   SELECT
@@ -575,7 +605,7 @@ dbExecute(conn, "
 dbExecute(conn, "DROP TABLE IF EXISTS identique;")
 ```
 
-```{r}
+```{r drop iou null sql}
 dbExecute(conn, "
   DELETE FROM modif
   WHERE iou > 0.99 OR iou IS NULL;
@@ -583,14 +613,14 @@ dbExecute(conn, "
 ```
 
 
-```{r modif iou et iou_ajust}
+```{r quantile}
 
 # 85130000AH0055 et 85130000AH0017 supplémentaire dans sql
 #modif <- st_read(conn, query = "SELECT * FROM modif;")
 
 # Elimine les parcelles "sans changement manifeste" plus les parcelles sans iou = parcelles n'étant plus entièrement dans la bordure lors d'un changement d'une année sur l'autre
 
-quantiles <- quantile(modif$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na.rm = TRUE)
+# quantiles <- quantile(modif$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na.rm = TRUE)
 ```
 
 # Visualisation cas base (avec défaut notamment sur ajout/supp) 
@@ -617,7 +647,7 @@ plot <- ggplot() +
        fill ="Légende",
        subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
 
-ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
+# ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
 # plot
 ```
 
@@ -634,21 +664,24 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
   mapview(supp, layer.name = "Parcelles supprimées",
           col.regions = "red", alpha.regions = 0.5)
 
-mapshot(map, url = "parcelles_modifiées_bordure_85.html")
+# mapshot(map, url = "parcelles_modifiées_bordure_85.html")
 ```
 
 ## Reconnaissances des cas de translation, modification de contour et les deux à la fois
 
-```{r}
+```{r translation, contour_apres, contour_translation}
+dbExecute(conn, "DROP TABLE IF EXISTS modif_apres_iou, modif_avant_iou, 
+          translation, contour_apres, contour_translation;")
+
 dbExecute(conn, "
-  CREATE TEMP TABLE modif_apres_jointure AS
+  CREATE TEMP TABLE modif_apres_iou AS
   SELECT modif_apres.*, modif.iou, modif.iou_ajust
   FROM modif
   LEFT JOIN modif_apres ON modif.idu = modif_apres.idu;
 ")
 
 dbExecute(conn, "
-  CREATE TEMP TABLE modif_avant_jointure AS
+  CREATE TEMP TABLE modif_avant_iou AS
   SELECT modif_avant.*, modif.iou, modif.iou_ajust
   FROM modif
   LEFT JOIN modif_avant ON modif.idu = modif_avant.idu;
@@ -659,7 +692,7 @@ dbExecute(conn, "
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
          idu AS idu_translate
-  FROM modif_apres_jointure
+  FROM modif_apres_iou
   WHERE iou_ajust > 0.99;
 ")
 
@@ -670,28 +703,29 @@ dbExecute(conn, "
          iou AS iou_multi,
          idu AS participants_avant,
          idu AS participants_apres
-  FROM modif_apres_jointure
+  FROM modif_apres_iou
   WHERE iou > 0.95 AND iou_ajust < 0.99;
 ")
 
+dbExecute(conn, "DROP TABLE IF EXISTS contour_translation;")
 dbExecute(conn, "
   CREATE TEMP TABLE contour_translation AS
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
          idu AS idu_translate
-  FROM modif_apres_jointure
+  FROM modif_apres_iou
   WHERE iou < 0.95 AND iou_ajust > 0.95 AND iou_ajust < 0.99;
 ")
 
 dbExecute(conn, "
-  DELETE FROM modif_apres_jointure
+  DELETE FROM modif_apres_iou
   WHERE idu IN (SELECT idu FROM translation)
     OR idu IN (SELECT idu FROM contour_apres)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
 
 dbExecute(conn, "
-  DELETE FROM modif_avant_jointure
+  DELETE FROM modif_avant_iou
   WHERE idu IN (SELECT idu FROM translation)
     OR idu IN (SELECT idu FROM contour_apres)
     OR idu IN (SELECT idu FROM contour_translation);
@@ -700,12 +734,13 @@ dbExecute(conn, "
 
 ## Cas plus compliqués de détection des mêmes cas
 
-```{r}
+```{r meme cas sql}
+dbExecute(conn, "DROP TABLE IF EXISTS modif_apres_iou_multi;")
 dbExecute(conn, "
-  CREATE TEMP TABLE modif_apres_jointure_multi AS
-  SELECT modif_apres_jointure.*, 
-    (calcul_iou_multi(modif_apres_jointure.geometry, 'modif_apres_jointure' , 'modif_avant_jointure')).*
-  FROM modif_apres_jointure;
+  CREATE TEMP TABLE modif_apres_iou_multi AS
+  SELECT modif_apres_iou.*, 
+    (calcul_iou_multi(modif_apres_iou.geometry, 'modif_apres_iou' , 'modif_avant_iou')).*
+  FROM modif_apres_iou;
 ")
 
 dbExecute(conn, "
@@ -713,7 +748,7 @@ dbExecute(conn, "
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
          iou_multi, participants_avant,participants_apres
-  FROM modif_apres_jointure_multi
+  FROM modif_apres_iou_multi
   WHERE (iou_multi > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres))
      OR (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou > iou_ajust);
 ")
@@ -723,19 +758,19 @@ dbExecute(conn, "
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry, 
          idu AS idu_translate
-  FROM modif_apres_jointure_multi
+  FROM modif_apres_iou_multi
   WHERE ((LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou < iou_ajust))
      OR iou_multi IS NULL;
 ")
 
 dbExecute(conn, "
-  DELETE FROM modif_apres_jointure_multi
+  DELETE FROM modif_apres_iou_multi
   WHERE idu IN (SELECT idu FROM contour_apres)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
 
 dbExecute(conn, "
-  DELETE FROM modif_avant_jointure
+  DELETE FROM modif_avant_iou
   WHERE idu IN (SELECT idu FROM contour_apres)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
@@ -746,9 +781,8 @@ dbExecute(conn, "
 
 contour_apres_sql <- st_read(conn, query = "SELECT * FROM contour_apres;")
 
-modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_jointure_multi;")
-
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_jointure;")
+modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou_multi;")
+modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou;")
 ```
 
 ## Distribution de l'IoU après translation des parcelles
@@ -777,6 +811,7 @@ plot <- ggplot(na.omit(modif), aes(x = iou_ajust)) +
 ## Cas des parcelles dans le cas d'une fusion de communes
 
 ```{r ajout/supp -> focus fusion commune}
+dbExecute(conn, "DROP TABLE IF EXISTS com_abs_apres, com_abs_avant;")
 
 dbExecute(conn, "
   CREATE TEMP TABLE com_abs_apres AS
@@ -801,10 +836,9 @@ dbExecute(conn, "
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
 
-```{r}
+```{r parcelle changeant de communes}
 com_abs_apres_sql <- st_read(conn, query = "SELECT * FROM com_abs_apres;")
 com_abs_avant_sql <- st_read(conn, query = "SELECT * FROM com_abs_avant;")
-
 ```
 
 
@@ -823,8 +857,9 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.re
 ## Elimination des parcelles IDENTIQUES en tout point du polygone (méthode de base pour enlever les cas reconnaissables facilement)
 
 ```{r ajout/supp geometry egal}
-# Parcelles ajoutées n'ayant pas été modifiées
+dbExecute(conn, "DROP TABLE IF EXISTS ajout_identique, supp_identique CASCADE;")
 
+# Parcelles ajoutées n'ayant pas été modifiées
 dbExecute(conn, "
   CREATE TEMP TABLE ajout_identique AS
   SELECT ajout.*
@@ -850,12 +885,13 @@ dbExecute(conn, "
   WHERE idu IN (SELECT idu FROM supp_identique);
 ")
 
-dbExecute(conn, "DROP TABLE IF EXISTS ajout_identique, supp_identique;")
+dbExecute(conn, "DROP TABLE IF EXISTS ajout_identique, supp_identique CASCADE;")
 ```
 
 ## Reconnaissances des cas de fusion (peu fréquent) ou subdivision (plus courant)
 
 ```{r ajout/supp iou -> fusion/subdivision}
+dbExecute(conn, "DROP TABLE IF EXISTS ajout_iou, supp_iou, fusion, subdiv CASCADE;")
 
 dbExecute(conn, "
   CREATE TEMP TABLE supp_iou AS
@@ -905,7 +941,7 @@ dbExecute(conn, "
 
 ```
 
-```{r}
+```{r fusion/subdivision}
 subdiv_sql <- st_read(conn, query = "SELECT * FROM subdiv;")
 fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
 ```
@@ -914,6 +950,7 @@ fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
 ## Reconnaissances des cas de multi-subdivision (ex : 2 -> 3) ou modification de contours
 
 ```{r ajout/supp iou_multi -> multi-subdivision et contours}
+dbExecute(conn, "DROP TABLE IF EXISTS supp_iou_multi, multi_subdiv, contour CASCADE;")
 
 dbExecute(conn, "
   CREATE TEMP TABLE supp_iou_multi AS
@@ -953,14 +990,14 @@ dbExecute(conn, "
 
 ```
 
-```{r}
+```{r multisubdiv sql}
 multi_subdiv_sql <- st_read(conn, query = "SELECT * FROM multi_subdiv;")
 ```
 
 ## Reconnaissances des cas de modification de contours plus compliquée
-
+# a revoir c est trop long
 ```{r changement forme + ou découpage compliquée}
-
+dbExecute(conn, "DROP TABLE IF EXISTS supp_iou_multi_bis, contour_transfo CASCADE;")
 dbExecute(conn, "
   CREATE TEMP TABLE supp_iou_multi_bis AS
   SELECT
@@ -1009,7 +1046,7 @@ dbExecute(conn, "
 
 ```
 
-```{r}
+```{r contour avec transfo ou non}
 contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
 contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 ```
@@ -1018,6 +1055,7 @@ contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 
 ####### A PARTIR D'ICI C'est plus vérifié
 ```{r ajout/supp iou_ajust -> translation, contour + translation}
+dbExecute(conn, "DROP TABLE IF EXISTS ajout_iou_translate CASCADE;")
 
 dbExecute(conn, "
   CREATE TEMP TABLE ajout_iou_translate AS
@@ -1058,7 +1096,7 @@ dbExecute(conn, "
 
 ```
 
-```{r}
+```{r contour translation ou translation seule}
 contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
 translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
 ```
@@ -1066,6 +1104,7 @@ translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
 
 ```{r ajout/supp iou_ajust -> contour_fusion_translation}
+dbExecute(conn, "DROP TABLE IF EXISTS supp_iou_multi_translate, contour_fusion_translation CASCADE;")
 
 dbExecute(conn, "
   CREATE TEMP TABLE supp_iou_multi_translate AS
@@ -1095,13 +1134,15 @@ dbExecute(conn, "
 
 ```
 
-```{r}
+```{r contour_fusion_translation}
 contour_fusion_translation_sql <- st_read(conn, query = "SELECT * FROM contour_fusion_translation;")
 ```
 
 ## Recalcul de l'IoU pour détecter les parcelles maintenant isolées -> Véritable ajout ou suppression
 
-```{r}
+```{r le reste}
+dbExecute(conn, "DROP TABLE IF EXISTS supp_iou_restant, ajout_iou_restant, 
+          vrai_ajout, vrai_supp CASCADE;")
 
 dbExecute(conn, "
   CREATE TEMP TABLE supp_iou_restant AS
@@ -1150,7 +1191,7 @@ dbExecute(conn, "
 ```
 
 
-```{r}
+```{r le reste}
 ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
 supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
 
@@ -1165,87 +1206,87 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white",
                alpha.regions = 0.5, homebutton = F) +
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(translation,
+  mapview(translation_sql,
           layer.name = "Parcelles translatées (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
   mapview(ins_parc_23 %>%
-            filter(idu %in% translation$idu_translate), 
+            filter(idu %in% translation_sql$idu_translate), 
           layer.name = "Parcelles translatées (état 2023)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(fusion, layer.name = "Parcelles fusionnéees (état 2024)", 
+  mapview(fusion_sql, layer.name = "Parcelles fusionnéees (état 2024)", 
           col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
   mapview(supp_tot %>%
-            filter(idu %in% unlist(str_split(fusion$participants, ",\\s*"))),  
+            filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))),  
           layer.name = "Parcelles avant fusion (état 2023)", 
           alpha.regions = 0.5, homebutton = F) +
   mapview(ajout_tot %>%
-            filter(idu %in% unlist(str_split(subdiv$participants, ",\\s*"))),  
+            filter(idu %in% unlist(str_split(subdiv_sql$participants, ",\\s*"))),  
           layer.name = "Parcelles subdivisées (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(subdiv,  layer.name = "Parcelles avant subdivision (état 2023)", 
+  mapview(subdiv_sql,  layer.name = "Parcelles avant subdivision (état 2023)", 
           col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
   mapview(ajout_tot %>%
-            filter(idu %in% unlist(str_split(multi_subdiv$participants_apres, ",\\s*"))),
+            filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))),
           layer.name = "Parcelles après multi-subdivision (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(multi_subdiv,  
+  mapview(multi_subdiv_sql,  
           layer.name = "Parcelles avant multi-subdivision (état 2023)", 
           col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
   mapview(ajout_tot %>%
-            filter(idu %in% unlist(str_split(contour$participants_apres, ",\\s*"))),  
+            filter(idu %in% unlist(str_split(contour_sql$participants_apres, ",\\s*"))),  
           layer.name = "Parcelles après évolution forme (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(contour,
+  mapview(contour_sql,
           layer.name = "Parcelles avant évolution forme (état 2023)",
           col.regions = "purple", alpha.regions = 0.5, homebutton = F) +
-  mapview(contour_apres,  
+  mapview(contour_apres_sql,  
           layer.name = "Parcelles après évolution forme (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
   mapview(ins_parc_23 %>%
-            filter(idu %in% contour_apres$idu),  
+            filter(idu %in% contour_apres_sql$idu),  
           layer.name = "Parcelles avant évolution forme (état 2023)", 
           col.regions = "purple", alpha.regions = 0.5, homebutton = F) +
   mapview(ajout_tot %>%
-            filter(idu %in% unlist(str_split(contour_transfo$participants_apres, ",\\s*"))),  
+            filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))),  
           layer.name = "Parcelles ayant transfo + évolution forme (état 2024)",
           alpha.regions = 0.5, homebutton = F) +
-  mapview(contour_transfo,
+  mapview(contour_transfo_sql,
           layer.name = "Parcelles ayant transfo + évolution forme (état 2023)", 
           col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
-  mapview(contour_translation,  
+  mapview(contour_translation_sql,  
           layer.name = "Parcelles ayant translatées + évolution forme (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
   mapview(ins_parc_23 %>%
-            filter(idu %in% contour_translation$idu_translate),
+            filter(idu %in% contour_translation_sql$idu_translate),
           layer.name = "Parcelles ayant translatées + évolution forme (état 2023)", 
           col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
-  mapview(contour_fusion_translation,  
+  mapview(contour_fusion_translation_sql,  
           layer.name = "Parcelles ayant translatées + évolution forme + fusion (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
   mapview(ajout_tot %>%
-            filter(idu %in% contour_fusion_translation$participants_apres_multi_translate),
+            filter(idu %in% contour_fusion_translation_sql$participants_apres_multi_translate),
           layer.name = "Parcelles ayant translatées + évolution forme + fusion (état 2023)", 
           col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
-  mapview(com_abs_apres,  layer.name = "Parcelles après fusion de communes (état 2024)", 
+  mapview(com_abs_apres_sql,  layer.name = "Parcelles après fusion de communes (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(com_abs_avant,  layer.name = "Parcelles avant fusion de communes (état 2023)", 
+  mapview(com_abs_avant_sql,  layer.name = "Parcelles avant fusion de communes (état 2023)", 
           col.regions = "purple", alpha.regions = 0.5, homebutton = F) +
-  mapview(vrai_ajout, layer.name = "Parcelles véritablement ajoutées", 
+  mapview(vrai_ajout_sql, layer.name = "Parcelles véritablement ajoutées", 
           col.regions = "green", alpha.regions = 0.5, homebutton = F) +
-  mapview(vrai_supp, layer.name = "Parcelles véritablement supprimées",
+  mapview(vrai_supp_sql, layer.name = "Parcelles véritablement supprimées",
           col.regions = "red", alpha.regions = 0.5, homebutton = F) +
-  mapview(ajout, z = c("iou_ajust"), layer.name = "Parcelles restantes (état 2024)", 
+  mapview(ajout_sql, z = c("iou_ajust"), layer.name = "Parcelles restantes (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(supp, z = c("iou_multi"), layer.name = "Parcelles restantes (état 2023)", 
+  mapview(supp_sql, z = c("iou_multi"), layer.name = "Parcelles restantes (état 2023)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(modif_apres, z = c("iou_ajust"), 
+  mapview(modif_apres_sql, z = c("iou_ajust"), 
           layer.name = "Parcelles modifiées restantes (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(modif_avant, z = c("iou_ajust"), 
+  mapview(modif_avant_sql, z = c("iou_ajust"), 
           layer.name = "Parcelles modifiées restantes (état 2023)", 
           alpha.regions = 0.5, homebutton = F)
 
-mapshot(map, url = "parcelles_iou_inside_bordure_85.html")
+mapshot(map, url = "parcelles_iou_85_sql.html")
 ```
 
 # Tableau de comparaison de superficie entre les deux années
