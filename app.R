@@ -3,20 +3,8 @@ library(sf)
 library(mapview)
 library(leaflet)
 
-# Example data
-sample_data <- st_as_sf(data.frame(
-  id = 1:3,
-  nom_com = c("Ville A", "Ville B", "Ville C"),
-  geometry = st_sfc(
-    st_polygon(list(rbind(c(0, 0), c(1, 0), c(1, 1), c(0, 1), c(0, 0)))),
-    st_polygon(list(rbind(c(1, 1), c(2, 1), c(2, 2), c(1, 2), c(1, 1)))),
-    st_polygon(list(rbind(c(0, 1), c(0, 2), c(1, 2), c(1, 1), c(0, 1))))
-  )
-), crs = 4326)
-
-# Replace with your actual data
-sample_data <- ins_parc_23
-sample_data_2 <- ins_parc_24
+parcelles_avant <- ins_parc_23
+parcelles_apres <- ins_parc_24
 
 # Define UI
 ui <- fluidPage(
@@ -30,8 +18,8 @@ ui <- fluidPage(
              fluidRow(
                column(12,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
-                                  choices = unique(sample_data$nom_com),
-                                  selected = unique(sample_data$nom_com)[1]),
+                                  choices = unique(parcelles_apres$nom_com),
+                                  selected = unique(parcelles_apres$nom_com)[1]),
                       actionButton("resetButton", "Réinitialiser la sélection"),
                       actionButton("syncButton", "Synchronisation des cartes"),
                       hr(),
@@ -54,19 +42,27 @@ ui <- fluidPage(
       margin: 0;  /* Remove margins */
       padding: 0; /* Remove padding */
     }
+    .selectize-dropdown {
+    z-index: 2000; /* Valeur plus élevée pour être au-dessus des cartes */
+  }
   "))
 )
 
 # Define server logic
 server <- function(input, output, session) {
   
-  filtered_data <- reactive({
-    sample_data[sample_data$nom_com == input$nom_com_select, ]
+  parcelles_avant_f <- reactive({
+    parcelles_avant[parcelles_avant$nom_com == input$nom_com_select, ]
   })
   
-  filtered_data_2 <- reactive({
-    sample_data_2[sample_data_2$nom_com == input$nom_com_select, ]
+  parcelles_apres_f <- reactive({
+    parcelles_apres[parcelles_apres$nom_com == input$nom_com_select, ]
   })
+  
+  bordure_f <- reactive({
+    bordure[bordure$nom_com == input$nom_com_select, ]
+  })
+  
   
   # Render maps dynamically
   output$dynamicMaps <- renderUI({
@@ -81,27 +77,43 @@ server <- function(input, output, session) {
   # Render the three maps only when the tab is active
   output$map1 <- renderLeaflet({
     req(input$tabsetPanel == "Comparaison par commune")
-    mapview(filtered_data())@map
+    (mapview(parcelles_avant_f(), homebutton = FALSE) + 
+        mapview(bordure_f(), 
+                layer.name = "Bordures étendues", 
+                col.regions = "lightblue", 
+                alpha.regions = 0.5, 
+                homebutton = FALSE))@map
   })
   
   output$map2 <- renderLeaflet({
     req(input$tabsetPanel == "Comparaison par commune")
-    mapview(filtered_data(), 
-            layer.name = "Parcelles (état 2023)",
-            col.regions = "pink")@map
+    (mapview(parcelles_avant_f(), 
+             layer.name = "Parcelles (état 2023)", 
+             homebutton = FALSE) + 
+        mapview(bordure_f(), 
+                layer.name = "Bordures étendues", 
+                col.regions = "lightblue", 
+                alpha.regions = 0.5, 
+                homebutton = FALSE))@map
   })
   
   output$map3 <- renderLeaflet({
     req(input$tabsetPanel == "Comparaison par commune")
-    mapview(filtered_data_2(), 
-            layer.name = "Parcelles (état 2024)",
-            col.regions = "purple")@map
+    (mapview(parcelles_apres_f(), 
+             layer.name = "Parcelles (état 2024)",
+             col.regions = "purple", 
+             homebutton = FALSE) + 
+        mapview(bordure_f(), 
+                layer.name = "Bordures étendues", 
+                col.regions = "lightblue", 
+                alpha.regions = 0.5, 
+                homebutton = FALSE))@map
   })
   
   # Render the single large map
   output$largeMap <- renderLeaflet({
     req(input$tabsetPanel == "Evolution sur le département entier")
-    mapview(filtered_data())@map
+    mapview(commune, homebutton = FALSE)@map
   })
   
   # Synchronize maps
@@ -111,7 +123,7 @@ server <- function(input, output, session) {
   
   # Reset selection to first element
   observeEvent(input$resetButton, {
-    updateSelectInput(session, "nom_com_select", selected = unique(sample_data$nom_com)[1])
+    updateSelectInput(session, "nom_com_select", selected = unique(parcelles_apres$nom_com)[1])
   })
 }
 
