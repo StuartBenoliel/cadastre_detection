@@ -22,6 +22,8 @@ library(webshot)
 source(file = "connexion_db.R")
 conn <- connecter()
 DBI::dbListTables(conn)
+
+indic_bordure <- F
 ```
 
 ```{r fonction sql}
@@ -309,6 +311,29 @@ dbExecute(conn, "
 
 ```
 
+```{r supprimer toutes les tables temporaires}
+
+# Exécution de la requête pour obtenir les noms des tables temporaires
+tables_temporaires <- dbGetQuery(conn, "
+  SELECT 
+      tablename
+  FROM 
+      pg_tables
+  WHERE 
+      schemaname LIKE 'pg_temp_%';
+")
+
+# Générer les commandes de suppression
+drop_queries <- lapply(tables_temporaires$tablename, function(table) {
+  paste("DROP TABLE IF EXISTS", table, "CASCADE;")
+})
+
+# Exécution des commandes de suppression
+for (query in drop_queries) {
+  dbExecute(conn, query)
+}
+```
+
 ```{r voir les index}
 dbGetQuery(conn, " SELECT 
     tablename, 
@@ -333,29 +358,6 @@ WHERE
 ORDER BY 
     schemaname, tablename;
            ")
-```
-
-```{r supprimer toutes les tables temporaires}
-
-# Exécution de la requête pour obtenir les noms des tables temporaires
-tables_temporaires <- dbGetQuery(conn, "
-  SELECT 
-      tablename
-  FROM 
-      pg_tables
-  WHERE 
-      schemaname LIKE 'pg_temp_%';
-")
-
-# Générer les commandes de suppression
-drop_queries <- lapply(tables_temporaires$tablename, function(table) {
-    paste("DROP TABLE IF EXISTS", table, "CASCADE;")
-})
-
-# Exécution des commandes de suppression
-for (query in drop_queries) {
-    dbExecute(conn, query)
-}
 ```
 
 # Importation des parcelles sur l'ensemble du département et des périodes données
@@ -384,10 +386,11 @@ dbExecute(conn, "
   );
 ")
 
-dbExecute(conn, "CREATE INDEX idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX idx_supp_tot_geometry ON supp_tot USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_tot_geometry ON supp_tot USING GIST(geometry);")
 
 ```
+
 
 ```{r import commune}
 commune <- st_read(conn, query = "SELECT * FROM com_85;")
@@ -396,10 +399,9 @@ ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
 supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
 ```
 
-
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
 
-```{r creation inside bordure}
+```{r creation bordure et avec ou sans}
 dbExecute(conn, "DROP TABLE IF EXISTS bordure, ins_parc_24, ins_parc_23, ajout, supp CASCADE;")
 
 dbExecute(conn, "
@@ -411,112 +413,70 @@ dbExecute(conn, "
       com_85;
 ")
 
-dbExecute(conn, "CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_geometry ON bordure USING GIST(geometry);")
 
-dbExecute(conn, "
+query <- paste0("
   CREATE TEMP TABLE ins_parc_24 AS
   SELECT DISTINCT
       parc_85_24.*
   FROM
-      parc_85_24
+      parc_85_24", 
+  ifelse(indic_bordure, "
   JOIN
       bordure
   ON
-      ST_WITHIN(parc_85_24.geometry, bordure.geometry);
-")
+      ST_WITHIN(parc_85_24.geometry, bordure.geometry);", ";"))
 
-dbExecute(conn, "
+dbExecute(conn, query)
+
+query <- paste0("
   CREATE TEMP TABLE ins_parc_23 AS
   SELECT DISTINCT
       parc_85_23.*
   FROM
-      parc_85_23
+      parc_85_23", 
+  ifelse(indic_bordure, "
   JOIN
       bordure
   ON
-      ST_WITHIN(parc_85_23.geometry, bordure.geometry);
-")
+      ST_WITHIN(parc_85_23.geometry, bordure.geometry);", ";"))
 
-dbExecute(conn, "
+dbExecute(conn, query)
+
+query <- paste0("
   CREATE TEMP TABLE ajout AS
   SELECT DISTINCT
       ajout_tot.*
   FROM
-      ajout_tot
+      ajout_tot", 
+  ifelse(indic_bordure, "
   JOIN
       bordure
   ON
       ST_WITHIN(ajout_tot.geometry, bordure.geometry)
-  ORDER BY ajout_tot.nom_com;
-")
+  ORDER BY ajout_tot.nom_com;", ";"))
 
-dbExecute(conn, "
+dbExecute(conn, query)
+
+query <- paste0("
   CREATE TEMP TABLE supp AS
   SELECT DISTINCT
       supp_tot.*
   FROM
-      supp_tot
+      supp_tot", 
+  ifelse(indic_bordure, "
   JOIN
       bordure
   ON
       ST_WITHIN(supp_tot.geometry, bordure.geometry)
-  ORDER BY supp_tot.nom_com;
-")
+  ORDER BY supp_tot.nom_com;", ";"))
 
-dbExecute(conn, "CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);")
-```
+dbExecute(conn, query)
 
-```{r creation sans bordure}
-dbExecute(conn, "DROP TABLE IF EXISTS bordure, ins_parc_24, ins_parc_23, ajout, supp CASCADE;")
-
-dbExecute(conn, "
-  CREATE TEMP TABLE bordure AS
-  SELECT
-      code_insee, nom_com, code_dep,
-      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
-  FROM
-      com_85;
-")
-
-dbExecute(conn, "CREATE INDEX idx_bordure_geometry ON bordure USING GIST(geometry);")
-
-dbExecute(conn, "
-  CREATE TEMP TABLE ins_parc_24 AS
-  SELECT DISTINCT
-      parc_85_24.*
-  FROM
-      parc_85_24;
-")
-
-dbExecute(conn, "
-  CREATE TEMP TABLE ins_parc_23 AS
-  SELECT DISTINCT
-      parc_85_23.*
-  FROM
-      parc_85_23;
-")
-
-dbExecute(conn, "
-  CREATE TEMP TABLE ajout AS
-  SELECT DISTINCT
-      ajout_tot.*
-  FROM
-      ajout_tot
-  ORDER BY ajout_tot.nom_com;
-")
-
-dbExecute(conn, "
-  CREATE TEMP TABLE supp AS
-  SELECT DISTINCT
-      supp_tot.*
-  FROM
-      supp_tot
-  ORDER BY supp_tot.nom_com;
-")
-
-dbExecute(conn, "CREATE INDEX idx_ajout_geometry ON ajout USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX idx_supp_geometry ON supp USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_24_geometry ON ins_parc_24 USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_23_geometry ON ins_parc_23 USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_geometry ON ajout USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_geometry ON supp USING GIST(geometry);")
 ```
 
 
@@ -567,8 +527,7 @@ dbExecute(conn, "
       SELECT 1
       FROM ajout
       WHERE ins_parc_24.idu = ajout.idu
-  )
-  ORDER BY ins_parc_24.nom_com;
+  );
 ")
 
 dbExecute(conn, "
@@ -584,8 +543,7 @@ dbExecute(conn, "
       SELECT 1
       FROM supp
       WHERE ins_parc_23.idu = supp.idu
-  )
-  ORDER BY ins_parc_23.nom_com;
+  );
 ")
 
 dbExecute(conn, "
@@ -663,7 +621,6 @@ dbExecute(conn, "
   WHERE iou > 0.95 AND iou_ajust < 0.99;
 ")
 
-dbExecute(conn, "DROP TABLE IF EXISTS contour_translation;")
 dbExecute(conn, "
   CREATE TEMP TABLE contour_translation AS
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
@@ -692,6 +649,7 @@ dbExecute(conn, "
 
 ```{r meme cas sql}
 dbExecute(conn, "DROP TABLE IF EXISTS modif_apres_iou_multi;")
+
 dbExecute(conn, "
   CREATE TEMP TABLE modif_apres_iou_multi AS
   SELECT modif_apres_iou.*, 
@@ -773,7 +731,11 @@ dbExecute(conn, "
 
 ```{r parcelle changeant de communes}
 com_abs_apres_sql <- st_read(conn, query = "SELECT * FROM com_abs_apres;")
-com_abs_avant_sql <- st_read(conn, query = "SELECT * FROM com_abs_avant;")
+com_abs_avant_sql <- st_read(conn, query = "
+                             SELECT com_abs_avant.*, com_abs_apres.nom_com AS nom_com_apres
+                             FROM com_abs_avant
+                             LEFT JOIN com_abs_apres 
+                             ON com_abs_avant.idu = com_abs_apres.idu_avant;")
 ```
 
 # Focus parcelles avec changement "majeur" lié à un changement impactant l'identifiant des parcelles
@@ -863,6 +825,8 @@ dbExecute(conn, "
     OR iou > 0.99;
 ")
 
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_geometry ON ajout_iou USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_geometry ON supp_iou USING GIST(geometry);")
 ```
 
 ```{r fusion/subdivision}
@@ -901,79 +865,37 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  DELETE FROM ajout_iou
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM multi_subdiv)
-    OR idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour);
-")
-
-dbExecute(conn, "
-  DELETE FROM supp_iou_multi
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM multi_subdiv)
-    OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour);
-")
-
-```
-
-```{r multisubdiv sql}
-multi_subdiv_sql <- st_read(conn, query = "SELECT * FROM multi_subdiv;")
-```
-
-## Reconnaissances des cas de modification de contours plus compliquée
-# a revoir c est trop long
-```{r changement forme + ou découpage compliquée}
-dbExecute(conn, "DROP TABLE IF EXISTS supp_iou_multi_bis, contour_transfo CASCADE;")
-dbExecute(conn, "
-  CREATE TEMP TABLE supp_iou_multi_bis AS
-  SELECT
-      idu, numero, feuille, section, code_dep, nom_com, code_com, 
-      com_abs, code_arr, contenance, geometry, iou, participants,
-      (calcul_iou_multi(supp_iou_multi.geometry, 'supp_iou_multi', 'ajout_iou')).*
-  FROM
-      supp_iou_multi;
-")
-
-# Cas d'une parcelle spécial 850040000F0149
-dbExecute(conn, "
-  INSERT INTO contour
-  SELECT *
-  FROM supp_iou_multi_bis
-  WHERE (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14)
-     OR (iou_multi > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres));
-")
-
-dbExecute(conn, "
-  DELETE FROM ajout_iou
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour);
-")
-
-dbExecute(conn, "
-  DELETE FROM supp_iou_multi_bis
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour);
-")
-
-dbExecute(conn, "
   CREATE TEMP TABLE contour_transfo AS
   SELECT *
-  FROM supp_iou_multi_bis
+  FROM supp_iou_multi
   WHERE iou_multi > 0.95;
 ")
 
 dbExecute(conn, "
   DELETE FROM ajout_iou
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour_transfo);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM multi_subdiv)
+    OR idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
+    OR idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour_transfo);
 ")
 
 dbExecute(conn, "
-  DELETE FROM supp_iou_multi_bis
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour_transfo);
+  DELETE FROM supp_iou_multi
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM multi_subdiv)
+    OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
+    OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour_transfo);
 ")
 
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_geometry ON supp_iou_multi USING GIST(geometry);")
 ```
 
-```{r contour avec transfo ou non}
+```{r multisubdiv sql}
+multi_subdiv_sql <- st_read(conn, query = "SELECT * FROM multi_subdiv;")
 contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
 contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 ```
+
+## Reconnaissances des cas de modification de contours plus compliquée
+# a revoir c est trop long
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation, modification de contour avec translation
 
@@ -1013,11 +935,12 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  DELETE FROM supp_iou_multi_bis
+  DELETE FROM supp_iou_multi
   WHERE idu IN (SELECT idu_translate FROM translation)
     OR idu IN (SELECT idu_translate FROM contour_translation);
 ")
 
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_translate_geometry ON ajout_iou_translate USING GIST(geometry);")
 ```
 
 ```{r contour translation ou translation seule}
@@ -1033,10 +956,10 @@ dbExecute(conn, "DROP TABLE IF EXISTS supp_iou_multi_translate, contour_fusion_t
 dbExecute(conn, "
   CREATE TEMP TABLE supp_iou_multi_translate AS
   SELECT 
-      supp_iou_multi_bis.*,
-      (calcul_iou_multi_translate(supp_iou_multi_bis.geometry, 'supp_iou_multi_bis', 'ajout_iou_translate')).*
+      supp_iou_multi.*,
+      (calcul_iou_multi_translate(supp_iou_multi.geometry, 'supp_iou_multi', 'ajout_iou_translate')).*
   FROM
-      supp_iou_multi_bis;
+      supp_iou_multi;
 ")
 
 dbExecute(conn, "
@@ -1056,6 +979,7 @@ dbExecute(conn, "
   WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant_multi_translate, ',\\s*')) FROM contour_fusion_translation);
 ")
 
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_translate_geometry ON supp_iou_multi_translate USING GIST(geometry);")
 ```
 
 ```{r contour_fusion_translation}
