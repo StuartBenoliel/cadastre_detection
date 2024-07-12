@@ -3,7 +3,7 @@ library(sf)
 library(mapview)
 library(leaflet)
 
-# Exemple de données
+# Example data
 sample_data <- st_as_sf(data.frame(
   id = 1:3,
   nom_com = c("Ville A", "Ville B", "Ville C"),
@@ -14,72 +14,108 @@ sample_data <- st_as_sf(data.frame(
   )
 ), crs = 4326)
 
-sample_data <- commune
+# Replace with your actual data
+sample_data <- ins_parc_23
+sample_data_2 <- ins_parc_24
 
-# Définir l'interface utilisateur
+# Define UI
 ui <- fluidPage(
-  titlePanel("Filtered Polygon Map in Shiny"),
-  fluidRow(
-    column(12,
-           h4("Filter Polygons by nom_com"),
-           selectInput("nom_com_select", "Choose nom_com:",
-                       choices = c("", unique(sample_data$nom_com))),
-           actionButton("resetButton", "Reset Selection"),
-           actionButton("syncButton", "Synchronize Maps"),
-           hr(),
-           p("This app filters polygons based on the selected nom_com.")
+  titlePanel("Détection des évolutions des parcelles cadastrales (cas Vendée 2024-2023)"),
+  
+  # Navigation panel
+  tabsetPanel(
+    id = "tabsetPanel",  # Give an ID to the tabsetPanel
+    type = "tabs",
+    tabPanel("Comparaison par commune",
+             fluidRow(
+               column(12,
+                      selectInput("nom_com_select", "Choisir un nom de commune:",
+                                  choices = unique(sample_data$nom_com),
+                                  selected = unique(sample_data$nom_com)[1]),
+                      actionButton("resetButton", "Réinitialiser la sélection"),
+                      actionButton("syncButton", "Synchronisation des cartes"),
+                      hr(),
+               )
+             ),
+             uiOutput("dynamicMaps")  # Use UI output to render maps
+    ),
+    tabPanel("Evolution sur le département entier",
+             fluidRow(
+               column(12, leafletOutput("largeMap", height = "100vh"))
+             )
     )
   ),
-  fluidRow(
-    column(4,
-           leafletOutput("map1", height = 400)
-    ),
-    column(4,
-           leafletOutput("map2", height = 400)
-    ),
-    column(4,
-           leafletOutput("map3", height = 400)
-    )
-  )
+  
+  tags$style(HTML("
+    .leaflet {
+      height: 100%;
+    }
+    .shiny-output-container {
+      margin: 0;  /* Remove margins */
+      padding: 0; /* Remove padding */
+    }
+  "))
 )
 
-# Définir la logique serveur
+# Define server logic
 server <- function(input, output, session) {
   
   filtered_data <- reactive({
-    if (input$nom_com_select == "") {
-      return(sample_data)  # Retourner toutes les données si aucun filtre sélectionné
-    } else {
-      return(sample_data[sample_data$nom_com == input$nom_com_select, ])
-    }
+    sample_data[sample_data$nom_com == input$nom_com_select, ]
   })
   
-  # Rendre les objets mapview
+  filtered_data_2 <- reactive({
+    sample_data_2[sample_data_2$nom_com == input$nom_com_select, ]
+  })
+  
+  # Render maps dynamically
+  output$dynamicMaps <- renderUI({
+    req(input$tabsetPanel == "Comparaison par commune")
+    fluidRow(
+      column(4, leafletOutput("map2", height = "84vh")),
+      column(4, leafletOutput("map1", height = "84vh")),
+      column(4, leafletOutput("map3", height = "84vh"))
+    )
+  })
+  
+  # Render the three maps only when the tab is active
   output$map1 <- renderLeaflet({
+    req(input$tabsetPanel == "Comparaison par commune")
     mapview(filtered_data())@map
   })
   
   output$map2 <- renderLeaflet({
-    mapview(filtered_data())@map
+    req(input$tabsetPanel == "Comparaison par commune")
+    mapview(filtered_data(), 
+            layer.name = "Parcelles (état 2023)",
+            col.regions = "pink")@map
   })
   
   output$map3 <- renderLeaflet({
+    req(input$tabsetPanel == "Comparaison par commune")
+    mapview(filtered_data_2(), 
+            layer.name = "Parcelles (état 2024)",
+            col.regions = "purple")@map
+  })
+  
+  # Render the single large map
+  output$largeMap <- renderLeaflet({
+    req(input$tabsetPanel == "Evolution sur le département entier")
     mapview(filtered_data())@map
   })
   
-  # Observer pour synchroniser les cartes après le rendu initial
+  # Synchronize maps
   observeEvent(input$syncButton, {
     session$sendCustomMessage("syncMaps", list(mapId1 = "map1", mapId2 = "map2", mapId3 = "map3"))
   })
   
-  # Réinitialiser la sélection de nom_com
+  # Reset selection to first element
   observeEvent(input$resetButton, {
-    updateSelectInput(session, "nom_com_select", selected = "")
+    updateSelectInput(session, "nom_com_select", selected = unique(sample_data$nom_com)[1])
   })
-  
 }
 
-# JavaScript pour synchroniser les cartes
+# JavaScript for synchronizing maps
 jsCode <- "
 Shiny.addCustomMessageHandler('syncMaps', function(message) {
   var map1 = $('#' + message.mapId1).data('leaflet-map');
@@ -92,13 +128,13 @@ Shiny.addCustomMessageHandler('syncMaps', function(message) {
 });
 "
 
-# Inclure le script de synchronisation leaflet dans la balise head
+# Include the synchronization script in the head
 syncLeafletScript <- tags$head(
   tags$script(HTML(jsCode))
 )
 
-# Ajouter le script de synchronisation à l'application
+# Add the synchronization script to the app
 ui <- tagList(syncLeafletScript, ui)
 
-# Exécuter l'application
+# Run the application
 shinyApp(ui, server)

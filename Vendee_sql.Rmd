@@ -623,50 +623,6 @@ dbExecute(conn, "
 # quantiles <- quantile(modif$iou_ajust, probs = c(0.01, 0.03, 0.05, 0.1), na.rm = TRUE)
 ```
 
-# Visualisation cas base (avec défaut notamment sur ajout/supp) 
-
-```{r ggplot methode geometry}
-plot <- ggplot() +
-  geom_sf(data = commune, aes(fill = "Communes"),color = "black", alpha = 0.5) +  
-  geom_sf(data = bordure, aes(fill = "Bordures étendues"), fill = "lightblue", 
-          alpha = 0.5, color = "lightblue") +  
-  geom_sf(data = modif_apres, aes(fill = "Parcelles modifiées (2024)"), 
-          alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = modif_avant, aes(fill = "Parcelles modifiées (2023)"), 
-          alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = ajout, aes(fill = "Parcelles ajoutées"), 
-          alpha = 0.5, color = "black", size = 0.01) +
-  geom_sf(data = supp, aes(fill = "Parcelles supprimées"), 
-          alpha = 0.5, color = "black", size = 0.01) +
-  scale_fill_manual(values = c("Communes" = "white", "Bordures étendues" = "lightblue", 
-                               "Parcelles modifiées (2024)" = "purple",
-                               "Parcelles modifiées (2023)" = "pink", 
-                               "Parcelles ajoutées" = "green", "Parcelles supprimées" = "red")) +
-  theme_minimal() +
-  labs(title = "Parcelles cadastrales croisant les frontières étendues des communes en Vendée, modifiés au niveau de la geometry en 2024", 
-       fill ="Légende",
-       subtitle = "Les bordures des communes sont élargies d'un rayon de 50m de chaque côté de celles définies par l'IGN")
-
-# ggsave("parcelles_bordures_modifiées_85.png", plot = plot, width = 12, height = 8, dpi = 300)
-# plot
-```
-
-```{r mapview methode geometry}
-map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", 
-          col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(modif_apres, layer.name = "Parcelles modifiées (état 2024)", 
-          col.regions = "purple", alpha.regions = 0.5) +
-  mapview(modif_avant, layer.name = "Parcelles modifiées (état 2023)", 
-          col.regions = "pink", alpha.regions = 0.5) +
-  mapview(ajout, layer.name = "Parcelles ajoutées", 
-          col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(supp, layer.name = "Parcelles supprimées",
-          col.regions = "red", alpha.regions = 0.5)
-
-# mapshot(map, url = "parcelles_modifiées_bordure_85.html")
-```
-
 ## Reconnaissances des cas de translation, modification de contour et les deux à la fois
 
 ```{r translation, contour_apres, contour_translation}
@@ -785,27 +741,6 @@ modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou_multi;")
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou;")
 ```
 
-## Distribution de l'IoU après translation des parcelles
-
-```{r distib iou}
-plot <- ggplot(na.omit(modif), aes(x = iou_ajust)) +
-  geom_histogram(aes(y = after_stat(density)), binwidth = 0.005, fill = "skyblue", color = "black", alpha = 0.7) +
-  geom_segment(x = quantiles[1], xend = quantiles[1], y = 0, yend = 9, color = "blue", linetype = "dashed", linewidth = 0.6) +
-  geom_segment(x = quantiles[2], xend = quantiles[2], y = 0, yend = 12, color = "blue", linetype = "dashed", linewidth = 0.6) +
-  geom_segment(x = quantiles[3], xend = quantiles[3], y = 0, yend = 15, color = "blue", linetype = "dashed", linewidth = 0.6) +
-  geom_segment(x = quantiles[4], xend = quantiles[4], y = 0, yend = 19, color = "blue", linetype = "dashed", linewidth = 0.6) +
-  annotate("text", x = quantiles[1], y = 10, label = paste0("1% Quantile: ", round(quantiles[1], 2)), color = "blue", vjust = -1.5) +
-  annotate("text", x = quantiles[2], y = 13, label = paste0("3% Quantile: ", round(quantiles[2], 2)), color = "blue", vjust = -1.5) +
-  annotate("text", x = quantiles[3], y = 16, label = paste0("5% Quantile: ", round(quantiles[3], 2)), color = "blue", vjust = -1.5) +
-  annotate("text", x = quantiles[4], y = 20, label = paste0("10% Quantile: ", round(quantiles[4], 2)), color = "blue", vjust = -1.5) +
-  labs(title = "Histogramme de la variable iou_ajust avec quantiles",
-       x = "iou_ajust",
-       y = "Fréquence") +
-  theme_bw()
-
-# ggsave("Distribution_iou.png", plot = plot, width = 12, height = 8, dpi = 300)
-```
-
 # Focus des parcelles ayant changé de communes
 
 ## Cas des parcelles dans le cas d'une fusion de communes
@@ -839,17 +774,6 @@ dbExecute(conn, "
 ```{r parcelle changeant de communes}
 com_abs_apres_sql <- st_read(conn, query = "SELECT * FROM com_abs_apres;")
 com_abs_avant_sql <- st_read(conn, query = "SELECT * FROM com_abs_avant;")
-```
-
-
-```{r focus parcelle changement de communes}
-map <- mapview(commune, layer.name = "Communes", col.regions = "white", alpha.regions = 0.5) +
-  mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", alpha.regions = 0.5) +
-  mapview(com_abs_apres_bis, layer.name = "Parcelles abs_bis (état 2024)", col.regions = "purple", alpha.regions = 0.5) +
-  mapview(com_abs_avant, layer.name = "Parcelles abs (état 2023)", col.regions = "lightgreen", alpha.regions = 0.5) +
-  mapview(df_abs, layer.name = "Parcelles df_abs (état 2024)", col.regions = "purple", alpha.regions = 0.5)
-
-# mapshot(map, url = "parcelles_abs.html")
 ```
 
 # Focus parcelles avec changement "majeur" lié à un changement impactant l'identifiant des parcelles
@@ -1201,7 +1125,7 @@ vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
 # Visualisation finale sur une carte du département
 
-```{r mapview typologie parcelles}
+```{r mapview typologie parcelles, eval=FALSE, include=FALSE}
 map <- mapview(commune, layer.name = "Communes", col.regions = "white", 
                alpha.regions = 0.5, homebutton = F) +
   mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightblue", 
@@ -1287,35 +1211,5 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white",
           alpha.regions = 0.5, homebutton = F)
 
 mapshot(map, url = "parcelles_iou_85_sql.html")
-```
-
-# Tableau de comparaison de superficie entre les deux années
-
-```{r evolution superficie}
-evol_sup <- modif %>% 
-  mutate(superficie_apres = st_area(geometry_apres),
-         superficie_avant = st_area(geometry_avant)) %>% 
-  group_by(code_com) %>% 
-  summarise(modif_superficie_apres = round(sum(superficie_apres),2),
-            modif_superficie_avant = round(sum(superficie_avant),2),
-            modif_evolution_superficie = modif_superficie_apres - modif_superficie_avant)
-
-ajout_sup <- ajout %>% 
-  mutate(superficie = st_area(geometry)) %>% 
-  group_by(code_com) %>% 
-  summarise(superficie_ajoute = round(sum(superficie),2)) %>% 
-  st_drop_geometry()
-
-supp_sup <- supp %>% 
-  mutate(superficie = st_area(geometry)) %>% 
-  group_by(code_com) %>% 
-  summarise(superficie_supprime = round(sum(superficie),2)) %>% 
-  st_drop_geometry()
-
-evol_sup <- evol_sup %>% 
-  full_join(ajout_sup, by = "code_com") %>% 
-  full_join(supp_sup, by = "code_com") %>% 
-  mutate(across(everything(), ~ replace_na(.x, units::set_units(0, m*m)))) %>% 
-  mutate(tot_evolution_superficie = round(modif_evolution_superficie + superficie_ajoute - superficie_supprime,2))
 ```
 
