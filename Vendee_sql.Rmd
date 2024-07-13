@@ -24,6 +24,9 @@ conn <- connecter()
 DBI::dbListTables(conn)
 
 indic_bordure <- F
+num_departement <- 85
+temps_apres <- 24
+temps_avant <- 23
 ```
 
 ```{r fonction sql}
@@ -364,36 +367,109 @@ ORDER BY
 
 ```{r ajout/supp_tot sql}
 dbExecute(conn, "DROP TABLE IF EXISTS ajout_tot, supp_tot CASCADE;")
-dbExecute(conn, "
+
+query <- paste0("
   CREATE TEMP TABLE ajout_tot AS
   SELECT * 
-  FROM parc_85_24
+  FROM parc_",
+  num_departement,
+  "_",
+  temps_apres, " parc_apres
   WHERE NOT EXISTS (
     SELECT 1
-    FROM parc_85_23 
-    WHERE parc_85_24.idu = parc_85_23.idu
+    FROM parc_",
+  num_departement,
+  "_",
+  temps_avant," parc_avant
+    WHERE parc_apres.idu = parc_avant.idu
   );
 ")
 
-dbExecute(conn, "
+dbExecute(conn, query)
+
+query <- paste0("
   CREATE TEMP TABLE supp_tot AS
   SELECT * 
-  FROM parc_85_23
+  FROM parc_",
+  num_departement,
+  "_",
+  temps_avant, " parc_avant
   WHERE NOT EXISTS (
     SELECT 1
-    FROM parc_85_24
-    WHERE parc_85_23.idu = parc_85_24.idu
+    FROM parc_",
+  num_departement,
+  "_",
+  temps_apres," parc_apres
+    WHERE parc_avant.idu = parc_apres.idu
   );
 ")
+
+dbExecute(conn, query)
 
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_tot_geometry ON supp_tot USING GIST(geometry);")
 
 ```
 
+```{r}
+library(sf)
+library(dplyr)
+
+# Créer les données de polygones multiples
+multipolygon_data <- st_as_sf(data.frame(
+  id = 1:4,
+  geometry = st_sfc(
+    st_multipolygon(list(
+      list(rbind(c(0, 0), c(1, 0), c(1, 1), c(0, 1), c(0, 0)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(1, 0), c(2, 0), c(2, 1), c(1, 1), c(1, 0)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(0.5, 0.5), c(1.5, 0.5), c(1.5, 1.5), c(0.5, 1.5), c(0.5, 0.5)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(3, 3), c(4, 3), c(4, 4), c(3, 4), c(3, 3)))  # Polygone distant
+    ))
+  )
+), crs = 4326)
+
+# Visualiser les données de base
+plot(st_geometry(multipolygon_data), col = c("red", "blue", "green", "orange"), border = "black")
+
+# Fonction pour trouver l'union des polygones touchants et les IDs correspondants
+find_union_and_ids <- function(sf_data, input_polygon) {
+  intersecting_indices <- which(st_intersects(sf_data, input_polygon, sparse = FALSE))
+  if (length(intersecting_indices) == 0) {
+    return(list(union_polygon = input_polygon, ids = NA))
+  }
+  
+  intersecting_polygons <- sf_data[intersecting_indices, ]
+  union_polygon <- st_union(st_geometry(intersecting_polygons))
+  ids <- intersecting_polygons$id
+  
+  return(list(union_polygon = union_polygon, ids = ids))
+}
+
+# Exemple d'utilisation de la fonction avec le premier polygone de multipolygon_data
+input_polygon <- multipolygon_data[1, ]
+result <- find_union_and_ids(multipolygon_data, st_geometry(input_polygon))
+X <- st_union(st_geometry(input_polygon),multipolygon_data)
+X <- multipolygon_data %>%
+  st_union() %>%
+  st_cast("POLYGON") %>%
+  st_make_valid()
+# Visualiser le polygone d'union résultant
+plot(st_geometry(X), col = "grey", border = "black")
+plot(result$union_polygon, col = "blue", border = "black")
+
+# Afficher les IDs des polygones participants
+print(result$ids)
+```
+
 
 ```{r import commune}
-commune <- st_read(conn, query = "SELECT * FROM com_85;")
+commune <- st_read(conn, query = paste0("SELECT * FROM com_", num_departement, ";"))
 
 ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
 supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
@@ -402,44 +478,54 @@ supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
 
 ```{r creation bordure et avec ou sans}
-dbExecute(conn, "DROP TABLE IF EXISTS bordure, ins_parc_24, ins_parc_23, ajout, supp CASCADE;")
+dbExecute(conn, "DROP TABLE IF EXISTS bordure, ins_parc_apres, ins_parc_avant, ajout, supp CASCADE;")
 
-dbExecute(conn, "
+query <- paste0("
   CREATE TEMP TABLE bordure AS
   SELECT
       code_insee, nom_com, code_dep,
       ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
   FROM
-      com_85;
-")
+      com_", num_departement, ";"
+)
+
+dbExecute(conn, query)
 
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_geometry ON bordure USING GIST(geometry);")
 
 query <- paste0("
-  CREATE TEMP TABLE ins_parc_24 AS
+  CREATE TEMP TABLE ins_parc_apres AS
   SELECT DISTINCT
-      parc_85_24.*
+      parc_apres.*
   FROM
-      parc_85_24", 
+      parc_",
+  num_departement,
+  "_",
+  temps_apres, 
+  " parc_apres", 
   ifelse(indic_bordure, "
   JOIN
       bordure
   ON
-      ST_WITHIN(parc_85_24.geometry, bordure.geometry);", ";"))
+      ST_WITHIN(parc_apres.geometry, bordure.geometry);", ";"))
 
 dbExecute(conn, query)
 
 query <- paste0("
-  CREATE TEMP TABLE ins_parc_23 AS
+  CREATE TEMP TABLE ins_parc_avant AS
   SELECT DISTINCT
-      parc_85_23.*
+      parc_avant.*
   FROM
-      parc_85_23", 
+      parc_",
+  num_departement,
+  "_",
+  temps_avant, 
+  " parc_avant", 
   ifelse(indic_bordure, "
   JOIN
       bordure
   ON
-      ST_WITHIN(parc_85_23.geometry, bordure.geometry);", ";"))
+      ST_WITHIN(parc_avant.geometry, bordure.geometry);", ";"))
 
 dbExecute(conn, query)
 
@@ -473,8 +559,8 @@ query <- paste0("
 
 dbExecute(conn, query)
 
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_24_geometry ON ins_parc_24 USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_23_geometry ON ins_parc_23 USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_apres_geometry ON ins_parc_apres USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_avant_geometry ON ins_parc_avant USING GIST(geometry);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_geometry ON ajout USING GIST(geometry);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_geometry ON supp USING GIST(geometry);")
 ```
@@ -484,8 +570,8 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_geometry ON supp USING GIST
 bordure <- st_read(conn, query = "SELECT * FROM bordure;") %>%
   mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
 
-ins_parc_24 <- st_read(conn, query = "SELECT * FROM ins_parc_24;")
-ins_parc_23 <- st_read(conn, query = "SELECT * FROM ins_parc_23;")
+ins_parc_apres <- st_read(conn, query = "SELECT * FROM ins_parc_apres;")
+ins_parc_avant <- st_read(conn, query = "SELECT * FROM ins_parc_avant;")
 
 dbExecute(conn, "DROP TABLE IF EXISTS bordure;")
 ```
@@ -499,50 +585,50 @@ dbExecute(conn, "DROP TABLE IF EXISTS identique, modif_apres, modif_avant, modif
 
 dbExecute(conn, "
   CREATE TEMP TABLE identique AS
-  SELECT ins_parc_24.*
-  FROM ins_parc_24
+  SELECT ins_parc_apres.*
+  FROM ins_parc_apres
   WHERE NOT EXISTS (
       SELECT 1
       FROM ajout
-      WHERE ins_parc_24.idu = ajout.idu
+      WHERE ins_parc_apres.idu = ajout.idu
   )
   AND EXISTS (
       SELECT 1
-      FROM ins_parc_23 
-      WHERE ins_parc_24.idu = ins_parc_23.idu
-      AND ST_Equals(ins_parc_24.geometry, ins_parc_23.geometry)
+      FROM ins_parc_avant 
+      WHERE ins_parc_apres.idu = ins_parc_avant.idu
+      AND ST_Equals(ins_parc_apres.geometry, ins_parc_avant.geometry)
   );
 ")
 
 dbExecute(conn, "
   CREATE TEMP TABLE modif_apres AS
-  SELECT ins_parc_24.*
-  FROM ins_parc_24
+  SELECT ins_parc_apres.*
+  FROM ins_parc_apres
   WHERE NOT EXISTS (
       SELECT 1
       FROM identique
-      WHERE ins_parc_24.idu = identique.idu
+      WHERE ins_parc_apres.idu = identique.idu
   )
   AND NOT EXISTS (
       SELECT 1
       FROM ajout
-      WHERE ins_parc_24.idu = ajout.idu
+      WHERE ins_parc_apres.idu = ajout.idu
   );
 ")
 
 dbExecute(conn, "
   CREATE TEMP TABLE modif_avant AS
-  SELECT ins_parc_23.*
-  FROM ins_parc_23
+  SELECT ins_parc_avant.*
+  FROM ins_parc_avant
   WHERE NOT EXISTS (
       SELECT 1
       FROM identique
-      WHERE ins_parc_23.idu = identique.idu
+      WHERE ins_parc_avant.idu = identique.idu
   )
   AND NOT EXISTS (
       SELECT 1
       FROM supp
-      WHERE ins_parc_23.idu = supp.idu
+      WHERE ins_parc_avant.idu = supp.idu
   );
 ")
 
@@ -1057,7 +1143,7 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white",
   mapview(translation_sql,
           layer.name = "Parcelles translatées (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(ins_parc_23 %>%
+  mapview(ins_parc_avant %>%
             filter(idu %in% translation_sql$idu_translate), 
           layer.name = "Parcelles translatées (état 2023)", 
           alpha.regions = 0.5, homebutton = F) +
@@ -1090,7 +1176,7 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white",
   mapview(contour_apres_sql,  
           layer.name = "Parcelles après évolution forme (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(ins_parc_23 %>%
+  mapview(ins_parc_avant %>%
             filter(idu %in% contour_apres_sql$idu),  
           layer.name = "Parcelles avant évolution forme (état 2023)", 
           col.regions = "purple", alpha.regions = 0.5, homebutton = F) +
@@ -1104,7 +1190,7 @@ map <- mapview(commune, layer.name = "Communes", col.regions = "white",
   mapview(contour_translation_sql,  
           layer.name = "Parcelles ayant translatées + évolution forme (état 2024)", 
           alpha.regions = 0.5, homebutton = F) +
-  mapview(ins_parc_23 %>%
+  mapview(ins_parc_avant %>%
             filter(idu %in% contour_translation_sql$idu_translate),
           layer.name = "Parcelles ayant translatées + évolution forme (état 2023)", 
           col.regions = "orange", alpha.regions = 0.5, homebutton = F) +

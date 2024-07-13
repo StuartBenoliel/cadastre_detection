@@ -4,8 +4,6 @@ library(mapview)
 library(leaflet)
 library(stringr)
 
-parcelles_avant <- ins_parc_23
-parcelles_apres <- ins_parc_24
 
 # Define UI
 ui <- fluidPage(
@@ -19,8 +17,8 @@ ui <- fluidPage(
              fluidRow(
                column(12,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
-                                  choices = unique(parcelles_apres$nom_com),
-                                  selected = unique(parcelles_apres$nom_com)[1]),
+                                  choices = unique(ins_parc_apres$nom_com),
+                                  selected = unique(ins_parc_apres$nom_com)[1]),
                       actionButton("resetButton", "Réinitialiser la sélection"),
                       actionButton("syncButton", "Synchronisation des cartes"),
                       hr(),
@@ -100,7 +98,7 @@ server <- function(input, output, session) {
                              filter(nom_com == input$nom_com_select),
                            layer.name = "Parcelles translatées (état 2024)", 
                            alpha.regions = 0.5, homebutton = F) +
-        mapview(ins_parc_23 %>%
+        mapview(ins_parc_avant %>%
                   filter(idu %in% translation_sql$idu_translate) %>% 
                   filter(nom_com == input$nom_com_select), 
                 layer.name = "Parcelles translatées (état 2023)", 
@@ -160,7 +158,7 @@ server <- function(input, output, session) {
                              filter(nom_com == input$nom_com_select),  
                            layer.name = "Parcelles après évolution forme (état 2024)", 
                            alpha.regions = 0.5, homebutton = F) +
-        mapview(ins_parc_23 %>%
+        mapview(ins_parc_avant %>%
                   filter(idu %in% contour_apres_sql$idu) %>% 
                   filter(nom_com == input$nom_com_select),  
                 layer.name = "Parcelles avant évolution forme (état 2023)", 
@@ -184,7 +182,7 @@ server <- function(input, output, session) {
                              filter(nom_com == input$nom_com_select),  
                            layer.name = "Parcelles ayant translatées + évolution forme (état 2024)", 
                            alpha.regions = 0.5, homebutton = F) +
-        mapview(ins_parc_23 %>%
+        mapview(ins_parc_avant %>%
                   filter(idu %in% contour_translation_sql$idu_translate) %>% 
                   filter(nom_com == input$nom_com_select),
                 layer.name = "Parcelles ayant translatées + évolution forme (état 2023)", 
@@ -264,7 +262,7 @@ server <- function(input, output, session) {
   
   output$map2 <- renderLeaflet({
     req(input$tabsetPanel == "Comparaison par commune")
-    (mapview(parcelles_avant %>% 
+    (mapview(ins_parc_avant %>% 
                filter(nom_com == input$nom_com_select), 
              layer.name = "Parcelles (état 2023)", 
              homebutton = FALSE) + 
@@ -278,7 +276,7 @@ server <- function(input, output, session) {
   
   output$map3 <- renderLeaflet({
     req(input$tabsetPanel == "Comparaison par commune")
-    (mapview(parcelles_apres %>% 
+    (mapview(ins_parc_apres %>% 
                filter(nom_com == input$nom_com_select), 
              layer.name = "Parcelles (état 2024)",
              col.regions = "purple", 
@@ -301,7 +299,7 @@ server <- function(input, output, session) {
        mapview(translation_sql,
                layer.name = "Parcelles translatées (état 2024)", 
                alpha.regions = 0.5, homebutton = F) +
-       mapview(ins_parc_23 %>%
+       mapview(ins_parc_avant %>%
                  filter(idu %in% translation_sql$idu_translate), 
                layer.name = "Parcelles translatées (état 2023)", 
                alpha.regions = 0.5, homebutton = F) +
@@ -334,7 +332,7 @@ server <- function(input, output, session) {
        mapview(contour_apres_sql,  
                layer.name = "Parcelles après évolution forme (état 2024)", 
                alpha.regions = 0.5, homebutton = F) +
-       mapview(ins_parc_23 %>%
+       mapview(ins_parc_avant %>%
                  filter(idu %in% contour_apres_sql$idu),  
                layer.name = "Parcelles avant évolution forme (état 2023)", 
                col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
@@ -348,7 +346,7 @@ server <- function(input, output, session) {
        mapview(contour_translation_sql,  
                layer.name = "Parcelles ayant translatées + évolution forme (état 2024)", 
                alpha.regions = 0.5, homebutton = F) +
-       mapview(ins_parc_23 %>%
+       mapview(ins_parc_avant %>%
                  filter(idu %in% contour_translation_sql$idu_translate),
                layer.name = "Parcelles ayant translatées + évolution forme (état 2023)", 
                col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
@@ -387,7 +385,7 @@ server <- function(input, output, session) {
   
   # Reset selection to first element
   observeEvent(input$resetButton, {
-    updateSelectInput(session, "nom_com_select", selected = unique(parcelles_apres$nom_com)[1])
+    updateSelectInput(session, "nom_com_select", selected = unique(ins_parc_apres$nom_com)[1])
   })
 }
 
