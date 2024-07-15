@@ -115,6 +115,28 @@ calcul_iou_multi <- function(polygon, supp, ajout) {
        participants_apres = iou_intersect$participants)
 }
 
+calcul_iou_multi_bis <- function(polygon, supp, ajout) {
+  
+  # Étape 1: Union de tous les polygones
+  union_tous <- st_union(supp)
+  largest_polygons <- st_cast(union_tous, "POLYGON")
+  largest_polygons_sf <- st_sf(geometry = largest_polygons)
+  
+  # Trouver les polygones individuels qui intersectent le polygone donné
+  intersections <- st_intersects(largest_polygons_sf, polygon, sparse = FALSE)
+  polygon_connexe <- largest_polygons_sf[intersections,]
+  parcelles_intersectant_avant <- supp %>% 
+    st_filter(polygon_connexe, .predicate = st_intersects)
+  
+  nom_participants_avant <- parcelles_intersectant_avant$idu
+  
+  iou_intersect <- calcul_iou_intersec(polygon_connexe, ajout)
+  
+  list(iou_multi = iou_intersect$iou, 
+       participants_avant = paste(nom_participants_avant, collapse = ", "),
+       participants_apres = iou_intersect$participants)
+}
+
 calcul_iou_intersec_translate <- function(polygon, ajout) {
   
   parcelles_intersectant <- ajout %>%
@@ -407,6 +429,7 @@ modif_avant <- modif_avant %>%
 ## Cas plus compliqués de détection des mêmes cas
 
 ```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis}
+
 modif_apres <- modif_apres %>%
   rowwise() %>%
   mutate(result = list(calcul_iou_multi(geometry, modif_apres, modif_avant))) %>%

@@ -17,8 +17,8 @@ ui <- fluidPage(
              fluidRow(
                column(12,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
-                                  choices = unique(ins_parc_apres$nom_com),
-                                  selected = unique(ins_parc_apres$nom_com)[1]),
+                                  choices = unique(commune$nom_com),
+                                  selected = unique(commune$nom_com)[1]),
                       actionButton("resetButton", "Réinitialiser la sélection"),
                       actionButton("syncButton", "Synchronisation des cartes"),
                       hr(),
@@ -85,14 +85,7 @@ server <- function(input, output, session) {
                 filter(nom_com == input$nom_com_select), 
               layer.name = "Bordures étendues", col.regions = "lightblue", 
               alpha.regions = 0.5, homebutton = F)
-    
-    
-    if (nrow(translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map <- map + mapview(translation_sql %>% 
-                             filter(nom_com == input$nom_com_select),
-                           layer.name = "Parcelles translatées (état 2024)", 
-                           alpha.regions = 0.5, homebutton = F)
-    }
+
     if (nrow(translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map <- map + mapview(translation_sql %>% 
                              filter(nom_com == input$nom_com_select),

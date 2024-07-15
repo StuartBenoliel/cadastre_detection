@@ -296,6 +296,50 @@ results <- map(polygons, ~ calculate_iou_for_polygon(.x, ajout_parc))
 ```
 
 
+```{r connexité}
+library(sf)
+
+# Création des données initiales
+multipolygon_data <- st_as_sf(data.frame(
+  id = 1:5,
+  geometry = st_sfc(
+    st_multipolygon(list(
+      list(rbind(c(0, 0), c(1, 0), c(1, 1), c(0, 1), c(0, 0)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(1, 0), c(2, 0), c(2, 1), c(1, 1), c(1, 0)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(0.5, 0.5), c(1.5, 0.5), c(1.5, 1.5), c(0.5, 1.5), c(0.5, 0.5)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(3, 3), c(4, 3), c(4, 4), c(3, 4), c(3, 3)))  # Polygone distant
+    )),
+    st_multipolygon(list(
+      list(rbind(c(0, 1), c(1, 1), c(1, 2), c(0, 2), c(0, 1)))
+    ))
+  )
+), crs = 4326)
+plot(st_geometry(multipolygon_data), col = c("red", "blue", "green", "orange", "purple"), border = "black")
+
+# Définir le polygone donné en entrée
+polygone_donne <- st_multipolygon(list(
+  list(rbind(c(0, 1), c(1, 1), c(1, 2), c(0, 2), c(0, 1)))
+))
+
+# Étape 1: Union de tous les polygones
+union_tous <- st_union(multipolygon_data)
+largest_polygons <- st_cast(union_tous, "POLYGON")
+largest_polygons_sf <- st_sf(geometry = largest_polygons)
+
+# Trouver les polygones individuels qui intersectent le polygone donné
+intersections <- st_intersects(largest_polygons_sf, polygone_donne, sparse = FALSE)
+parcelles_intersectant_avant <- multipolygon_data %>% 
+  st_filter(largest_polygons_sf[intersections,], .predicate = st_intersects)
+
+nom_participants_avant <- parcelles_intersectant_avant$id
+```
+
 
 
 ```{r focus parcelle changement de communes}
