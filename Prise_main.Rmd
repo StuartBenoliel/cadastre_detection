@@ -340,6 +340,39 @@ parcelles_intersectant_avant <- multipolygon_data %>%
 nom_participants_avant <- parcelles_intersectant_avant$id
 ```
 
+```{r}
+library(sf)
+
+# Créer l'ensemble de multipolygones
+multipolygon_data <- st_as_sf(data.frame(
+  id = 1:5,
+  geometry = st_sfc(
+    st_multipolygon(list(
+      list(rbind(c(0, 0), c(1, 0), c(1, 1), c(0, 1), c(0, 0)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(1, 0), c(2, 0), c(2, 1), c(1, 1), c(1, 0)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(0.5, 0.5), c(1.5, 0.5), c(1.5, 1.5), c(0.5, 1.5), c(0.5, 0.5)))
+    )),
+    st_multipolygon(list(
+      list(rbind(c(3, 3), c(4, 3), c(4, 4), c(3, 4), c(3, 3)))  # Polygone distant
+    )),
+    st_multipolygon(list(
+      list(rbind(c(0, 1), c(1, 1), c(1, 2), c(0, 2), c(0, 1)))
+    ))
+  )
+), crs = 4326)
+
+# Calculer l'enveloppe convexe de l'ensemble des géométries
+enveloppe_convexe <- st_convex_hull(st_union(multipolygon_data))
+
+# Afficher le résultat
+plot(st_geometry(multipolygon_data), col = 'blue', border = 'black')
+plot(st_geometry(enveloppe_convexe), col = 'red', border = 'black')
+
+```
 
 
 ```{r focus parcelle changement de communes}

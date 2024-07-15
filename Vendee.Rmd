@@ -451,12 +451,36 @@ contour_translation <- modif_apres %>%
   rbind(contour_translation)
 
 modif_apres <- modif_apres %>%
-  filter(!idu %in% contour_apres$idu) %>% 
+  filter(!idu %in% unlist(str_split(contour_apres$participants_apres, ",\\s*"))) %>% 
   filter(!idu %in% contour_translation$idu)
 
 modif_avant <- modif_avant %>%
-  filter(!idu %in% contour_apres$idu) %>% 
+  filter(!idu %in% unlist(str_split(contour_apres$participants_apres, ",\\s*"))) %>% 
   filter(!idu %in% contour_translation$idu)
+```
+
+```{r}
+
+modif_apres <- modif_apres_sql %>%
+  rowwise() %>%
+  mutate(iou_convex = calcul_iou_convex(modif_apres_sql, modif_avant_sql,
+                                        participants_avant, participants_apres))
+
+calcul_iou_convex <- function(ajout, supp,
+                              p_avant, p_apres) {
+  parcelles_intersectant_avant <- supp %>%
+    filter(idu %in% unlist(str_split(p_avant, ",\\s*"))) %>%
+    st_union() %>% 
+    st_convex_hull()
+
+  parcelles_intersectant_apres <- ajout %>%
+    filter(idu %in% unlist(str_split(p_apres, ",\\s*"))) %>% 
+    st_union() %>% 
+    st_convex_hull()
+  
+  iou_convex <- calcul_iou(parcelles_intersectant_avant, parcelles_intersectant_apres)
+  return(iou_convex)
+}
 ```
 
 ## Distribution de l'IoU après translation des parcelles
@@ -575,7 +599,6 @@ supp <- supp %>%
 ## Reconnaissances des cas de multi-subdivision (ex : 2 -> 3) ou modification de contours
 
 ```{r ajout/supp iou_multi -> multi-subdivision et contours}
-
 supp <- supp %>%
   rowwise() %>%
   mutate(result = list(calcul_iou_multi(geometry, supp, ajout))) %>%
@@ -584,6 +607,7 @@ supp <- supp %>%
          participants_apres= result$participants_apres) %>%
   ungroup() %>%
   select(-result)
+
 
 multi_subdiv <- supp %>% 
   filter(iou_multi > 0.99 & nchar(participants_avant) != nchar(participants_apres))
