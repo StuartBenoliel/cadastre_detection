@@ -713,7 +713,7 @@ dbExecute(conn, "
 ```{r quantile}
 
 # 85130000AH0055 et 85130000AH0017 supplémentaire dans sql
-#modif <- st_read(conn, query = "SELECT * FROM modif;")
+# modif <- st_read(conn, query = "SELECT * FROM modif;")
 
 # Elimine les parcelles "sans changement manifeste" plus les parcelles sans iou = parcelles n'étant plus entièrement dans la bordure lors d'un changement d'une année sur l'autre
 
@@ -784,9 +784,17 @@ dbExecute(conn, "
 ")
 ```
 
+```{r modif iou_ajust -> translation}
+translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour_apres_sql <- st_read(conn, query = "SELECT * FROM contour_apres;")
+modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+```
+
 ## Cas plus compliqués de détection des mêmes cas
 
 ```{r meme cas sql}
+# NE PAS RELANCER
 dbExecute(conn, "DROP TABLE IF EXISTS modif_apres_iou_multi;")
 
 dbExecute(conn, "
@@ -831,10 +839,13 @@ dbExecute(conn, "
 
 
 ```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis}
-contour_apres_sql_1 <- st_read(conn, query = "SELECT * FROM contour_apres;")
+contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour_apres_sql <- st_read(conn, query = "SELECT * FROM contour_apres;")
+modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou_multi;")
 ```
 
 ```{r enveloppe convexe}
+# NE PAS RELANCER
 dbExecute(conn, "DROP TABLE IF EXISTS modif_apres_iou_convex;")
 
 dbExecute(conn, "
@@ -848,9 +859,9 @@ dbExecute(conn, "
   INSERT INTO contour_apres
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
-         iou_convex, participants_avant, participants_apres
+         iou_convex AS io_multi, participants_avant, participants_apres
   FROM modif_apres_iou_convex
-  WHERE iou_convex > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres);
+  WHERE iou_convex > 0.99 AND LENGTH(participants_avant) = LENGTH(participants_apres);
 ")
 
 dbExecute(conn, "
@@ -868,6 +879,56 @@ dbExecute(conn, "
 contour_apres_sql <- st_read(conn, query = "SELECT * FROM contour_apres;")
 modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou_convex;")
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou;")
+```
+
+```{r mapview typologie parcelles modifiées, eval=FALSE, include=FALSE}
+
+map <- mapview(bordure, 
+               layer.name = "Bordures étendues", col.regions = "lightblue", 
+               alpha.regions = 0.5, homebutton = F,
+               map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
+
+if (nrow(translation_sql) > 0) {
+  map <- map + mapview(translation_sql,
+                       layer.name = "Parcelles translatées (état 2024)", 
+                       alpha.regions = 0.5, homebutton = F) +
+    mapview(ins_parc_avant %>%
+              filter(idu %in% translation_sql$idu_translate), 
+            layer.name = "Parcelles translatées (état 2023)", 
+            alpha.regions = 0.5, homebutton = F)
+}
+if (nrow(contour_apres_sql) > 0) {
+  map <- map + mapview(contour_apres_sql,  
+                       layer.name = "Parcelles contours (état 2024)", 
+                       alpha.regions = 0.5, homebutton = F) +
+    mapview(ins_parc_avant %>%
+              filter(idu %in% contour_apres_sql$idu),  
+            layer.name = "Parcelles contours (état 2023)", 
+            col.regions = "orange", alpha.regions = 0.5, homebutton = F)
+}
+if (nrow(contour_translation_sql) > 0) {
+  map <- map + mapview(contour_translation_sql,  
+                       layer.name = "Parcelles translatées + contours (état 2024)", 
+                       alpha.regions = 0.5, homebutton = F) +
+    mapview(ins_parc_avant %>%
+              filter(idu %in% contour_translation_sql$idu_translate),
+            layer.name = "Parcelles translatées + contours (état 2023)", 
+            col.regions = "orange", alpha.regions = 0.5, homebutton = F)
+}
+if (nrow(modif_apres_sql) > 0) {
+  map <- map + mapview(modif_apres_sql, 
+                       z = c("iou_ajust"), 
+                       layer.name = "Parcelles modifiées restantes (état 2024)", 
+                       alpha.regions = 0.5, homebutton = F)
+  
+}
+if (nrow(modif_avant_sql) > 0) {
+  map <- map + mapview(modif_avant_sql, 
+                       z = c("iou_ajust"), 
+                       layer.name = "Parcelles modifiées restantes (état 2023)", 
+                       alpha.regions = 0.5, homebutton = F)
+}
+mapshot(map, url = "parcelles_modifiées_85_sql.html")
 ```
 
 # Focus des parcelles ayant changé de communes
@@ -1039,7 +1100,8 @@ dbExecute(conn, "
   CREATE TEMP TABLE contour_transfo AS
   SELECT *
   FROM supp_iou_multi
-  WHERE iou_multi > 0.95;
+  WHERE (iou_multi > 0.95 AND LENGTH(participants_apres) != LENGTH(participants_avant)
+   AND iou_multi < 0.99);
 ")
 
 dbExecute(conn, "
@@ -1222,12 +1284,10 @@ vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
 ```{r mapview typologie parcelles, eval=FALSE, include=FALSE}
 
-map <- mapview(commune, 
-               layer.name = "Communes", col.regions = "white", 
-               alpha.regions = 0.5, homebutton = F) +
-  mapview(bordure, 
-          layer.name = "Bordures étendues", col.regions = "lightblue", 
-          alpha.regions = 0.5, homebutton = F)
+map <- mapview(bordure, 
+               layer.name = "Bordures étendues", col.regions = "lightblue", 
+               alpha.regions = 0.5, homebutton = F,
+               map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
 
 if (nrow(translation_sql) > 0) {
   map <- map + mapview(translation_sql,
@@ -1244,7 +1304,7 @@ if (nrow(fusion_sql) > 0) {
                        col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
     mapview(supp_tot %>%
               filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))),  
-            layer.name = "Parcelles avant fusion (état 2023)", 
+            layer.name = "Parcelles fusionnéees (état 2023)", 
             alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(subdiv_sql) > 0) {
@@ -1253,71 +1313,71 @@ if (nrow(subdiv_sql) > 0) {
                        layer.name = "Parcelles subdivisées (état 2024)", 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(subdiv_sql,  
-            layer.name = "Parcelles avant subdivision (état 2023)", 
+            layer.name = "Parcelles subdivisées (état 2023)", 
             col.regions = "orange", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(multi_subdiv_sql) > 0) {
   map <- map + mapview(ajout_tot %>%
                          filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))),
-                       layer.name = "Parcelles après multi-subdivision (état 2024)", 
+                       layer.name = "Parcelles multi-subdivision (état 2024)", 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(multi_subdiv_sql,  
-            layer.name = "Parcelles avant multi-subdivision (état 2023)", 
+            layer.name = "Parcelles multi-subdivision (état 2023)", 
             col.regions = "orange", alpha.regions = 0.5, homebutton = F)
   
 }
 if (nrow(contour_sql) > 0) {
   map <- map + mapview(ajout_tot %>%
                          filter(idu %in% unlist(str_split(contour_sql$participants_apres, ",\\s*"))),  
-                       layer.name = "Parcelles après évolution forme (état 2024)", 
+                       layer.name = "Parcelles contours (état 2024)", 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(contour_sql,
-            layer.name = "Parcelles avant évolution forme (état 2023)",
+            layer.name = "Parcelles contours (état 2023)",
             col.regions = "orange", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(contour_apres_sql) > 0) {
   map <- map + mapview(contour_apres_sql,  
-                       layer.name = "Parcelles après évolution forme (état 2024)", 
+                       layer.name = "Parcelles contours (état 2024)", 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
               filter(idu %in% contour_apres_sql$idu),  
-            layer.name = "Parcelles avant évolution forme (état 2023)", 
+            layer.name = "Parcelles contours (état 2023)", 
             col.regions = "orange", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(contour_transfo_sql) > 0) {
   map <- map + mapview(ajout_tot %>%
                          filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))),  
-                       layer.name = "Parcelles ayant transfo + évolution forme (état 2024)",
+                       layer.name = "Parcelles ayant transfo + contours (état 2024)",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(contour_transfo_sql,
-            layer.name = "Parcelles ayant transfo + évolution forme (état 2023)", 
+            layer.name = "Parcelles ayant transfo + contours (état 2023)", 
             col.regions = "orange", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(contour_translation_sql) > 0) {
   map <- map + mapview(contour_translation_sql,  
-                       layer.name = "Parcelles ayant translatées + évolution forme (état 2024)", 
+                       layer.name = "Parcelles translatées + contours (état 2024)", 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
               filter(idu %in% contour_translation_sql$idu_translate),
-            layer.name = "Parcelles ayant translatées + évolution forme (état 2023)", 
+            layer.name = "Parcelles translatées + contours (état 2023)", 
             col.regions = "orange", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(contour_fusion_translation_sql) > 0) {
   map <- map + mapview(contour_fusion_translation_sql,  
-                       layer.name = "Parcelles ayant translatées + évolution forme + fusion (état 2024)", 
+                       layer.name = "Parcelles translatées + contours + fusion (état 2024)", 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ajout_tot %>%
               filter(idu %in% contour_fusion_translation_sql$participants_apres_multi_translate),
-            layer.name = "Parcelles ayant translatées + évolution forme + fusion (état 2023)", 
+            layer.name = "Parcelles translatées + contours + fusion (état 2023)", 
             col.regions = "orange", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(com_abs_apres_sql) > 0) {
   map <- map + mapview(com_abs_apres_sql,  
-                       layer.name = "Parcelles après fusion de communes (état 2024)", 
+                       layer.name = "Parcelles fusion de communes (état 2024)", 
                        col.regions = "pink",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(com_abs_avant_sql,  
-            layer.name = "Parcelles avant fusion de communes (état 2023)", 
+            layer.name = "Parcelles fusion de communes (état 2023)", 
             col.regions = "pink", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(vrai_ajout_sql) > 0) {
