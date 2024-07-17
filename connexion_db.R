@@ -4,7 +4,7 @@
 name_database <- "defaultdb"
 user_name <- "user-stuartbenoliel" # à modifier
 password <- "cvil1vtj8as02n25tev8" # à modifier
-url <- "postgresql-692210" # à modifier : conservez uniquement la partie de l'url entre les - et le . (il s'agit d'un nombre)
+url <- "postgresql-31399" # à modifier : conservez uniquement la partie de l'url entre les - et le . (il s'agit d'un nombre)
 port <- "5432" # partie de l'url après les :
 
 # RQ: pour l'exercice, les informations sont écrites en clair sur le pgm. Il faudra, 

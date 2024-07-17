@@ -86,6 +86,7 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
   
   if(length(fichier_parcelle) > 0) {
     parc <- st_read(fichier_parcelle) %>%
+      st_make_valid() %>% 
       mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
     # Attention systeme de projection dans DOM
     print(str(parc))
@@ -106,6 +107,8 @@ parc_85_23 <- process_departement(num_departements, "2023")
 com_85 <- process_departement(num_departements, "2024", F)
 
 parc_85_22 <- process_departement(num_departements, "2022")
+parc_85_21 <- process_departement(num_departements, "2021")
+
 
 parc_21_24 <- process_departement("021", "2024")
 parc_21_23 <- process_departement("021", "2023")
@@ -190,24 +193,30 @@ constru_table <- function(table_sf, indic_parc = T) {
   str(parc_head)
   
 }
-
+## Vendée
+constru_table(com_85, F)
 constru_table(parc_85_24)
 constru_table(parc_85_23)
-constru_table(com_85, F)
 
 constru_table(parc_85_22)
+parc_85_21 <- parc_85_21 %>% 
+  filter(!(IDU == "851190000A1037" & FEUILLE == "5"))
+# Doublon de ligne bizarre
+constru_table(parc_85_21)
 
+## Cote d'or
+constru_table(com_21, F)
+constru_table(parc_21_24)
 parc_21_23 <- parc_21_23 %>% 
   filter(!(IDU == "213200000B0081" & FEUILLE == "5"))
 # Doublon de ligne bizarre
-
-constru_table(parc_21_24)
 constru_table(parc_21_23)
-constru_table(com_21, F)
 
+## PACA
+constru_table(com_13, F)
 constru_table(parc_13_24)
 constru_table(parc_13_23)
-constru_table(com_13, F)
+
 
 dbListTables(conn)
 
