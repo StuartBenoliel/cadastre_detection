@@ -109,7 +109,6 @@ com_85 <- process_departement(num_departements, "2024", F)
 parc_85_22 <- process_departement(num_departements, "2022")
 parc_85_21 <- process_departement(num_departements, "2021")
 
-
 parc_21_24 <- process_departement("021", "2024")
 parc_21_23 <- process_departement("021", "2023")
 com_21 <- process_departement("021", "2024", F)
