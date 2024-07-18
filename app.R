@@ -6,6 +6,16 @@ library(stringr)
 library(leafsync)
 library(leaflet.extras2)
 
+commune$nom_com <- ifelse(grepl("^Marseille", commune$nom_com), "Marseille",
+                      ifelse(grepl("^Lyon", commune$nom_com), "Lyon",
+                             ifelse(grepl("^Paris", commune$nom_com), "Paris", commune$nom_com)))
+
+bordure$nom_com <- ifelse(grepl("^Marseille", commune$nom_com), "Marseille",
+                          ifelse(grepl("^Lyon", commune$nom_com), "Lyon",
+                                 ifelse(grepl("^Paris", commune$nom_com), "Paris", commune$nom_com)))
+
+nom_commune <- sort(unique(commune$nom_com))
+
 # Define UI
 ui <- fluidPage(
   titlePanel("Détection des évolutions des parcelles cadastrales (cas Vendée 2024-2023)"),
@@ -18,8 +28,8 @@ ui <- fluidPage(
              fluidRow(
                column(12,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
-                                  choices = unique(commune$nom_com),
-                                  selected = unique(commune$nom_com)[1]),
+                                  choices = nom_commune,
+                                  selected = nom_commune[1]),
                       hr(),
                )
              ),
@@ -60,11 +70,13 @@ server <- function(input, output, session) {
     if (nrow(translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(translation_sql %>% 
                                  filter(nom_com == input$nom_com_select),
-                               layer.name = "Parcelles translatées (état 2024)", 
+                               layer.name = paste0("Parcelles translatées (état 20",temps_apres,")"), 
+                               col.regions = "darkcyan",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(ins_parc_avant %>%
                   filter(idu %in% translation_sql$idu_translate) %>% 
                   filter(nom_com == input$nom_com_select), 
+                col.regions = "darkcyan",
                 layer.name = "Parcelles translatées (état 2023)", 
                 alpha.regions = 0.5, homebutton = F)
       
@@ -72,12 +84,13 @@ server <- function(input, output, session) {
     if (nrow(fusion_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(fusion_sql %>% 
                                  filter(nom_com == input$nom_com_select), 
-                               layer.name = "Parcelles fusionnéees (état 2024)", 
-                               col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
+                               layer.name = paste0("Parcelles fusionnéees (état 20",temps_apres,")"),
+                               col.regions = "darkmagenta", alpha.regions = 0.5, homebutton = F) +
         mapview(supp_tot %>%
                   filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))) %>% 
                   filter(nom_com == input$nom_com_select),  
-                layer.name = "Parcelles fusionnéees (état 2023)", 
+                layer.name = paste0("Parcelles fusionnéees (état 20",temps_avant,")"), 
+                col.regions = "darkmagenta",
                 alpha.regions = 0.5, homebutton = F)
       
     }
@@ -85,47 +98,51 @@ server <- function(input, output, session) {
       map_1 <- map_1 + mapview(ajout_tot %>%
                                  filter(idu %in% unlist(str_split(subdiv_sql$participants, ",\\s*"))) %>% 
                                  filter(nom_com == input$nom_com_select),  
-                               layer.name = "Parcelles subdivisées (état 2024)", 
+                               layer.name = paste0("Parcelles subdivisées (état 20",temps_apres,")"), 
+                               col.regions = "purple",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(subdiv_sql %>% 
                   filter(nom_com == input$nom_com_select),  
-                layer.name = "Parcelles subdivisées (état 2023)", 
-                col.regions = "orange", alpha.regions = 0.5, homebutton = F)
+                layer.name = paste0("Parcelles subdivisées (état 20",temps_avant,")"), 
+                col.regions = "purple", alpha.regions = 0.5, homebutton = F)
       
     }
     if (nrow(multi_subdiv_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(ajout_tot %>%
                                  filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))) %>% 
                                  filter(nom_com == input$nom_com_select),
-                               layer.name = "Parcelles multi-subdivision (état 2024)", 
+                               layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
+                               col.regions = "magenta",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(multi_subdiv_sql %>% 
                   filter(nom_com == input$nom_com_select),  
-                layer.name = "Parcelles multi-subdivision (état 2023)", 
-                col.regions = "orange", alpha.regions = 0.5, homebutton = F)
+                layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
+                col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
       
     }
     if (nrow(contour_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(ajout_tot %>%
                                  filter(idu %in% unlist(str_split(contour_sql$participants_apres, ",\\s*"))) %>% 
-                                 filter(nom_com == input$nom_com_select),  
-                               layer.name = "Parcelles contours (état 2024)", 
+                                 filter(nom_com == input$nom_com_select),
+                               layer.name = paste0("Parcelles contours (état 20",temps_apres,")"), 
+                               col.regions = "orange",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(contour_sql %>% 
                   filter(nom_com == input$nom_com_select),
-                layer.name = "Parcelles contours (état 2023)",
+                layer.name = paste0("Parcelles contours (état 20",temps_avant,")"),
                 col.regions = "orange", alpha.regions = 0.5, homebutton = F)
       
     }
-    if (nrow(contour_apres_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(contour_apres_sql %>% 
+    if (nrow(contour_avant_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
+      map_1 <- map_1 + mapview(contour_avant_sql %>% 
                                  filter(nom_com == input$nom_com_select),  
-                               layer.name = "Parcelles contours (état 2024)", 
+                               layer.name = paste0("Parcelles contours (état 20",temps_apres,")"),
+                               col.regions = "orange",
                                alpha.regions = 0.5, homebutton = F) +
-        mapview(ins_parc_avant %>%
-                  filter(idu %in% contour_apres_sql$idu) %>% 
+        mapview(ins_parc_apres %>%
+                  filter(idu %in% contour_avant_sql$idu) %>% 
                   filter(nom_com == input$nom_com_select),  
-                layer.name = "Parcelles contours (état 2023)", 
+                layer.name = paste0("Parcelles contours (état 20",temps_avant,")"), 
                 col.regions = "orange", alpha.regions = 0.5, homebutton = F)
       
     }
@@ -133,48 +150,50 @@ server <- function(input, output, session) {
       map_1 <- map_1 + mapview(ajout_tot %>%
                                  filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))) %>% 
                                  filter(nom_com == input$nom_com_select),  
-                               layer.name = "Parcelles transfo + contours (état 2024)",
+                               layer.name = paste0("Parcelles transfo + contours (état 20",temps_apres,")"),
+                               col.regions = "pink",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(contour_transfo_sql %>% 
                   filter(nom_com == input$nom_com_select),
-                layer.name = "Parcelles transfo + contours (état 2023)", 
-                col.regions = "orange", alpha.regions = 0.5, homebutton = F)
+                layer.name = paste0("Parcelles transfo + contours (état 20",temps_avant,")"), 
+                col.regions = "pink", alpha.regions = 0.5, homebutton = F)
       
     }
     if (nrow(contour_translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(contour_translation_sql %>% 
                                  filter(nom_com == input$nom_com_select),  
-                               layer.name = "Parcelles translatées + contours (état 2024)", 
+                               layer.name = paste0("Parcelles translatées + contours (état 20",temps_apres,")"), 
                                alpha.regions = 0.5, homebutton = F) +
         mapview(ins_parc_avant %>%
                   filter(idu %in% contour_translation_sql$idu_translate) %>% 
                   filter(nom_com == input$nom_com_select),
-                layer.name = "Parcelles translatées + contours (état 2023)", 
-                col.regions = "orange", alpha.regions = 0.5, homebutton = F)
+                layer.name = paste0("Parcelles translatées + contours (état 20",temps_avant,")"), 
+                alpha.regions = 0.5, homebutton = F)
       
     }
-    if (nrow(contour_fusion_translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
+    if (nrow(contour_transfo_translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(contour_fusion_translation_sql %>% 
                                  filter(nom_com == input$nom_com_select),  
-                               layer.name = "Parcelles translatées + contours + fusion (état 2024)", 
+                               layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
+                               col.regions = "lightblue",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(ajout_tot %>%
-                  filter(idu %in% contour_fusion_translation_sql$participants_apres_multi_translate) %>% 
+                  filter(idu %in% contour_fusion_translation_sql$participants_apres_translate) %>% 
                   filter(nom_com == input$nom_com_select),
-                layer.name = "Parcelles translatées + contours + fusion (état 2023)", 
-                col.regions = "orange", alpha.regions = 0.5, homebutton = F)
+                layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
+                col.regions = "lightblue", alpha.regions = 0.5, homebutton = F)
       
     }
     if (nrow(com_abs_apres_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(com_abs_apres_sql %>% 
                                  filter(nom_com == input$nom_com_select),  
-                               layer.name = "Parcelles fusion de communes (état 2024)", 
-                               col.regions = "pink",
+                               layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
+                               col.regions = "lightgreen",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(com_abs_avant_sql %>% 
                   filter(nom_com_apres == input$nom_com_select),  
-                layer.name = "Parcelles fusion de communes (état 2023)", 
-                col.regions = "pink", alpha.regions = 0.5, homebutton = F)
+                layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
+                col.regions = "lightgreen", alpha.regions = 0.5, homebutton = F)
       
     }
     if (nrow(vrai_ajout_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
@@ -194,14 +213,14 @@ server <- function(input, output, session) {
     if (nrow(ajout_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(ajout_sql %>% 
                                  filter(nom_com == input$nom_com_select),
-                               z = c("iou_ajust"), layer.name = "Parcelles restantes (état 2024)", 
+                               z = c("iou_ajust"), layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"), 
                                alpha.regions = 0.5, homebutton = F)
       
     }
     if (nrow(supp_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
       map_1 <- map_1 + mapview(supp_sql %>% 
                                  filter(nom_com == input$nom_com_select), 
-                               z = c("iou_multi"), layer.name = "Parcelles restantes (état 2023)", 
+                               z = c("iou_multi"), layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"), 
                                alpha.regions = 0.5, homebutton = F)
       
     }
@@ -209,7 +228,7 @@ server <- function(input, output, session) {
       map_1 <- map_1 + mapview(modif_apres_sql %>% 
                                  filter(nom_com == input$nom_com_select), 
                                z = c("iou_ajust"), 
-                               layer.name = "Parcelles modifiées restantes (état 2024)", 
+                               layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"),
                                alpha.regions = 0.5, homebutton = F)
       
     }
@@ -217,7 +236,7 @@ server <- function(input, output, session) {
       map_1 <- map_1 + mapview(modif_avant_sql %>% 
                                  filter(nom_com == input$nom_com_select), 
                                z = c("iou_ajust"), 
-                               layer.name = "Parcelles modifiées restantes (état 2023)", 
+                               layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"),
                                alpha.regions = 0.5, homebutton = F)
       
     }
@@ -241,7 +260,7 @@ server <- function(input, output, session) {
                 filter(nom_com == input$nom_com_select), 
               layer.name = "Bordures étendues", 
               col.regions = "lightgrey", 
-              alpha.regions = 0.5, 
+              alpha.regions = 0.5, legend = F,
               homebutton = FALSE)
     
     map_compa <- map_2 | map_3
