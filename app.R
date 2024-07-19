@@ -6,16 +6,6 @@ library(stringr)
 library(leafsync)
 library(leaflet.extras2)
 
-commune$nom_com <- ifelse(grepl("^Marseille", commune$nom_com), "Marseille",
-                      ifelse(grepl("^Lyon", commune$nom_com), "Lyon",
-                             ifelse(grepl("^Paris", commune$nom_com), "Paris", commune$nom_com)))
-
-bordure$nom_com <- ifelse(grepl("^Marseille", commune$nom_com), "Marseille",
-                          ifelse(grepl("^Lyon", commune$nom_com), "Lyon",
-                                 ifelse(grepl("^Paris", commune$nom_com), "Paris", commune$nom_com)))
-
-nom_commune <- sort(unique(commune$nom_com))
-
 # Define UI
 ui <- fluidPage(
   titlePanel("Détection des évolutions des parcelles cadastrales (cas Vendée 2024-2023)"),
@@ -28,8 +18,8 @@ ui <- fluidPage(
              fluidRow(
                column(12,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
-                                  choices = nom_commune,
-                                  selected = nom_commune[1]),
+                                  choices = sort(unique(commune$nom_com)),
+                                  selected = sort(unique(commune$nom_com))[1]),
                       hr(),
                )
              ),

@@ -95,6 +95,20 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
     print("Fichier non trouvé.")
   }
   
+  if(indic_parc) {
+    parc <- parc %>%
+      mutate(NOM_COM = case_when(
+        endsWith(CODE_ARR, "00") ~ NOM_COM,
+        endsWith(CODE_ARR, "01") ~ paste0(NOM_COM, " 1er"),
+        TRUE ~ paste0(
+          NOM_COM, " ",
+          case_when(
+            endsWith(substring(CODE_ARR, 2, 2), "0") ~ paste0(substring(CODE_ARR, 3, 3), "e"),
+            TRUE ~ paste0(sub("^0", "", substring(CODE_ARR, 2, 3)), "e")
+          ), "me"
+        )
+      ))
+  }
   files <- list.files(temp_dir, full.names = TRUE)
   # Filtrer les fichiers commencant par "PARCELLAIRE"
   parcellaire_file <- files[grep("^PARCELLAIRE", basename(files))]
@@ -116,6 +130,7 @@ com_21 <- process_departement("021", "2024", F)
 parc_13_24 <- process_departement("013", "2024")
 parc_13_23 <- process_departement("013", "2023")
 com_13 <- process_departement("013", "2024", F)
+
 
 # Appliquer la fonction à chaque département
 # list_parc <-lapply(num_departements,num_annees, process_departement)
@@ -164,18 +179,17 @@ constru_table <- function(table_sf, indic_parc = T) {
   }
   
   # Création de la table (structure vide) ####
-  dbSendQuery(conn, 
-              paste0('DROP TABLE IF EXISTS ',
-                     deparse(substitute(table_sf)),
-                     ';'))
-  dbSendQuery(conn, query)
-  dbSendQuery(conn,
-              paste0('CREATE INDEX ',
-                     paste0('idx_',deparse(substitute(table_sf)),'_geometry'),
-                     ' ON ',
-                     deparse(substitute(table_sf)),
-                     ' USING GIST(geometry);'))
-  
+  dbExecute(conn, 
+            paste0('DROP TABLE IF EXISTS ',
+                   deparse(substitute(table_sf)),
+                   ';'))
+  dbExecute(conn, query)
+  dbExecute(conn,
+            paste0('CREATE INDEX ',
+                   paste0('idx_',deparse(substitute(table_sf)),'_geometry'),
+                   ' ON ',
+                   deparse(substitute(table_sf)),
+                   ' USING GIST(geometry);'))
   
   # Remplissage ####
   sf::st_write(
@@ -184,6 +198,7 @@ constru_table <- function(table_sf, indic_parc = T) {
     Id(table = deparse(substitute(table_sf))),
     append = TRUE
   )
+  
   
   # test lecture
   parc_head <- sf::st_read(conn, query = paste0('SELECT * FROM ',
