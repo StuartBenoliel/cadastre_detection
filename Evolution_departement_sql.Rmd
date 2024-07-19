@@ -26,9 +26,9 @@ DBI::dbListTables(conn)
 dbExecute(conn, "SET client_min_messages TO NOTICE;")
 
 indic_bordure <- F
-num_departement <- 13
-temps_apres <- 24
-temps_avant <- 23
+num_departement <- 85
+temps_apres <- 23
+temps_avant <- 22
 ```
 
 ```{r fonction sql}
@@ -576,9 +576,9 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_tot_geometry ON supp_tot US
 
 
 ```{r import commune}
-commune <- st_read(conn, query = paste0("SELECT * FROM com_", num_departement, ";"))
-ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
-supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
+commune <- st_read(conn, query = paste0("SELECT code_insee, nom_com, geometry FROM com_", num_departement, ";"))
+ajout_tot <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, geometry FROM ajout_tot;")
+supp_tot <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, geometry FROM supp_tot;")
 ```
 
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
@@ -590,7 +590,7 @@ query <- paste0("
   CREATE TEMP TABLE bordure AS
   SELECT
       code_insee, nom_com, code_dep,
-      ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)) AS geometry
+      ST_Simplify(ST_Difference(ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)), 10) AS geometry
   FROM
       com_", num_departement, ";"
 )
@@ -673,11 +673,12 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_geometry ON supp USING GIST
 
 
 ```{r bordure sql}
-bordure <- st_read(conn, query = "SELECT * FROM bordure;") %>%
+bordure <- st_read(conn, query = "SELECT code_insee, nom_com, geometry FROM bordure;") %>%
   mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
 
-ins_parc_avant <- st_read(conn, query = "SELECT * FROM ins_parc_avant;")
-ins_parc_apres <- st_read(conn, query = "SELECT * FROM ins_parc_apres;")
+ins_parc_avant <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, geometry FROM ins_parc_avant;")
+
+ins_parc_apres <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, geometry FROM ins_parc_apres;")
 
 dbExecute(conn, "DROP TABLE IF EXISTS bordure;")
 ```
@@ -837,9 +838,12 @@ dbExecute(conn, "
 ```
 
 ```{r modif iou_ajust -> translation}
-translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
-contour_avant_sql <- st_read(conn, query = "SELECT * FROM contour_avant;")
+translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM translation;")
+
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
+
+contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
+
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou;")
 ```
 
@@ -861,7 +865,7 @@ dbExecute(conn, "
   INSERT INTO contour_avant
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
-         iou_multi, participants_avant,participants_apres
+         iou_multi, participants_avant, participants_apres
   FROM modif_avant_iou_multi
   WHERE (iou_multi > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres))
      OR (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou > iou_ajust);
@@ -894,8 +898,10 @@ dbExecute(conn, "
 
 
 ```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis}
-contour_avant_sql <- st_read(conn, query = "SELECT * FROM contour_avant;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
+
+contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
+
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
 ```
 
@@ -914,7 +920,7 @@ dbExecute(conn, "
   INSERT INTO contour_avant
   SELECT idu, numero, feuille, section, code_dep, nom_com, code_com, com_abs, 
          code_arr, contenance, iou_ajust, geometry,
-         iou_convex AS io_multi, participants_avant, participants_apres
+         iou_convex AS iou_multi, participants_avant, participants_apres
   FROM modif_avant_iou_convex
   WHERE iou_convex > 0.99 AND LENGTH(participants_avant) = LENGTH(participants_apres);
 ")
@@ -931,7 +937,8 @@ dbExecute(conn, "
 ```
 
 ```{r convex}
-contour_avant_sql <- st_read(conn, query = "SELECT * FROM contour_avant;")
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
+
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
 modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 ```
@@ -972,11 +979,12 @@ dbExecute(conn, "
 ```
 
 ```{r presomption sql}
-contour_avant_sql <- st_read(conn, query = "SELECT * FROM contour_avant;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
 
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
-modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
+
+modif_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, iou_multi, participants_avant, participants_apres, iou_convex, geometry FROM modif_avant_iou_convex;")
+modif_apres_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, iou_ajust, geometry FROM modif_apres_iou;")
 ```
 
 
@@ -1063,11 +1071,12 @@ dbExecute(conn, "
 ```
 
 ```{r parcelle changeant de communes}
-com_abs_apres_sql <- st_read(conn, query = "SELECT * FROM com_abs_apres;")
+com_abs_apres_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, idu_avant, geometry FROM com_abs_apres;")
+
 com_abs_avant_sql <- st_read(conn, query = "
-                             SELECT com_abs_avant.*, com_abs_apres.nom_com AS nom_com_apres
-                             FROM com_abs_avant
-                             LEFT JOIN com_abs_apres 
+                             SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, avant.contenance,                                           avant.idu_avant, avant.geometry, apres.nom_com AS nom_com_apres
+                             FROM com_abs_avant avant
+                             LEFT JOIN com_abs_apres apres
                              ON com_abs_avant.idu = com_abs_apres.idu_avant;")
 ```
 
@@ -1184,8 +1193,8 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_geometry ON supp_iou US
 ```
 
 ```{r fusion/subdivision}
-subdiv_sql <- st_read(conn, query = "SELECT * FROM subdiv;")
-fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
+subdiv_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, geometry FROM subdiv;")
+fusion_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, geometry FROM fusion;")
 ```
 
 
@@ -1246,9 +1255,11 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_geometry ON supp_
 ```
 
 ```{r multisubdiv sql}
-multi_subdiv_sql <- st_read(conn, query = "SELECT * FROM multi_subdiv;")
-contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
+multi_subdiv_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_multi, participants_avant, participants_apres, geometry FROM multi_subdiv;")
+
+contour_transfo_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_multi, participants_avant, participants_apres, geometry FROM contour_transfo;")
+
+contour_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_multi, participants_avant, participants_apres, geometry FROM contour;")
 ```
 
 ## Reconnaissances des cas de modification de contours plus compliquée
@@ -1300,8 +1311,10 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_translate_geometry ON 
 ```
 
 ```{r contour translation ou translation seule}
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
-translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
+
+translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM translation;")
+
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
@@ -1340,7 +1353,7 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_translate_geometr
 ```
 
 ```{r contour_fusion_translation}
-contour_transfo_translation_sql <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
+contour_transfo_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_multi, participants_avant, participants_apres, iou_multi_translate, participants_avant_translate, participants_apres_translate, geometry FROM contour_transfo_translation;")
 ```
 
 ## Recalcul de l'IoU pour détecter les parcelles maintenant isolées -> Véritable ajout ou suppression
@@ -1353,9 +1366,10 @@ dbExecute(conn, "
   CREATE TEMP TABLE supp_iou_restant AS
   SELECT
       idu, numero, feuille, section, code_dep, nom_com, code_com, 
-      com_abs, code_arr, contenance, geometry, iou_multi, participants_avant, participants_apres, 
-      iou_multi_translate, participants_avant_translate, participants_apres_translate,
-      (calcul_iou_intersec(supp_iou_multi_translate.geometry, 'ajout_iou_translate')).* 
+      com_abs, code_arr, contenance, geometry, 
+      (calcul_iou_intersec(supp_iou_multi_translate.geometry, 'ajout_iou_translate')).*,
+      iou_multi, participants_avant, participants_apres, 
+      iou_multi_translate, participants_avant_translate, participants_apres_translate
   FROM
       supp_iou_multi_translate;
 ")
@@ -1364,8 +1378,9 @@ dbExecute(conn, "
   CREATE TEMP TABLE ajout_iou_restant AS
   SELECT
       idu, numero, feuille, section, code_dep, nom_com, code_com, 
-      com_abs, code_arr, contenance, geometry, iou_ajust, idu_translate,
-      (calcul_iou_intersec(ajout_iou_translate.geometry, 'supp_iou_multi_translate')).*
+      com_abs, code_arr, contenance, geometry, 
+      (calcul_iou_intersec(ajout_iou_translate.geometry, 'supp_iou_multi_translate')).*, 
+      iou_ajust, idu_translate
   FROM
       ajout_iou_translate;
 ")
@@ -1396,11 +1411,13 @@ dbExecute(conn, "
 ```
 
 ```{r le reste}
-ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
-supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+ajout_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_ajust, idu_translate, geometry FROM ajout_iou_restant;")
 
-vrai_ajout_sql <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
-vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
+supp_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_multi, participants_avant, participants_apres, iou_multi_translate, participants_avant_translate, participants_apres_translate, geometry FROM supp_iou_restant;")
+
+vrai_ajout_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_ajust, idu_translate, geometry FROM vrai_ajout;")
+
+vrai_supp_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_multi, participants_avant, participants_apres, iou_multi_translate, participants_avant_translate, participants_apres_translate, geometry FROM vrai_supp;")
 ```
 
 # Visualisation finale sur une carte du département
@@ -1546,6 +1563,4 @@ if (nrow(modif_avant_sql) > 0) {
                        alpha.regions = 0.5, homebutton = F)
 }
 mapshot(map, url = paste0("parcelles_",num_departement,"_",temps_apres,"-",temps_avant,".html"))
-
 ```
-  
