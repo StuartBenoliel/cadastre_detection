@@ -138,7 +138,7 @@ com_13 <- process_departement("013", "2024", F)
 # c- Construction et Exécution des requêtes pour créer les données sur la base postgis ####
 
 # Construction de la requête créant les tables ####
-
+conn <- connecter()
 constru_table <- function(table_sf, indic_parc = T) {
   if(indic_parc) {
     types_vars <- purrr::map_chr(

@@ -27,8 +27,8 @@ dbExecute(conn, "SET client_min_messages TO NOTICE;")
 
 indic_bordure <- F
 num_departement <- 85
-temps_apres <- 23
-temps_avant <- 22
+temps_apres <- 24
+temps_avant <- 23
 ```
 
 ```{r fonction sql}
@@ -140,8 +140,6 @@ dbExecute(conn, "
               WHERE ST_Intersects(st_buffer($1, -$2), geometry)
           )
       ';
-
-      -- Calculer l'union des parcelles intersectant
       EXECUTE query_sql INTO polygon_union USING polygon, seuil;
       
       -- Calculer l'IoU avec l'union des parcelles et le polygon
@@ -226,7 +224,7 @@ dbExecute(conn, "
 
 # Version sans boucle for
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi_rapide(idu text, polygon_avant geometry, avant_table_name text, apres_table_name text)
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_rapide(polygon_avant geometry, avant_table_name text, apres_table_name text)
   RETURNS TABLE (iou_multi numeric, participants_avant text, participants_apres text) AS $$
   DECLARE
       polygon_union geometry := polygon_avant;
@@ -297,6 +295,57 @@ dbExecute(conn, "
 
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(polygon geometry, table_name text, seuil numeric default 0.1)
+  RETURNS TABLE (iou_ajust numeric, participants text) AS $$
+  DECLARE
+      parcelles_intersectant RECORD;
+      nom_participants text := '';
+      polygon_union geometry;
+      query_sql text;
+      first boolean := true;
+  BEGIN
+       -- Sélectionner les parcelles intersectant le polygon
+      query_sql := '
+          SELECT idu
+          FROM ' || quote_ident(table_name) || '
+          WHERE ST_Intersects(st_buffer($1, -$2), geometry)
+      ';
+      
+      FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil
+      LOOP
+          IF first THEN
+              nom_participants := parcelles_intersectant.idu::text;
+              first := false;  -- Après le premier cas, mettre à jour la variable
+          ELSE
+              nom_participants := nom_participants || ', ' || parcelles_intersectant.idu::text;
+          END IF;
+      END LOOP;
+      
+      -- Si aucun résultat, retourner NULL
+      IF nom_participants = '' THEN
+          RETURN QUERY SELECT NULL::numeric, NULL::text;
+          RETURN;  -- Terminer la fonction immédiatement
+      END IF;
+      
+      -- Calculer l'union des parcelles intersectant
+      query_sql := '
+          SELECT ST_Union(geometry)
+          FROM ' || quote_ident(table_name) || '
+          WHERE idu IN (
+              SELECT idu
+              FROM ' || quote_ident(table_name) || '
+              WHERE ST_Intersects(st_buffer($1, -$2), geometry)
+          )
+      ';
+      EXECUTE query_sql INTO polygon_union USING polygon, seuil;
+      
+      -- Calculer l'IoU avec l'union des parcelles et le polygon
+      RETURN QUERY SELECT calcul_iou_ajust(polygon_union, polygon), nom_participants;
+  END;
+  $$ LANGUAGE plpgsql;
+")
+
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION calcul_iou_intersec_best_translate(polygon geometry, table_name text, seuil numeric default 0.1)
   RETURNS TABLE (iou_ajust numeric, idu_translate text) AS $$
   DECLARE
       parcelles_intersectant RECORD;
@@ -411,11 +460,11 @@ dbExecute(conn, "
   
           -- Insérer les résultats dans le cache
           INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
-          VALUES (participants_avant_translate, iou_intersect.idu_translate, iou_intersect.iou_ajust, md5(participants_avant_translate::text));
+          VALUES (participants_avant_translate, iou_intersect.participants, iou_intersect.iou_ajust, md5(participants_avant_translate::text));
           
           
           -- Retourner les résultats
-      RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, participants_avant_translate AS participants_avant, iou_intersect.idu_translate AS participants_apres;
+      RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, participants_avant_translate AS participants_avant, iou_intersect.participants AS participants_apres;
       ELSE 
           RETURN QUERY SELECT iou_multi_translate, participants_avant_translate, participants_apres_translate;
       END IF;
@@ -423,11 +472,12 @@ dbExecute(conn, "
   $$ LANGUAGE plpgsql;
 ") 
 
+
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate_2(polygon geometry, supp_table_name text, ajout_table_name text)
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate_rapide(polygon_avant geometry, avant_table_name text, apres_table_name text)
   RETURNS TABLE (iou_multi_translate numeric, participants_avant_translate text, participants_apres_translate text) AS $$
   DECLARE
-      polygon_maj geometry := polygon;
+      polygon_union geometry := polygon_avant;
       nom_participants_avant text := '';
       iou_intersect RECORD;
       query_sql text;
@@ -435,25 +485,23 @@ dbExecute(conn, "
       -- Étape 1: Union de tous les polygones
       EXECUTE '
           SELECT ST_Union(geometry) 
-          FROM ' || quote_ident(supp_table_name) || ' 
+          FROM ' || quote_ident(avant_table_name) || ' 
           WHERE ST_Intersects(geometry, $1)
-      ' INTO polygon_maj USING polygon;
+      ' INTO polygon_union USING polygon_union;
   
-      -- Trouver les polygones individuels qui intersectent le polygon_maj
+      -- Sélectionner les noms des participants avant
       query_sql := '
           SELECT string_agg(idu::text, '', '') 
-          FROM ' || quote_ident(supp_table_name) || ' 
-          WHERE ST_Intersects(geometry, $1)
-      ';
-  
-      -- Exécuter la requête pour récupérer les noms des participants avant
-      EXECUTE query_sql INTO nom_participants_avant USING polygon_maj;
+          FROM ' || quote_ident(avant_table_name) || ' 
+          WHERE ST_Intersects(geometry, $1)';
+      
+      EXECUTE query_sql INTO participants_avant_translate USING polygon_union;
   
       -- Calculer l'IoU intersection ajusté avec ajout
-      EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_maj, ajout_table_name;
+      EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_union, apres_table_name;
   
       -- Retourner les résultats
-      RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, nom_participants_avant AS participants_avant, iou_intersect.idu_translate AS participants_apres;
+      RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, participants_avant_translate AS participants_avant, iou_intersect.participants AS participants_apres;
   END;
   $$ LANGUAGE plpgsql;
 ")
@@ -840,7 +888,7 @@ dbExecute(conn, "
 ```{r modif iou_ajust -> translation}
 translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM translation;")
 
-contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
 
 contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
 
@@ -898,7 +946,7 @@ dbExecute(conn, "
 
 
 ```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis}
-contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
 
 contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
 
@@ -937,7 +985,7 @@ dbExecute(conn, "
 ```
 
 ```{r convex}
-contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
 
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
 modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
@@ -979,7 +1027,7 @@ dbExecute(conn, "
 ```
 
 ```{r presomption sql}
-contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
+contour_avant_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, iou_multi, participants_avant, participants_apres, geometry FROM contour_avant;")
 
 contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
 
@@ -1074,10 +1122,10 @@ dbExecute(conn, "
 com_abs_apres_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, idu_avant, geometry FROM com_abs_apres;")
 
 com_abs_avant_sql <- st_read(conn, query = "
-                             SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, avant.contenance,                                           avant.idu_avant, avant.geometry, apres.nom_com AS nom_com_apres
+                             SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, avant.contenance,                                                           avant.geometry, apres.nom_com AS nom_com_apres
                              FROM com_abs_avant avant
                              LEFT JOIN com_abs_apres apres
-                             ON com_abs_avant.idu = com_abs_apres.idu_avant;")
+                             ON avant.idu = apres.idu_avant;")
 ```
 
 # Focus parcelles avec changement "majeur" lié à un changement impactant l'identifiant des parcelles
@@ -1274,7 +1322,7 @@ dbExecute(conn, "
   CREATE TEMP TABLE ajout_iou_translate AS
   SELECT DISTINCT
       ajout_iou.*,
-      (calcul_iou_intersec_translate(ajout_iou.geometry, 'supp_iou_multi')).*
+      (calcul_iou_intersec_best_translate(ajout_iou.geometry, 'supp_iou_multi')).*
   FROM
       ajout_iou;
 ")
@@ -1314,7 +1362,6 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_translate_geometry ON 
 contour_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM contour_translation;")
 
 translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, idu_translate, geometry FROM translation;")
-
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
@@ -1354,6 +1401,70 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_translate_geometr
 
 ```{r contour_fusion_translation}
 contour_transfo_translation_sql <- st_read(conn, query = "SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, iou_multi, participants_avant, participants_apres, iou_multi_translate, participants_avant_translate, participants_apres_translate, geometry FROM contour_transfo_translation;")
+```
+
+## Cas rapide translation transformation (A FAIRE)
+
+```{r rapide}
+dbExecute(conn, "DROP TABLE IF EXISTS supp_iou_multi_translate_rapide, max_iou, multi_translate_rapide CASCADE;")
+
+dbExecute(conn, "
+  CREATE TEMP TABLE supp_iou_multi_translate_rapide AS
+  SELECT 
+      idu, numero, feuille, section, code_dep, nom_com, code_com, 
+      com_abs, code_arr, contenance, iou, participants,
+      iou_multi, participants_avant, participants_apres,
+      (calcul_iou_multi_translate_rapide(supp_iou_multi_translate.geometry, 'supp_iou_multi_translate', 'ajout_iou_translate')).*,
+      geometry
+  FROM
+      supp_iou_multi_translate;
+")
+
+dbExecute(conn, "
+  CREATE TEMP TABLE max_iou AS
+SELECT idu, MAX(iou_multi_translate) AS max_iou
+FROM (
+    SELECT unnest(regexp_split_to_array(participants_avant_translate, ',\\s*')) AS idu, iou_multi_translate
+    FROM supp_iou_multi_translate_rapide
+    WHERE iou_multi_translate > 0.95
+) subquery
+GROUP BY idu;
+")
+
+dbExecute(conn, "
+CREATE TEMP TABLE multi_translate_rapide AS
+SELECT DISTINCT ON (idu_unnest.idu) idu_unnest.idu, idu_unnest.iou_multi_translate, idu_unnest.participants_avant_translate,                      idu_unnest.participants_apres_translate
+FROM (
+    SELECT unnest(regexp_split_to_array(participants_avant_translate, ',\\s*')) AS idu, 
+        iou_multi_translate, participants_avant_translate, participants_apres_translate
+    FROM supp_iou_multi_translate_rapide
+    WHERE iou_multi_translate > 0.95
+) idu_unnest
+JOIN max_iou mi
+ON idu_unnest.idu = mi.idu AND idu_unnest.iou_multi_translate = mi.max_iou
+ORDER BY idu_unnest.idu, idu_unnest.iou_multi_translate DESC;
+")
+
+dbExecute(conn, "
+  INSERT INTO contour_transfo_translation
+  SELECT simtr.idu, simtr.numero, simtr.feuille, simtr.section, simtr.code_dep, simtr.nom_com, simtr.code_com, simtr.com_abs, simtr.code_arr, simtr.contenance, simtr.iou, simtr.participants, simtr.iou_multi, simtr.participants_avant,
+      simtr.participants_apres, rapide.iou_multi_translate, rapide.participants_avant_translate,                                    rapide.participants_apres_translate, simtr.geometry
+  FROM multi_translate_rapide rapide
+  LEFT JOIN supp_iou_multi_translate_rapide simtr ON rapide.idu = simtr.idu;
+")
+
+dbExecute(conn, "
+  DELETE FROM ajout_iou_translate
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres_translate, ',\\s*')) 
+                  FROM supp_iou_multi_translate_rapide WHERE iou_multi_translate > 0.95);
+")
+
+dbExecute(conn, "
+  DELETE FROM supp_iou_multi_translate
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant_translate, ',\\s*')) FROM contour_transfo_translation);
+")
+
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_translate_geometry ON supp_iou_multi_translate USING GIST(geometry);")
 ```
 
 ## Recalcul de l'IoU pour détecter les parcelles maintenant isolées -> Véritable ajout ou suppression
@@ -1510,14 +1621,14 @@ if (nrow(contour_translation_sql) > 0) {
             alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(contour_transfo_translation_sql) > 0) {
-  map <- map + mapview(contour_transfo_translation_sql,  
-                       layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
+  map <- map + mapview(ajout_tot %>%
+              filter(idu %in% unlist(str_split(contour_transfo_translation_sql$participants_apres_translate, ",\\s*"))),
+            layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
+            col.regions = "lightblue", alpha.regions = 0.5, homebutton = F) +
+    mapview(contour_transfo_translation_sql,  
+                       layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
                        col.regions = "lightblue",
-                       alpha.regions = 0.5, homebutton = F) +
-    mapview(ajout_tot %>%
-              filter(idu %in% contour_transfo_translation_sql$participants_apres_translate),
-            layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
-            col.regions = "lightblue", alpha.regions = 0.5, homebutton = F)
+                       alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(com_abs_apres_sql) > 0) {
   map <- map + mapview(com_abs_apres_sql,  
