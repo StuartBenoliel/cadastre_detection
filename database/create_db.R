@@ -12,7 +12,7 @@ rm(list=ls())
 options(timeout = 6000)
 
 # 1- Connexion à la base de données ####
-source("connexion_db.R", encoding = "utf-8")
+source("database/connexion_db.R", encoding = "utf-8")
 conn <- connecter()
 
 DBI::dbListObjects(conn)

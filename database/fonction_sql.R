@@ -1,4 +1,6 @@
 library(DBI)
+source(file = "database/connexion_db.R")
+conn <- connecter()
 
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou(polygon_1 geometry, polygon_2 geometry)
@@ -118,7 +120,7 @@ dbExecute(conn, "
 
 # Non symétrique
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi(idu text, polygon_avant geometry, avant_table_name text, apres_table_name text)
+  CREATE OR REPLACE FUNCTION calcul_iou_multi(idu text, polygon_avant geometry, nom_table_avant text, nom_table_apres text)
   RETURNS TABLE (iou_multi numeric, participants_avant text, participants_apres text) AS $$
   DECLARE
       nb_polygon integer := 0;
@@ -129,31 +131,31 @@ dbExecute(conn, "
   BEGIN
       -- Vérifier si les résultats sont déjà pour cet idu dans le cache
       BEGIN
-        SELECT multi_calcul_cache.iou_multi, multi_calcul_cache.participants_avant, multi_calcul_cache.participants_apres
+        SELECT mcc.iou_multi, mcc.participants_avant, mcc.participants_apres
         INTO iou_multi, participants_avant, participants_apres
-        FROM multi_calcul_cache
+        FROM multi_calcul_cache mcc
         WHERE EXISTS (
             SELECT 1
-            FROM unnest(regexp_split_to_array(multi_calcul_cache.participants_avant, ',\\s*')) AS participant
+            FROM unnest(regexp_split_to_array(mcc.participants_avant, ',\\s*')) AS participant
             WHERE participant = idu
         );
       END;
       
       -- Si les résultats ne sont pas trouvés dans le cache, exécuter le calcul
       IF NOT FOUND THEN
-          -- Boucle pour trouver les intersections dans avant_table_name
+          -- Boucle pour trouver les intersections dans nom_table_avant
           LOOP
-              -- Mettre à jour polygon_union avec l'union des géométries de avant_table_name
+              -- Mettre à jour polygon_union avec l'union des géométries de nom_table_avant
               EXECUTE '
                   SELECT ST_Union(geometry) 
-                  FROM ' || quote_ident(avant_table_name) || ' 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
                   WHERE ST_Intersects(geometry, $1)
               ' INTO polygon_union USING polygon_union;
   
               -- Sortir de la boucle si le nombre de parcelles reste le même
               query_sql := '
                   SELECT COUNT(*) 
-                  FROM ' || quote_ident(avant_table_name) || ' 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
                   WHERE ST_Intersects(geometry, $1)';
               
               EXECUTE query_sql INTO nb_polygon_union USING polygon_union;
@@ -167,14 +169,14 @@ dbExecute(conn, "
           -- Sélectionner les noms des participants avant
           query_sql := '
               SELECT string_agg(idu::text, '', '') 
-              FROM ' || quote_ident(avant_table_name) || ' 
+              FROM ' || quote_ident(nom_table_avant) || ' 
               WHERE ST_Intersects(geometry, $1)';
           
           EXECUTE query_sql INTO participants_avant USING polygon_union;
   
-          -- Calculer l'IoU intersection avec apres_table_name
+          -- Calculer l'IoU intersection avec nom_table_apres
           SELECT * INTO iou_intersect
-          FROM calcul_iou_intersec(polygon_union, apres_table_name);
+          FROM calcul_iou_intersec(polygon_union, nom_table_apres);
   
           -- Insérer les résultats dans le cache
           INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
@@ -192,31 +194,31 @@ dbExecute(conn, "
 
 # Version sans boucle for
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi_rapide(polygon_avant geometry, avant_table_name text, apres_table_name text)
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_rapide(polygon_avant geometry, nom_table_avant text, nom_table_apres text)
   RETURNS TABLE (iou_multi numeric, participants_avant text, participants_apres text) AS $$
   DECLARE
       polygon_union geometry := polygon_avant;
       iou_intersect RECORD;
       query_sql text;
   BEGIN
-      -- Mettre à jour polygon_union avec l'union des géométries de avant_table_name
+      -- Mettre à jour polygon_union avec l'union des géométries de nom_table_avant
       EXECUTE '
           SELECT ST_Union(geometry) 
-          FROM ' || quote_ident(avant_table_name) || ' 
+          FROM ' || quote_ident(nom_table_avant) || ' 
           WHERE ST_Intersects(geometry, $1)
       ' INTO polygon_union USING polygon_union;
 
       -- Sélectionner les noms des participants avant
       query_sql := '
           SELECT string_agg(idu::text, '', '') 
-          FROM ' || quote_ident(avant_table_name) || ' 
+          FROM ' || quote_ident(nom_table_avant) || ' 
           WHERE ST_Intersects(geometry, $1)';
       
       EXECUTE query_sql INTO participants_avant USING polygon_union;
 
-      -- Calculer l'IoU intersection avec apres_table_name
+      -- Calculer l'IoU intersection avec nom_table_apres
       SELECT * INTO iou_intersect
-      FROM calcul_iou_intersec(polygon_union, apres_table_name);
+      FROM calcul_iou_intersec(polygon_union, nom_table_apres);
       
       -- Récupérer les résultats pour la sortie
       RETURN QUERY SELECT iou_intersect.iou, participants_avant, iou_intersect.participants;
@@ -226,7 +228,7 @@ dbExecute(conn, "
 
 
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_convex(avant_table_name text, apres_table_name text, p_avant text, p_apres text)
+  CREATE OR REPLACE FUNCTION calcul_iou_convex(nom_table_avant text, nom_table_apres text, p_avant text, p_apres text)
   RETURNS numeric AS $$
   DECLARE
       enveloppe_convex_avant geometry;
@@ -237,7 +239,7 @@ dbExecute(conn, "
       -- Obtenir les géométries convexes avant
       query_sql := '
           SELECT ST_ConvexHull(ST_Union(geometry))
-          FROM ' || quote_ident(avant_table_name) || ' 
+          FROM ' || quote_ident(nom_table_avant) || ' 
           WHERE idu IN (SELECT unnest(string_to_array($1, '', '')))
       ';
       EXECUTE query_sql INTO enveloppe_convex_avant USING p_avant;
@@ -245,7 +247,7 @@ dbExecute(conn, "
       -- Obtenir les géométries après
       query_sql := '
           SELECT ST_ConvexHull(ST_Union(geometry))
-          FROM ' || quote_ident(apres_table_name) || ' 
+          FROM ' || quote_ident(nom_table_apres) || ' 
           WHERE idu IN (SELECT unnest(string_to_array($1, '', '')))
       ';
       EXECUTE query_sql INTO enveloppe_convex_apres USING p_apres;
@@ -366,7 +368,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate(idu text, polygon_avant geometry, avant_table_name text, apres_table_name text)
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate(idu text, polygon_avant geometry, nom_table_avant text, nom_table_apres text)
   RETURNS TABLE (iou_multi_translate numeric, participants_avant_translate text, participants_apres_translate text) AS $$
   DECLARE
       nb_polygon integer := 0;
@@ -377,14 +379,14 @@ dbExecute(conn, "
   BEGIN
       -- Vérifier si les résultats sont déjà calculés pour ce idu dans le cache
       BEGIN
-        SELECT multi_calcul_cache.iou_multi, 
-              multi_calcul_cache.participants_avant, 
-              multi_calcul_cache.participants_apres
+        SELECT mcc.iou_multi, 
+              mcc.participants_avant, 
+              mcc.participants_apres
         INTO iou_multi_translate, participants_avant_translate, participants_apres_translate
-        FROM multi_calcul_cache
+        FROM multi_calcul_cache mcc
         WHERE EXISTS (
             SELECT 1
-            FROM unnest(regexp_split_to_array(multi_calcul_cache.participants_avant, ',\\s*')) AS participant
+            FROM unnest(regexp_split_to_array(mcc.participants_avant, ',\\s*')) AS participant
             WHERE participant = idu
         );
         -- Retourner les résultats trouvés dans le cache
@@ -392,19 +394,19 @@ dbExecute(conn, "
       
       -- Si les résultats ne sont pas trouvés dans le cache, exécuter le calcul
       IF NOT FOUND THEN
-          -- Boucle pour trouver les intersections dans avant_table_name
+          -- Boucle pour trouver les intersections dans nom_table_avant
           LOOP
-              -- Mettre à jour polygon_union avec l'union des géométries de avant_table_name
+              -- Mettre à jour polygon_union avec l'union des géométries de nom_table_avant
               EXECUTE '
                   SELECT ST_Union(geometry) 
-                  FROM ' || quote_ident(avant_table_name) || ' 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
                   WHERE ST_Intersects(geometry, $1)
               ' INTO polygon_union USING polygon_union;
   
               -- Sortir de la boucle si le nombre de parcelles reste le même
               query_sql := '
                   SELECT COUNT(*) 
-                  FROM ' || quote_ident(avant_table_name) || ' 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
                   WHERE ST_Intersects(geometry, $1)';
               
               EXECUTE query_sql INTO nb_polygon_union USING polygon_union;
@@ -418,13 +420,13 @@ dbExecute(conn, "
           -- Sélectionner les noms des participants avant
           query_sql := '
               SELECT string_agg(idu::text, '', '') 
-              FROM ' || quote_ident(avant_table_name) || ' 
+              FROM ' || quote_ident(nom_table_avant) || ' 
               WHERE ST_Intersects(geometry, $1)';
           
           EXECUTE query_sql INTO participants_avant_translate USING polygon_union;
   
           -- Calculer l'IoU intersection ajusté avec ajout
-          EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_union, apres_table_name;
+          EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_union, nom_table_apres;
   
           -- Insérer les résultats dans le cache
           INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
@@ -442,7 +444,7 @@ dbExecute(conn, "
 
 
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate_rapide(polygon_avant geometry, avant_table_name text, apres_table_name text)
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_translate_rapide(polygon_avant geometry, nom_table_avant text, nom_table_apres text)
   RETURNS TABLE (iou_multi_translate numeric, participants_avant_translate text, participants_apres_translate text) AS $$
   DECLARE
       polygon_union geometry := polygon_avant;
@@ -453,20 +455,20 @@ dbExecute(conn, "
       -- Étape 1: Union de tous les polygones
       EXECUTE '
           SELECT ST_Union(geometry) 
-          FROM ' || quote_ident(avant_table_name) || ' 
+          FROM ' || quote_ident(nom_table_avant) || ' 
           WHERE ST_Intersects(geometry, $1)
       ' INTO polygon_union USING polygon_union;
   
       -- Sélectionner les noms des participants avant
       query_sql := '
           SELECT string_agg(idu::text, '', '') 
-          FROM ' || quote_ident(avant_table_name) || ' 
+          FROM ' || quote_ident(nom_table_avant) || ' 
           WHERE ST_Intersects(geometry, $1)';
       
       EXECUTE query_sql INTO participants_avant_translate USING polygon_avant;
   
       -- Calculer l'IoU intersection ajusté avec ajout
-      EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_union, apres_table_name;
+      EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_union, nom_table_apres;
   
       -- Retourner les résultats
       RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, participants_avant_translate AS participants_avant, iou_intersect.participants AS participants_apres;
