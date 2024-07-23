@@ -86,7 +86,7 @@ process_departement <- function(num_depart, num_annees, indic_parc = T) {
   
   if(length(fichier_parcelle) > 0) {
     parc <- st_read(fichier_parcelle) %>%
-      st_make_valid() %>% 
+      st_make_valid() %>% # st_buffer st_valid_reason where st-valid false
       mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
     # Attention systeme de projection dans DOM
     print(str(parc))

@@ -8,7 +8,9 @@ library(leaflet.extras2)
 
 # Define UI
 ui <- fluidPage(
-  titlePanel("Détection des évolutions des parcelles cadastrales (cas Vendée 2024-2023)"),
+  titlePanel(
+    paste0("Détection des évolutions des parcelles cadastrales du département ",
+    num_departement, " entre 20", temps_apres, " et 20", temps_avant)),
   
   # Navigation panel
   tabsetPanel(

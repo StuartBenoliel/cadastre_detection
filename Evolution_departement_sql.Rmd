@@ -26,17 +26,18 @@ DBI::dbListTables(conn)
 source(file = "database/fonction_sql.R")
 
 indic_bordure <- F
-num_departement <- 13
-temps_apres <- 24
-temps_avant <- 23
+num_departement <- 85
+temps_apres <- 23
+temps_avant <- 22
 ```
+
 
 ```{r remise à zero des tables de traitements}
 dbExecute(conn, "DROP SCHEMA IF EXISTS cadastre_temp CASCADE")
-
-source(file = "database/traitement_db.R")
+source(file = "database/table_db.R")
 dbExecute(conn, "SET client_min_messages TO NOTICE;")
 ```
+
 
 ```{r voir les index}
 dbGetQuery(conn, " SELECT 
@@ -51,6 +52,7 @@ WHERE
     OR schemaname = 'public';
            ")
 ```
+
 
 ```{r voir les tables de cadastre_temp}
 dbGetQuery(conn, " SELECT 
@@ -73,28 +75,29 @@ dbExecute(conn, "TRUNCATE TABLE ajout_tot, supp_tot;")
 dbExecute(conn, paste0("
   INSERT INTO ajout_tot
   SELECT idu, nom_com, code_com, com_abs, contenance, geometry 
-  FROM parc_", num_departement, "_", temps_apres, " parc_apres
+  FROM parc_", num_departement, "_", temps_apres, " apres
   WHERE NOT EXISTS (
     SELECT 1
-    FROM parc_", num_departement, "_", temps_avant," parc_avant
-    WHERE parc_apres.idu = parc_avant.idu
+    FROM parc_", num_departement, "_", temps_avant," avant
+    WHERE apres.idu = avant.idu
   );
 "))
 
 dbExecute(conn, paste0("
   INSERT INTO supp_tot
   SELECT idu, nom_com, code_com, com_abs, contenance, geometry 
-  FROM parc_", num_departement, "_", temps_avant, " parc_avant
+  FROM parc_", num_departement, "_", temps_avant, " avant
   WHERE NOT EXISTS (
     SELECT 1
-    FROM parc_", num_departement, "_", temps_apres," parc_apres
-    WHERE parc_avant.idu = parc_apres.idu
+    FROM parc_", num_departement, "_", temps_apres," apres
+    WHERE avant.idu = apres.idu
   );
 "))
 ```
 
 ```{r import commune}
 commune <- st_read(conn, query = paste0("SELECT code_insee, nom_com, geometry FROM com_", num_departement, ";"))
+
 ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
 supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
 ```
@@ -119,29 +122,30 @@ dbExecute(conn, paste0("
       com_", num_departement, ";"
 ))
 
-dbExecute(conn, paste0("
+if (indic_bordure){
+  dbExecute(conn, paste0("
   INSERT INTO ins_parc_avant
   SELECT DISTINCT
       pa.idu, pa.nom_com, pa.code_com, pa.com_abs, pa.contenance, pa.geometry 
   FROM
-      parc_", num_departement, "_", temps_avant, " pa", 
-  ifelse(indic_bordure, "
+      parc_", num_departement, "_", temps_avant, " pa
   JOIN
       bordure
   ON
-      ST_WITHIN(pa.geometry, bordure.geometry);", ";")))
+      pa.geometry&&bordure.geometry AND ST_WITHIN(pa.geometry, bordure.geometry);"))
 
 dbExecute(conn, paste0("
   INSERT INTO ins_parc_apres
   SELECT DISTINCT
       pa.idu, pa.nom_com, pa.code_com, pa.com_abs, pa.contenance, pa.geometry 
   FROM
-      parc_", num_departement, "_", temps_apres, " pa", 
-  ifelse(indic_bordure, "
+      parc_", num_departement, "_", temps_apres, " pa
   JOIN
       bordure
   ON
-      ST_WITHIN(pa.geometry, bordure.geometry);", ";")))
+      pa.geometry&&bordure.geometry AND ST_WITHIN(pa.geometry, bordure.geometry);"))
+  
+}
 
 dbExecute(conn, paste0("
   INSERT INTO ajout
@@ -153,7 +157,7 @@ dbExecute(conn, paste0("
   JOIN
       bordure
   ON
-      ST_WITHIN(at.geometry, bordure.geometry);", ";")))
+      at.geometry&&bordure.geometry AND ST_WITHIN(at.geometry, bordure.geometry);", ";")))
 
 dbExecute(conn, paste0("
   INSERT INTO supp
@@ -165,7 +169,7 @@ dbExecute(conn, paste0("
   JOIN
       bordure
   ON
-      ST_WITHIN(st.geometry, bordure.geometry);", ";")))
+      st.geometry&&bordure.geometry AND ST_WITHIN(st.geometry, bordure.geometry);", ";")))
 ```
 
 
@@ -173,8 +177,15 @@ dbExecute(conn, paste0("
 bordure <- st_read(conn, query = "SELECT * FROM bordure;") %>%
   mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
 
-ins_parc_avant <- st_read(conn, query = "SELECT * FROM ins_parc_avant;")
-ins_parc_apres <- st_read(conn, query = "SELECT * FROM ins_parc_apres;")
+ins_parc_avant <- st_read(conn, query = paste0("SELECT * FROM ", 
+                                               ifelse(indic_bordure, 
+                                                      'ins_parc_avant;', 
+                                                      paste0("parc_", num_departement, "_", temps_avant, ";"))))
+
+ins_parc_apres <- st_read(conn, query = paste0("SELECT * FROM ", 
+                                               ifelse(indic_bordure, 
+                                                      'ins_parc_apres;', 
+                                                      paste0("parc_", num_departement, "_", temps_apres, ";"))))
 ```
 
 # Focus sur les parcelles dont je peux comparer l'état sur les deux périodes facilement (cad parcelles ayant conservé leur identifiant)
@@ -184,25 +195,25 @@ ins_parc_apres <- st_read(conn, query = "SELECT * FROM ins_parc_apres;")
 ```{r modif geometry egal sql}
 dbExecute(conn, "TRUNCATE TABLE identique, modif_apres, modif_avant, modif;")
 
-dbExecute(conn, "
+dbExecute(conn, paste0("
   INSERT INTO identique
   SELECT apres.idu
-  FROM ins_parc_apres apres
+  FROM ", ifelse(indic_bordure, 'ins_parc_apres', paste0("parc_", num_departement, "_", temps_apres)), " apres
   WHERE EXISTS (
       SELECT 1
-      FROM ins_parc_avant avant
+      FROM ", ifelse(indic_bordure, 'ins_parc_avant', paste0("parc_", num_departement, "_", temps_avant)), " avant
       WHERE apres.idu = avant.idu
       AND ST_Equals(
           ST_SnapToGrid(apres.geometry, 0.0001), 
           ST_SnapToGrid(avant.geometry, 0.0001)
       )
-  );
-")
+  );"))
 
-dbExecute(conn, "
+dbExecute(conn, paste0("
   INSERT INTO modif_avant
-  SELECT avant.*
-  FROM ins_parc_avant avant
+  SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
+      avant.contenance, avant.geometry
+  FROM ", ifelse(indic_bordure, 'ins_parc_avant', paste0("parc_", num_departement, "_", temps_avant)), " avant
   WHERE NOT EXISTS (
       SELECT 1
       FROM identique
@@ -212,13 +223,13 @@ dbExecute(conn, "
       SELECT 1
       FROM supp
       WHERE avant.idu = supp.idu
-  );
-")
+  );"))
 
-dbExecute(conn, "
+dbExecute(conn, paste0("
   INSERT INTO modif_apres
-  SELECT apres.*
-  FROM ins_parc_apres apres
+  SELECT apres.idu, apres.nom_com, apres.code_com, apres.com_abs, 
+      apres.contenance, apres.geometry
+  FROM ", ifelse(indic_bordure, 'ins_parc_apres', paste0("parc_", num_departement, "_", temps_apres)), " apres
   WHERE NOT EXISTS (
       SELECT 1
       FROM identique
@@ -228,8 +239,7 @@ dbExecute(conn, "
       SELECT 1
       FROM ajout
       WHERE apres.idu = ajout.idu
-  );
-")
+  );"))
 
 dbExecute(conn, "
   INSERT INTO modif
@@ -254,11 +264,6 @@ dbExecute(conn, "
 ")
 ```
 
-
-```{r quantile}
-# 85130000AH0055 et 85130000AH0017 supplémentaire dans sql
-# modif <- st_read(conn, query = "SELECT * FROM modif;")
-```
 
 ## Reconnaissances des cas de translation, modification de contour et les deux à la fois
 
@@ -729,8 +734,7 @@ dbExecute(conn, "
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_multi, 
       participants_avant, participants_apres, geometry
   FROM supp_iou_multi
-  WHERE (iou_multi > 0.95 AND LENGTH(participants_apres) = LENGTH(participants_avant))
-    OR (LENGTH(participants_apres) = 14 AND LENGTH(participants_avant) = 14);
+  WHERE iou_multi > 0.95 AND LENGTH(participants_apres) = LENGTH(participants_avant);
 ")
 
 dbExecute(conn, "
@@ -937,7 +941,7 @@ supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
 vrai_ajout_sql <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
 vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
-# 132078330A0082 cas d'une parcelle disparu en 2024 mais pas affiché comme vrai supp
+# 132078330A0082 cas d'une parcelle disparu en 2024 mais pas affiché comme vrai supp -> multipolygon empty
 # 13041000AM0018 parcelle participant a une multi subdiv mais qui a l'air iou parfait
 ```
 

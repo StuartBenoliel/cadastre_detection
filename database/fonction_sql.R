@@ -81,7 +81,7 @@ dbExecute(conn, "
       query_sql := '
           SELECT idu
           FROM ' || quote_ident(table_name) || '
-          WHERE ST_Intersects(st_buffer($1, -$2), geometry)
+          WHERE geometry&&$1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
       ';
       
       FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil
@@ -107,7 +107,7 @@ dbExecute(conn, "
           WHERE idu IN (
               SELECT idu
               FROM ' || quote_ident(table_name) || '
-              WHERE ST_Intersects(st_buffer($1, -$2), geometry)
+              WHERE geometry&&$1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
           )
       ';
       EXECUTE query_sql INTO polygon_union USING polygon, seuil;
@@ -149,14 +149,14 @@ dbExecute(conn, "
               EXECUTE '
                   SELECT ST_Union(geometry) 
                   FROM ' || quote_ident(nom_table_avant) || ' 
-                  WHERE ST_Intersects(geometry, $1)
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
               ' INTO polygon_union USING polygon_union;
   
               -- Sortir de la boucle si le nombre de parcelles reste le même
               query_sql := '
                   SELECT COUNT(*) 
                   FROM ' || quote_ident(nom_table_avant) || ' 
-                  WHERE ST_Intersects(geometry, $1)';
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
               
               EXECUTE query_sql INTO nb_polygon_union USING polygon_union;
               
@@ -170,7 +170,7 @@ dbExecute(conn, "
           query_sql := '
               SELECT string_agg(idu::text, '', '') 
               FROM ' || quote_ident(nom_table_avant) || ' 
-              WHERE ST_Intersects(geometry, $1)';
+              WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
           
           EXECUTE query_sql INTO participants_avant USING polygon_union;
   
@@ -192,6 +192,7 @@ dbExecute(conn, "
   $$ LANGUAGE plpgsql;
 ") 
 
+
 # Version sans boucle for
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_multi_rapide(polygon_avant geometry, nom_table_avant text, nom_table_apres text)
@@ -205,14 +206,14 @@ dbExecute(conn, "
       EXECUTE '
           SELECT ST_Union(geometry) 
           FROM ' || quote_ident(nom_table_avant) || ' 
-          WHERE ST_Intersects(geometry, $1)
+          WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
       ' INTO polygon_union USING polygon_union;
 
       -- Sélectionner les noms des participants avant
       query_sql := '
           SELECT string_agg(idu::text, '', '') 
           FROM ' || quote_ident(nom_table_avant) || ' 
-          WHERE ST_Intersects(geometry, $1)';
+          WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
       
       EXECUTE query_sql INTO participants_avant USING polygon_union;
 
@@ -277,7 +278,7 @@ dbExecute(conn, "
       query_sql := '
           SELECT idu
           FROM ' || quote_ident(table_name) || '
-          WHERE ST_Intersects(st_buffer($1, -$2), geometry)
+          WHERE geometry&&$1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
       ';
       
       FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil
@@ -303,7 +304,7 @@ dbExecute(conn, "
           WHERE idu IN (
               SELECT idu
               FROM ' || quote_ident(table_name) || '
-              WHERE ST_Intersects(st_buffer($1, -$2), geometry)
+              WHERE geometry&&$1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
           )
       ';
       EXECUTE query_sql INTO polygon_union USING polygon, seuil;
@@ -327,7 +328,7 @@ dbExecute(conn, "
       query_sql := '
           SELECT idu, geometry
           FROM ' || quote_ident(table_name) || '
-          WHERE ST_Intersects(geometry, ST_Buffer($1, -$2))
+          WHERE geometry&&$1 AND ST_Intersects(geometry, ST_Buffer($1, -$2))
       ';
       
       FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil
@@ -400,14 +401,14 @@ dbExecute(conn, "
               EXECUTE '
                   SELECT ST_Union(geometry) 
                   FROM ' || quote_ident(nom_table_avant) || ' 
-                  WHERE ST_Intersects(geometry, $1)
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
               ' INTO polygon_union USING polygon_union;
   
               -- Sortir de la boucle si le nombre de parcelles reste le même
               query_sql := '
                   SELECT COUNT(*) 
                   FROM ' || quote_ident(nom_table_avant) || ' 
-                  WHERE ST_Intersects(geometry, $1)';
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
               
               EXECUTE query_sql INTO nb_polygon_union USING polygon_union;
               
@@ -421,7 +422,7 @@ dbExecute(conn, "
           query_sql := '
               SELECT string_agg(idu::text, '', '') 
               FROM ' || quote_ident(nom_table_avant) || ' 
-              WHERE ST_Intersects(geometry, $1)';
+              WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
           
           EXECUTE query_sql INTO participants_avant_translate USING polygon_union;
   
@@ -456,14 +457,14 @@ dbExecute(conn, "
       EXECUTE '
           SELECT ST_Union(geometry) 
           FROM ' || quote_ident(nom_table_avant) || ' 
-          WHERE ST_Intersects(geometry, $1)
+          WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
       ' INTO polygon_union USING polygon_union;
   
       -- Sélectionner les noms des participants avant
       query_sql := '
           SELECT string_agg(idu::text, '', '') 
           FROM ' || quote_ident(nom_table_avant) || ' 
-          WHERE ST_Intersects(geometry, $1)';
+          WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
       
       EXECUTE query_sql INTO participants_avant_translate USING polygon_avant;
   
