@@ -5,6 +5,19 @@ library(leaflet)
 library(stringr)
 library(leafsync)
 library(leaflet.extras2)
+library(DBI)
+
+source(file = "database/connexion_db.R")
+conn <- connecter()
+num_departement <- 85
+temps_apres <- 24
+temps_avant <- 23
+
+dbExecute(conn, paste0(
+  "SET search_path TO traitement_cadastre_", temps_apres, "_", temps_avant,
+  ", cadastre_", num_departement, ", public"))
+
+commune <- st_read(conn, query = paste0("SELECT * FROM com_", num_departement, ";"))
 
 # Define UI
 ui <- fluidPage(
@@ -27,9 +40,6 @@ ui <- fluidPage(
              ),
              uiOutput("dynamicMaps")  # Use UI output to render maps
     ),
-    tabPanel("Evolution sur le département entier",
-             uiOutput("dynamicBigMap")
-    )
   ),
   
   tags$style(HTML("
@@ -53,191 +63,205 @@ server <- function(input, output, session) {
   output$dynamicMaps <- renderUI({
     req(input$tabsetPanel == "Comparaison par commune")
     
-    map_1 <- mapview(bordure %>% 
-                       filter(nom_com == input$nom_com_select), 
+    commune <- st_read(conn, query = paste0(
+      "SELECT * FROM com_", num_departement, " WHERE nom_com = '", input$nom_com_select, "';"))
+    bordure <- st_read(conn, query = paste0(
+      "SELECT * FROM bordure WHERE nom_com = '", input$nom_com_select, "';"))
+    ins_parc_avant <- st_read(conn, query = paste0(
+      "SELECT * FROM parc_", num_departement, "_", temps_avant, " WHERE nom_com = '", input$nom_com_select, "';"))
+    ins_parc_apres <- st_read(conn, query = paste0(
+      "SELECT * FROM parc_", num_departement, "_", temps_apres, " WHERE nom_com = '", input$nom_com_select, "';"))
+    
+    modif_avant_sql <- st_read(conn, query =  paste0(
+      "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '",input$nom_com_select, "';"))
+    modif_apres_sql <- st_read(conn, query =  paste0(
+      "SELECT * FROM modif_apres_iou WHERE nom_com = '",input$nom_com_select, "';"))
+    ajout_sql <- st_read(conn, query =  paste0(
+      "SELECT * FROM ajout_iou_restant WHERE nom_com = '",input$nom_com_select, "';"))
+    supp_sql <- st_read(conn, query =  paste0(
+      "SELECT * FROM supp_iou_restant WHERE nom_com = '",input$nom_com_select, "';"))
+    
+    translation_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM translation WHERE nom_com = '",input$nom_com_select, "';"))
+    contour_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM contour WHERE nom_com = '",input$nom_com_select, "';"))
+    contour_translation_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM contour_translation WHERE nom_com = '",input$nom_com_select, "';"))
+    parc_com_abs_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM parc_com_abs WHERE nom_com = '", input$nom_com_select, "';"))
+    subdiv_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM subdiv WHERE nom_com = '", input$nom_com_select, "';"))
+    fusion_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM fusion WHERE nom_com = '", input$nom_com_select, "';"))
+    multi_subdiv_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM multi_subdiv WHERE nom_com = '", input$nom_com_select, "';"))
+    contour_transfo_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM contour_transfo WHERE nom_com = '", input$nom_com_select, "';"))
+    contour_transfo_translation_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM contour_transfo_translation WHERE nom_com = '", input$nom_com_select, "';"))
+    vrai_ajout_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM vrai_ajout WHERE nom_com = '", input$nom_com_select, "';"))
+    vrai_supp_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM vrai_supp WHERE nom_com = '", input$nom_com_select, "';"))
+    
+    map_1 <- mapview(bordure, 
                      layer.name = "Bordures étendues", col.regions = "lightgrey", 
                      alpha.regions = 0.5, homebutton = F, 
                      map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
     
-    if (nrow(translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(translation_sql %>% 
-                                 filter(nom_com == input$nom_com_select),
+    if (nrow(translation_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(translation_sql,
                                layer.name = paste0("Parcelles translatées (état 20",temps_apres,")"), 
                                col.regions = "darkcyan",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(ins_parc_avant %>%
-                  filter(idu %in% translation_sql$idu_translate) %>% 
-                  filter(nom_com == input$nom_com_select), 
+                  filter(idu %in% translation_sql$idu_translate), 
                 col.regions = "darkcyan",
                 layer.name = "Parcelles translatées (état 2023)", 
                 alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(fusion_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(fusion_sql %>% 
-                                 filter(nom_com == input$nom_com_select), 
+    if (nrow(fusion_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(fusion_sql, 
                                layer.name = paste0("Parcelles fusionnéees (état 20",temps_apres,")"),
                                col.regions = "darkmagenta", alpha.regions = 0.5, homebutton = F) +
-        mapview(supp_tot %>%
-                  filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))) %>% 
-                  filter(nom_com == input$nom_com_select),  
+        mapview(ins_parc_avant %>%
+                  filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))),  
                 layer.name = paste0("Parcelles fusionnéees (état 20",temps_avant,")"), 
                 col.regions = "darkmagenta",
                 alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(subdiv_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(ajout_tot %>%
-                                 filter(idu %in% unlist(str_split(subdiv_sql$participants, ",\\s*"))) %>% 
-                                 filter(nom_com == input$nom_com_select),  
+    if (nrow(subdiv_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(ins_parc_apres %>%
+                                 filter(idu %in% unlist(str_split(subdiv_sql$participants, ",\\s*"))),  
                                layer.name = paste0("Parcelles subdivisées (état 20",temps_apres,")"), 
                                col.regions = "purple",
                                alpha.regions = 0.5, homebutton = F) +
-        mapview(subdiv_sql %>% 
-                  filter(nom_com == input$nom_com_select),  
+        mapview(subdiv_sql,  
                 layer.name = paste0("Parcelles subdivisées (état 20",temps_avant,")"), 
                 col.regions = "purple", alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(multi_subdiv_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(ajout_tot %>%
-                                 filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))) %>% 
-                                 filter(nom_com == input$nom_com_select),
+    if (nrow(multi_subdiv_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(ins_parc_apres %>%
+                                 filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))),
                                layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
                                col.regions = "magenta",
                                alpha.regions = 0.5, homebutton = F) +
-        mapview(multi_subdiv_sql %>% 
-                  filter(nom_com == input$nom_com_select),  
+        mapview(multi_subdiv_sql,  
                 layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
                 col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(contour_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
+    if (nrow(contour_sql) > 0) {
+      
       map_1 <- map_1 + mapview(ins_parc_apres %>%
-                                 filter(idu %in% unlist(str_split(contour_sql$participants_apres, ",\\s*"))) %>% 
-                                 filter(nom_com == input$nom_com_select),  
+                                 filter(idu %in% unlist(str_split(contour_sql$participants_apres, ",\\s*"))),  
                                layer.name = paste0("Parcelles contours (état 20",temps_apres,")"), 
                                col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
-        mapview(contour_sql %>% 
-                  filter(nom_com == input$nom_com_select),  
+        mapview(contour_sql,  
                 layer.name = paste0("Parcelles contours (état 20",temps_avant,")"),
                 col.regions = "orange",
                 alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(contour_transfo_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(ajout_tot %>%
-                                 filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))) %>% 
-                                 filter(nom_com == input$nom_com_select),  
+    if (nrow(contour_transfo_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(ins_parc_apres %>%
+                                 filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))),  
                                layer.name = paste0("Parcelles transfo + contours (état 20",temps_apres,")"),
                                col.regions = "pink",
                                alpha.regions = 0.5, homebutton = F) +
-        mapview(contour_transfo_sql %>% 
-                  filter(nom_com == input$nom_com_select),
+        mapview(contour_transfo_sql,
                 layer.name = paste0("Parcelles transfo + contours (état 20",temps_avant,")"), 
                 col.regions = "pink", alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(contour_translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(contour_translation_sql %>% 
-                                 filter(nom_com == input$nom_com_select),  
+    if (nrow(contour_translation_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(contour_translation_sql,  
                                layer.name = paste0("Parcelles translatées + contours (état 20",temps_apres,")"), 
                                alpha.regions = 0.5, homebutton = F) +
         mapview(ins_parc_avant %>%
-                  filter(idu %in% contour_translation_sql$idu_translate) %>% 
-                  filter(nom_com == input$nom_com_select),
+                  filter(idu %in% contour_translation_sql$idu_translate),
                 layer.name = paste0("Parcelles translatées + contours (état 20",temps_avant,")"), 
                 alpha.regions = 0.5, homebutton = F)
       
     }
-    if (nrow(contour_transfo_translation_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(ajout_tot %>%
-                                 filter(idu %in% unlist(str_split(contour_transfo_translation_sql$participants_apres_translate, ",\\s*"))) %>% 
-                                 filter(nom_com == input$nom_com_select),
+    if (nrow(contour_transfo_translation_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(ins_parc_apres %>%
+                                 filter(idu %in% unlist(str_split(contour_transfo_translation_sql$participants_apres_translate, ",\\s*"))),
                                layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
                                col.regions = "lightblue", alpha.regions = 0.5, homebutton = F) +
-        mapview(contour_transfo_translation_sql %>% 
-                  filter(nom_com == input$nom_com_select),  
+        mapview(contour_transfo_translation_sql,  
                 layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
                 col.regions = "lightblue",
                 alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(parc_com_abs_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(parc_com_abs_sql %>% 
-                                 filter(nom_com == input$nom_com_select),  
+    if (nrow(parc_com_abs_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(parc_com_abs_sql,  
                                layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
                                col.regions = "lightgreen",
                                alpha.regions = 0.5, homebutton = F) +
-        mapview(supp_tot %>%
-                  filter(idu %in% parc_com_abs_sql$idu_avant) %>% 
-                  filter(nom_com_apres == input$nom_com_select),  
+        mapview(ins_parc_avant %>%
+                  filter(idu %in% parc_com_abs_sql$idu_avant),  
                 layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
                 col.regions = "lightgreen", alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(vrai_ajout_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(vrai_ajout_sql %>% 
-                                 filter(nom_com == input$nom_com_select), 
+    if (nrow(vrai_ajout_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(vrai_ajout_sql, 
                                layer.name = "Parcelles véritablement ajoutées", 
                                col.regions = "green", alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(vrai_supp_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(vrai_supp_sql %>% 
-                                 filter(nom_com == input$nom_com_select),
+    if (nrow(vrai_supp_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(vrai_supp_sql,
                                layer.name = "Parcelles véritablement supprimées",
                                col.regions = "red", alpha.regions = 0.5, homebutton = F) 
-      
     }
-    if (nrow(ajout_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(ajout_sql %>% 
-                                 filter(nom_com == input$nom_com_select),
+    if (nrow(ajout_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(ajout_sql,
                                z = c("iou_ajust"), layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"), 
                                alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(supp_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(supp_sql %>% 
-                                 filter(nom_com == input$nom_com_select), 
+    if (nrow(supp_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(supp_sql, 
                                z = c("iou_multi"), layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"), 
                                alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(modif_apres_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(modif_apres_sql %>% 
-                                 filter(nom_com == input$nom_com_select), 
+    if (nrow(modif_apres_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(modif_apres_sql, 
                                z = c("iou_ajust"), 
                                layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"),
                                alpha.regions = 0.5, homebutton = F)
-      
     }
-    if (nrow(modif_avant_sql %>% filter(nom_com == input$nom_com_select)) > 0) {
-      map_1 <- map_1 + mapview(modif_avant_sql %>% 
-                                 filter(nom_com == input$nom_com_select), 
+    if (nrow(modif_avant_sql) > 0) {
+      
+      map_1 <- map_1 + mapview(modif_avant_sql, 
                                z = c("iou_ajust"), 
                                layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"),
                                alpha.regions = 0.5, homebutton = F)
-      
     }
-    map_2 <- mapview(ins_parc_apres %>% 
-                       filter(nom_com == input$nom_com_select), 
+    
+    map_2 <- mapview(ins_parc_apres, 
                      layer.name = paste0("Parcelles (état 20",temps_apres,")"),
                      col.regions = "purple", 
                      homebutton = FALSE) + 
-      mapview(bordure %>% 
-                filter(nom_com == input$nom_com_select), 
+      mapview(bordure, 
               layer.name = "Bordures étendues", 
               col.regions = "lightgrey", 
               alpha.regions = 0.5, 
               homebutton = FALSE)
     
-    map_3 <- mapview(ins_parc_avant %>% 
-                       filter(nom_com == input$nom_com_select), 
+    map_3 <- mapview(ins_parc_avant, 
                      layer.name = paste0("Parcelles (état 20",temps_avant,")"), 
                      homebutton = FALSE) + 
-      mapview(bordure %>% 
-                filter(nom_com == input$nom_com_select), 
+      mapview(bordure, 
               layer.name = "Bordures étendues", 
               col.regions = "lightgrey", 
               alpha.regions = 0.5, legend = F,
@@ -248,159 +272,6 @@ server <- function(input, output, session) {
     sync(map_1, map_compa@map, ncol = 1)
     
   })
-  
-  output$dynamicTwoMaps <- renderUI({
-    req(input$tabsetPanel == "Evolution sur le département entier")
-    fluidRow(
-      column(12, leafletOutput("TwoMaps", height = "100vh"))
-    )
-  })
-  
-  output$dynamicBigMap <- renderUI({
-    req(input$tabsetPanel == "Evolution sur le département entier")
-    fluidRow(
-      column(12, leafletOutput("largeMap", height = "100vh"))
-    )
-  })
-  
-  
-  
-  # Render the single large map
-  output$largeMap <- renderLeaflet({
-    req(input$tabsetPanel == "Evolution sur le département entier")
-    map <- mapview(bordure, 
-                   layer.name = "Bordures étendues", col.regions = "lightgrey", 
-                   alpha.regions = 0.5, homebutton = F,
-                   map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
-    
-    if (nrow(translation_sql) > 0) {
-      map <- map + mapview(translation_sql,
-                           layer.name = paste0("Parcelles translatées (état 20",temps_apres,")"), 
-                           col.regions = "darkcyan",
-                           alpha.regions = 0.5, homebutton = F) +
-        mapview(ins_parc_avant %>%
-                  filter(idu %in% translation_sql$idu_translate),
-                col.regions = "darkcyan",
-                layer.name = paste0("Parcelles translatées (état 20",temps_avant,")"), 
-                alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(fusion_sql) > 0) {
-      map <- map + mapview(fusion_sql, 
-                           layer.name = paste0("Parcelles fusionnéees (état 20",temps_apres,")"),
-                           col.regions = "darkmagenta", alpha.regions = 0.5, homebutton = F) +
-        mapview(supp_tot %>%
-                  filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))),  
-                layer.name = paste0("Parcelles fusionnéees (état 20",temps_avant,")"), 
-                col.regions = "darkmagenta",
-                alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(subdiv_sql) > 0) {
-      map <- map + mapview(ajout_tot %>%
-                             filter(idu %in% unlist(str_split(subdiv_sql$participants, ",\\s*"))),  
-                           layer.name = paste0("Parcelles subdivisées (état 20",temps_apres,")"), 
-                           col.regions = "purple",
-                           alpha.regions = 0.5, homebutton = F) +
-        mapview(subdiv_sql,  
-                layer.name = paste0("Parcelles subdivisées (état 20",temps_avant,")"), 
-                col.regions = "purple", alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(multi_subdiv_sql) > 0) {
-      map <- map + mapview(ajout_tot %>%
-                             filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))),
-                           layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
-                           col.regions = "magenta",
-                           alpha.regions = 0.5, homebutton = F) +
-        mapview(multi_subdiv_sql,  
-                layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
-                col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
-      
-    }
-    if (nrow(contour_sql) > 0) {
-      map <- map + mapview(ins_parc_apres %>%
-                             filter(idu %in% unlist(str_split(contour_sql$participants_apres, ",\\s*"))),  
-                           layer.name = paste0("Parcelles contours (état 20",temps_apres,")"), 
-                           col.regions = "orange", alpha.regions = 0.5, homebutton = F)  +
-        mapview(contour_sql,  
-                layer.name = paste0("Parcelles contours (état 20",temps_avant,")"),
-                col.regions = "orange",
-                alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(contour_transfo_sql) > 0) {
-      map <- map + mapview(ajout_tot %>%
-                             filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))),  
-                           layer.name = paste0("Parcelles transfo + contours (état 20",temps_apres,")"),
-                           col.regions = "pink",
-                           alpha.regions = 0.5, homebutton = F) +
-        mapview(contour_transfo_sql,
-                layer.name = paste0("Parcelles transfo + contours (état 20",temps_avant,")"), 
-                col.regions = "pink", alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(contour_translation_sql) > 0) {
-      map <- map + mapview(contour_translation_sql,  
-                           layer.name = paste0("Parcelles translatées + contours (état 20",temps_apres,")"), 
-                           alpha.regions = 0.5, homebutton = F) +
-        mapview(ins_parc_avant %>%
-                  filter(idu %in% contour_translation_sql$idu_translate),
-                layer.name = paste0("Parcelles translatées + contours (état 20",temps_avant,")"), 
-                alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(contour_transfo_translation_sql) > 0) {
-      map <- map + mapview(ajout_tot %>%
-                             filter(idu %in% unlist(str_split(contour_transfo_translation_sql$participants_apres_translate, ",\\s*"))),
-                           layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
-                           col.regions = "lightblue", alpha.regions = 0.5, homebutton = F) +
-        mapview(contour_transfo_translation_sql,  
-                layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
-                col.regions = "lightblue",
-                alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(parc_com_abs_sql) > 0) {
-      map <- map + mapview(parc_com_abs_sql,  
-                           layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
-                           col.regions = "lightgreen",
-                           alpha.regions = 0.5, homebutton = F) +
-        mapview(supp_tot %>%
-                  filter(idu %in% parc_com_abs_sql$idu_avant),  
-                layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
-                col.regions = "lightgreen", alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(vrai_ajout_sql) > 0) {
-      map <- map + mapview(vrai_ajout_sql, 
-                           layer.name = "Parcelles véritablement ajoutées", 
-                           col.regions = "green", alpha.regions = 0.5, homebutton = F)
-      
-    }
-    if (nrow(vrai_supp_sql) > 0) {
-      map <- map + mapview(vrai_supp_sql,
-                           layer.name = "Parcelles véritablement supprimées",
-                           col.regions = "red", alpha.regions = 0.5, homebutton = F) 
-    }
-    if (nrow(ajout_sql) > 0) {
-      map <- map + mapview(ajout_sql,
-                           z = c("iou_ajust"), layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"), 
-                           alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(supp_sql) > 0) {
-      map <- map + mapview(supp_sql, 
-                           z = c("iou_multi"), layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"), 
-                           alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(modif_apres_sql) > 0) {
-      map <- map + mapview(modif_apres_sql, 
-                           z = c("iou_ajust"), 
-                           layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"), 
-                           alpha.regions = 0.5, homebutton = F)
-      
-    }
-    if (nrow(modif_avant_sql) > 0) {
-      map <- map + mapview(modif_avant_sql, 
-                           z = c("iou_ajust"), 
-                           layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"), 
-                           alpha.regions = 0.5, homebutton = F)
-    }
-    map@map
-  })
-  
 }
 
 # Run the application

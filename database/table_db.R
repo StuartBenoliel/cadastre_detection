@@ -1,12 +1,11 @@
-library(DBI)
-source(file = "database/connexion_db.R")
-conn <- connecter()
-
 # Créer le schéma temporaire cadastre_temp
-dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cadastre_temp")
+dbExecute(conn, paste0(
+  "CREATE SCHEMA IF NOT EXISTS traitement_cadastre_", temps_apres, "_", temps_avant))
 
 # Changer le search_path pour inclure le schéma temporaire
-dbExecute(conn, "SET search_path TO cadastre_temp, public")
+dbExecute(conn, paste0(
+  "SET search_path TO traitement_cadastre_", temps_apres, "_", temps_avant,
+  ", cadastre_", num_departement, ", public"))
 
 dbExecute(conn, "
   CREATE TABLE multi_calcul_cache (
@@ -50,6 +49,7 @@ dbExecute(conn, "
   );
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_geometry ON bordure USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_nom_com ON bordure (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE ins_parc_avant (
@@ -62,6 +62,7 @@ dbExecute(conn, "
   );
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_avant_geometry ON ins_parc_avant USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_avant_nom_com ON ins_parc_avant (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE ins_parc_apres (
@@ -74,6 +75,7 @@ dbExecute(conn, "
   );
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_apres_geometry ON ins_parc_apres USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_apres_nom_com ON ins_parc_apres (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE ajout (
@@ -168,6 +170,7 @@ dbExecute(conn, "
   );
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_apres_iou_geometry ON modif_apres_iou USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_apres_nom_com ON modif_apres (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE modif_avant_iou_multi (
@@ -202,6 +205,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_avant_iou_convex_nom_com ON modif_avant_iou_convex (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE ajout_simp (
@@ -354,6 +358,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_restant_nom_com ON supp_iou_restant (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE ajout_iou_restant (
@@ -369,6 +374,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_restant_nom_com ON ajout_iou_restant (nom_com);")
 
 # Tables de typologie
 
@@ -385,6 +391,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_translation_nom_com ON translation (nom_com);")
 
 # Avant
 dbExecute(conn, "
@@ -400,6 +407,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_nom_com ON contour (nom_com);")
 
 # Avant
 dbExecute(conn, "
@@ -414,6 +422,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_translation_nom_com ON contour_translation (nom_com);")
 
 # Apres
 dbExecute(conn, "
@@ -427,6 +436,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_parc_com_abs_nom_com ON parc_com_abs (nom_com);")
 
 # Avant
 dbExecute(conn, "
@@ -441,6 +451,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_subdiv_nom_com ON subdiv (nom_com);")
 
 # Apres
 dbExecute(conn, "
@@ -455,6 +466,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fusion_nom_com ON fusion (nom_com);")
 
 # Avant
 dbExecute(conn, "
@@ -470,6 +482,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_multi_subdiv_nom_com ON multi_subdiv (nom_com);")
 
 # Avant
 dbExecute(conn, "
@@ -485,6 +498,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_transfo_nom_com ON contour_transfo (nom_com);")
 
 # Avant
 dbExecute(conn, "
@@ -500,6 +514,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_transfo_translation_nom_com ON contour_transfo_translation (nom_com);")
 
 # Avant
 dbExecute(conn, "
@@ -514,6 +529,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vrai_supp_nom_com ON vrai_supp (nom_com);")
 
 # Apres
 dbExecute(conn, "
@@ -528,3 +544,4 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vrai_ajout_nom_com ON vrai_ajout (nom_com);")

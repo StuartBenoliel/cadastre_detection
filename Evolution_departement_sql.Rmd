@@ -21,50 +21,52 @@ library(webshot)
 library(stringr)
 # webshot::install_phantomjs()
 source(file = "database/connexion_db.R")
-conn <- connecter()
-DBI::dbListTables(conn)
 source(file = "database/fonction_sql.R")
+conn <- connecter()
 
 indic_bordure <- F
-num_departement <- 85
-temps_apres <- 23
-temps_avant <- 22
+num_departement <- '85'
+temps_apres <- 24
+temps_avant <- 23
 ```
 
 
 ```{r remise à zero des tables de traitements}
-dbExecute(conn, "DROP SCHEMA IF EXISTS cadastre_temp CASCADE")
+dbExecute(conn, paste0(
+  "DROP SCHEMA IF EXISTS traitement_cadastre_", temps_apres, "_", temps_avant, " CASCADE;"))
 source(file = "database/table_db.R")
 dbExecute(conn, "SET client_min_messages TO NOTICE;")
 ```
 
 
 ```{r voir les index}
-dbGetQuery(conn, " SELECT 
-    schemaname,
-    tablename, 
-    indexname, 
-    indexdef 
-FROM 
-    pg_indexes 
-WHERE 
-    schemaname = 'cadastre_temp' 
-    OR schemaname = 'public';
-           ")
+dbGetQuery(conn, paste0(" 
+  SELECT 
+      schemaname,
+      tablename, 
+      indexname, 
+      indexdef 
+  FROM 
+      pg_indexes 
+  WHERE 
+      schemaname = '", paste0("cadastre_", num_departement), "'
+      OR schemaname = 'public';
+           "))
 ```
 
 
 ```{r voir les tables de cadastre_temp}
-dbGetQuery(conn, " SELECT 
-    schemaname,
-    tablename
-FROM 
-    pg_tables
-WHERE 
-    schemaname = 'cadastre_temp'
-ORDER BY 
-    schemaname, tablename;
-           ")
+dbGetQuery(conn, paste0(" 
+  SELECT 
+      schemaname,
+      tablename
+  FROM 
+      pg_tables
+  WHERE 
+      schemaname = '", paste0("traitement_cadastre_", temps_apres, "_", temps_avant), "'
+  ORDER BY 
+      schemaname, tablename;
+           "))
 ```
 
 # Importation des parcelles sur l'ensemble du département et des périodes données
@@ -96,7 +98,7 @@ dbExecute(conn, paste0("
 ```
 
 ```{r import commune}
-commune <- st_read(conn, query = paste0("SELECT code_insee, nom_com, geometry FROM com_", num_departement, ";"))
+commune <- st_read(conn, query = paste0("SELECT * FROM com_", num_departement, ";"))
 
 ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
 supp_tot <- st_read(conn, query = "SELECT * FROM supp_tot;")
@@ -133,8 +135,8 @@ if (indic_bordure){
       bordure
   ON
       pa.geometry&&bordure.geometry AND ST_WITHIN(pa.geometry, bordure.geometry);"))
-
-dbExecute(conn, paste0("
+  
+  dbExecute(conn, paste0("
   INSERT INTO ins_parc_apres
   SELECT DISTINCT
       pa.idu, pa.nom_com, pa.code_com, pa.com_abs, pa.contenance, pa.geometry 
@@ -701,8 +703,8 @@ dbExecute(conn, "
 ```
 
 ```{r contour translation ou translation seule}
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
 translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
 ```
 
 ## Reconnaissances des cas de multi-subdivision (ex : 2 -> 3) ou modification de contours
@@ -1080,3 +1082,15 @@ if (nrow(modif_avant_sql) > 0) {
 }
 mapshot(map, url = paste0("parcelles_",num_departement,"_",temps_apres,"-",temps_avant,".html"))
 ```
+
+```{r nettoyage table inutile}
+dbExecute(conn, "
+  DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout, supp, ajout_tot, supp_tot,
+  modif_avant, modif_apres, modif, modif_avant_iou, modif_avant_iou_multi, 
+  ajout_simp, supp_simp, supp_iou, ajout_iou, ajout_iou_translate, 
+  supp_iou_multi, supp_iou_multi_translate_rapide, max_iou, 
+  multi_translate_rapide, supp_iou_multi_translate CASCADE
+;")
+dbListTables(conn)
+```
+
