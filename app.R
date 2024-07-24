@@ -6,33 +6,47 @@ library(stringr)
 library(leafsync)
 library(leaflet.extras2)
 library(DBI)
-source(file = "database/connexion_db.R")
 rm(list=ls())
+source(file = "database/connexion_db.R")
 conn <- connecter()
-num_departement <- 85
-temps_apres <- 24
-temps_avant <- 23
+
+result <- dbGetQuery(conn, paste0(" 
+  SELECT 
+      schema_name
+  FROM 
+      information_schema.schemata
+  WHERE 
+      schema_name LIKE 'traitement_%_%_cadastre_%';
+           "))
+
+departements <- result$schema_name %>%
+  str_extract("cadastre_(..)\\z") %>%
+  str_replace_all("cadastre_", "") %>%
+  unique() %>%
+  sort()
 
 # Fonction pour mettre à jour le search path
-update_search_path <- function(conn, departement) {
+update_search_path <- function(conn, departement, temps_apres, temps_avant) {
   dbExecute(conn, paste0(
     "SET search_path TO traitement_", temps_apres, "_", temps_avant, "_cadastre_" , departement, 
     ", cadastre_", departement, ", public"
   ))
+  print(paste("temps_apres:", temps_apres, ", temps_avant:", temps_avant, 
+              ", departement:", departement))
 }
 
 # Fonction pour lire les communes
 load_communes <- function(conn, departement) {
-  dbGetQuery(conn, paste0("SELECT nom_com FROM com_", departement, ";"))
+  dbGetQuery(conn, paste0("SELECT nom_com FROM cadastre_", departement, ".com_", departement, ";"))
 }
-
-# Charger les communes initiales
-update_search_path(conn, num_departement)
-commune <- load_communes(conn, num_departement)
 
 # Define UI
 ui <- fluidPage(
-  titlePanel("Détection des évolutions des parcelles cadastrales par commune du département"
+  titlePanel(
+    div(
+      img(src = "Insee_logo.png", height = "60px", align = "right"),
+      h1("Détection des évolutions des parcelles cadastrales par commune")
+    )
   ),
   
   # Navigation panel
@@ -44,18 +58,18 @@ ui <- fluidPage(
              fluidRow(
                column(3,
                       selectInput("depart_select", "Choisir un département:",
-                                  choices = c(13, 85),
-                                  selected = num_departement)
+                                  choices = departements,
+                                  selected = departements[length(departements)])
                ),
                column(3,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
-                                  choices = sort(unique(commune$nom_com)),
-                                  selected = sort(unique(commune$nom_com))[1])
+                                  choices = NULL,
+                                  selected = NULL)
                ),
                column(3,
                       selectInput("temps_select", "Choisir une période de temps:",
-                                  choices = c("24-23"),
-                                  selected = c("24-23"))
+                                  choices = NULL,
+                                  selected = NULL)
                ),
              ),
              uiOutput("dynamicMaps")  # Use UI output to render maps
@@ -82,17 +96,55 @@ server <- function(input, output, session) {
   # Mise à jour lors de la sélection d'un département
   observeEvent(input$depart_select, {
     num_departement <<- input$depart_select
-    update_search_path(conn, num_departement)
-    commune <<- load_communes(conn, num_departement)
-
+    print("input_dep")
+    commune <- load_communes(conn, num_departement)
+    
     updateSelectInput(session, "nom_com_select",
                       choices = sort(unique(commune$nom_com)),
                       selected = sort(unique(commune$nom_com))[1])
+    
+    result <- dbGetQuery(conn, paste0(" 
+      SELECT 
+          schema_name
+      FROM 
+          information_schema.schemata
+      WHERE 
+          schema_name LIKE 'traitement_%_%_cadastre_", num_departement,"';
+               "))
+    
+    int_temps <- result$schema_name %>%
+      str_extract("traitement_(\\d{2})_(\\d{2})_cadastre") %>%
+      str_replace_all("traitement_(\\d{2})_(\\d{2})_cadastre", "\\1-\\2") %>%
+      as.character()
+    
+    int_temps <- int_temps[order(as.numeric(str_extract(int_temps, "^[0-9]+")) , decreasing = TRUE)]
+    
+    updateSelectInput(session, "temps_select",
+                      choices = int_temps,
+                      selected = int_temps[1])
+
+  })
+  
+  temps_reactive <- reactive({
+    req(input$temps_select)  # Assure que input$temps_select n'est pas NULL
+    req(input$depart_select)
+    print("input_temps")
+    temps_split <- strsplit(input$temps_select, "-")[[1]]
+    temps_apres <<- temps_split[1]
+    temps_avant <<- temps_split[2]
+    update_search_path(conn, num_departement, temps_apres, temps_avant)
   })
   
   # Rendu dynamique des cartes
   output$dynamicMaps <- renderUI({
     req(input$tabsetPanel == "Comparaison par commune")
+    req(input$nom_com_select)
+    req(input$temps_select)
+    # Assurer que temps_reactive est terminé avant de continuer
+    isolate({
+      temps_reactive()  # Ce qui déclenche l'exécution de temps_reactive
+    })
+    print("cartes")
     
     bordure <- st_read(conn, query = paste0(
       "SELECT * FROM bordure WHERE nom_com = '", input$nom_com_select, "';"))
@@ -122,8 +174,8 @@ server <- function(input, output, session) {
       "SELECT * FROM subdiv WHERE nom_com = '", input$nom_com_select, "';"))
     fusion_sql <- st_read(conn, query = paste0(
       "SELECT * FROM fusion WHERE nom_com = '", input$nom_com_select, "';"))
-    multi_subdiv_sql <- st_read(conn, query = paste0(
-      "SELECT * FROM multi_subdiv WHERE nom_com = '", input$nom_com_select, "';"))
+    redecoupage_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM redecoupage WHERE nom_com = '", input$nom_com_select, "';"))
     contour_transfo_sql <- st_read(conn, query = paste0(
       "SELECT * FROM contour_transfo WHERE nom_com = '", input$nom_com_select, "';"))
     contour_transfo_translation_sql <- st_read(conn, query = paste0(
@@ -134,8 +186,8 @@ server <- function(input, output, session) {
       "SELECT * FROM vrai_supp WHERE nom_com = '", input$nom_com_select, "';"))
     
     map_1 <- mapview(bordure, 
-                     layer.name = "Bordures étendues", col.regions = "lightgrey", 
-                     alpha.regions = 0.5, homebutton = F, 
+                     layer.name = "Bordures étendues", col.regions = "#E8E8E8", 
+                     alpha.regions = 0.7, homebutton = F, 
                      map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
     
     if (nrow(translation_sql) > 0) {
@@ -172,14 +224,14 @@ server <- function(input, output, session) {
                 layer.name = paste0("Parcelles subdivisées (état 20",temps_avant,")"), 
                 col.regions = "purple", alpha.regions = 0.5, homebutton = F)
     }
-    if (nrow(multi_subdiv_sql) > 0) {
+    if (nrow(redecoupage_sql) > 0) {
       
       map_1 <- map_1 + mapview(ins_parc_apres %>%
-                                 filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))),
+                                 filter(idu %in% unlist(str_split(redecoupage_sql$participants_apres, ",\\s*"))),
                                layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
                                col.regions = "magenta",
                                alpha.regions = 0.5, homebutton = F) +
-        mapview(multi_subdiv_sql,  
+        mapview(redecoupage_sql,  
                 layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
                 col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
     }
@@ -277,24 +329,25 @@ server <- function(input, output, session) {
                                alpha.regions = 0.5, homebutton = F)
     }
     
-    map_2 <- mapview(ins_parc_apres, 
-                     layer.name = paste0("Parcelles (état 20",temps_apres,")"),
-                     col.regions = "purple", 
-                     homebutton = FALSE) + 
-      mapview(bordure, 
-              layer.name = "Bordures étendues", 
-              col.regions = "lightgrey", 
-              alpha.regions = 0.5, 
+    map_2 <- mapview(bordure, 
+                     layer.name = "Bordures étendues", 
+                     col.regions = "#E8E8E8", 
+                     alpha.regions = 0.7, 
+                     homebutton = FALSE, map.types = "CartoDB.Positron") + 
+      mapview(ins_parc_apres, 
+              layer.name = paste0("Parcelles (état 20",temps_apres,")"),
+              col.regions = "#286AC7", 
               homebutton = FALSE)
     
-    map_3 <- mapview(ins_parc_avant, 
-                     layer.name = paste0("Parcelles (état 20",temps_avant,")"), 
-                     homebutton = FALSE) + 
-      mapview(bordure, 
-              layer.name = "Bordures étendues", 
-              col.regions = "lightgrey", 
-              alpha.regions = 0.5, legend = F,
-              homebutton = FALSE)
+    map_3 <- mapview(bordure, 
+                     layer.name = "Bordures étendues", 
+                     col.regions = "#E8E8E8", 
+                     alpha.regions = 0.7, legend = F,
+                     homebutton = FALSE, map.types = "CartoDB.Positron") + 
+      mapview(ins_parc_avant, 
+              layer.name = paste0("Parcelles (état 20",temps_avant,")"), 
+              col.regions = "#FFC300",
+              homebutton = FALSE) 
     
     map_compa <- map_2 | map_3
     

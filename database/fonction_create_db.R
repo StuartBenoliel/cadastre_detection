@@ -1,10 +1,3 @@
-library(DBI)
-library(RPostgres)
-library(dplyr)
-library(dbplyr)
-library(sf)
-library(archive)
-
 # Fonction pour gérer le format des numéros de département
 gestion_num_departement <- function(num_depart) {
   while (nchar(num_depart) < 3) {
@@ -73,25 +66,66 @@ process_departement <- function(num_depart, num_annee, indic_parc = T) {
     print("Fichier non trouvé.")
   }
   
-  if(indic_parc) {
-    parc <- parc %>% 
-      mutate(
-        NOM_COM = case_when(
-          endsWith(CODE_ARR, "00") ~ NOM_COM,
-          endsWith(CODE_ARR, "01") ~ paste0(NOM_COM, " 1er"),
-          TRUE ~ paste0(
-            NOM_COM, " ",
-            case_when(
-              endsWith(substring(CODE_ARR, 2, 2), "0") ~ paste0(substring(CODE_ARR, 3, 3), "e"),
-              TRUE ~ paste0(sub("^0", "", substring(CODE_ARR, 2, 3)), "e")
-            ), "me"
-          )),
-        CONTENANCE = round(st_area(geometry), 1)) %>% select(IDU, NOM_COM, CODE_COM, COM_ABS, CONTENANCE)
-  }
   files <- list.files(temp_dir, full.names = TRUE)
   # Filtrer les fichiers commencant par "PARCELLAIRE"
   parcellaire_file <- files[grep("^PARCELLAIRE", basename(files))]
   unlink(parcellaire_file, recursive = TRUE)
+  return(parc)
+}
+
+# Fonction pour traiter les arrondissements et les cas de doublon de parcelles
+traitement <- function(table_sf) {
+  
+  duplicates <- table_sf %>%
+    group_by(IDU) %>%
+    filter(n() > 1) %>%
+    arrange(desc(FEUILLE))
+  
+  
+  if (nrow(duplicates) > 0) {
+    # Trouver la ligne avec la valeur maximale dans `feuille` pour chaque IDU
+    to_remove <- duplicates %>%
+      group_by(IDU) %>%
+      slice(1) %>%
+      ungroup()
+    
+    # Préparer le message d'alerte
+    message <- paste("Doublon(s) supprimé(s):\n")
+    for (i in 1:nrow(to_remove)) {
+      row <- to_remove[i, ]
+      message <- paste0(message, 
+                        "IDU: ", row$IDU,
+                        ", NUMERO: ", row$NUMERO,
+                        ", FEUILLE: ", row$FEUILLE, 
+                        ", SECTION: ", row$SECTION,
+                        ", CODE_DEP: ", row$CODE_DEP,
+                        ", NOM_COM: ", row$NOM_COM,
+                        ", CODE_COM: ", row$CODE_COM,
+                        ", COM_ABS: ", row$COM_ABS,
+                        ", CODE_ARR: ", row$CODE_ARR,
+                        ", CONTENANCE: ", row$CONTENANCE,
+                        ", geometry: ", row$geometry, 
+                        "\n")
+      table_sf <- table_sf %>% 
+        filter(!(IDU == row$IDU & FEUILLE == row$FEUILLE))
+    }
+    cat(message)
+  }
+  
+  parc <- table_sf %>% 
+    mutate(
+      NOM_COM = case_when(
+        endsWith(CODE_ARR, "00") ~ NOM_COM,
+        endsWith(CODE_ARR, "01") ~ paste0(NOM_COM, " 1er"),
+        TRUE ~ paste0(
+          NOM_COM, " ",
+          case_when(
+            endsWith(substring(CODE_ARR, 2, 2), "0") ~ paste0(substring(CODE_ARR, 3, 3), "e"),
+            TRUE ~ paste0(sub("^0", "", substring(CODE_ARR, 2, 3)), "e")
+          ), "me"
+        )),
+      CONTENANCE = round(st_area(geometry), 1)) %>% select(IDU, NOM_COM, CODE_COM, COM_ABS, CONTENANCE)
+  
   return(parc)
 }
 

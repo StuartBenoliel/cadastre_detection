@@ -1,7 +1,3 @@
-library(DBI)
-source(file = "database/connexion_db.R")
-conn <- connecter()
-
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou(polygon_1 geometry, polygon_2 geometry)
   RETURNS numeric AS $$
@@ -178,9 +174,11 @@ dbExecute(conn, "
           SELECT * INTO iou_intersect
           FROM calcul_iou_intersec(polygon_union, nom_table_apres);
   
-          -- Insérer les résultats dans le cache
-          INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
-          VALUES (participants_avant, iou_intersect.participants, iou_intersect.iou, md5(participants_avant::text));
+          -- Insérer les résultats dans le cache seulement si participants_avant n'est pas NULL
+          IF participants_avant IS NOT NULL THEN
+              INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
+              VALUES (participants_avant, iou_intersect.participants, iou_intersect.iou, md5(participants_avant::text));
+          END IF;
           
           -- Récupérer les résultats pour la sortie
           RETURN QUERY SELECT iou_intersect.iou, participants_avant, iou_intersect.participants;
@@ -428,11 +426,12 @@ dbExecute(conn, "
   
           -- Calculer l'IoU intersection ajusté avec ajout
           EXECUTE 'SELECT * FROM calcul_iou_intersec_translate($1, $2)' INTO iou_intersect USING polygon_union, nom_table_apres;
-  
-          -- Insérer les résultats dans le cache
-          INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
-          VALUES (participants_avant_translate, iou_intersect.participants, iou_intersect.iou_ajust, md5(participants_avant_translate::text));
-          
+            
+          -- Insérer les résultats dans le cache seulement si participants_avant n'est pas NULL
+          IF participants_avant_translate IS NOT NULL THEN
+              INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
+              VALUES (participants_avant_translate, iou_intersect.participants, iou_intersect.iou_ajust, md5(participants_avant_translate::text));
+          END IF;
           
           -- Retourner les résultats
       RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, participants_avant_translate AS participants_avant, iou_intersect.participants AS participants_apres;

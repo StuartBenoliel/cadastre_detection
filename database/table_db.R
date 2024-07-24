@@ -470,7 +470,7 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fusion_nom_com ON fusion (nom_co
 
 # Avant
 dbExecute(conn, "
-  CREATE TABLE multi_subdiv (
+  CREATE TABLE redecoupage (
       idu text PRIMARY KEY,
       nom_com text,
       code_com text,
@@ -482,7 +482,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_multi_subdiv_nom_com ON multi_subdiv (nom_com);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_redecoupage_nom_com ON redecoupage (nom_com);")
 
 # Avant
 dbExecute(conn, "

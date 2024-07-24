@@ -1,5 +1,5 @@
 ---
-title: "Evolution departement parcelles"
+title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 ---
@@ -21,13 +21,24 @@ library(webshot)
 library(stringr)
 # webshot::install_phantomjs()
 source(file = "database/connexion_db.R")
-source(file = "database/fonction_sql.R")
 conn <- connecter()
+source(file = "database/fonction_sql.R")
 
 indic_bordure <- F
-num_departement <- '85'
+num_departement <- '2b'
 temps_apres <- 24
 temps_avant <- 23
+```
+
+```{r voir les schémas de traitement}
+dbGetQuery(conn, paste0(" 
+  SELECT 
+      schema_name
+  FROM 
+      information_schema.schemata
+  WHERE 
+      schema_name LIKE 'traitement_%';
+           "))
 ```
 
 
@@ -40,7 +51,6 @@ dbExecute(conn, "SET client_min_messages TO NOTICE;")
 
 
 ```{r voir les index}
-
 dbGetQuery(conn, paste0(" 
   SELECT 
       schemaname,
@@ -56,7 +66,7 @@ dbGetQuery(conn, paste0("
 ```
 
 
-```{r voir les tables de cadastre_temp}
+```{r voir les tables de traitement fixe}
 dbGetQuery(conn, paste0(" 
   SELECT 
       schemaname,
@@ -69,6 +79,7 @@ dbGetQuery(conn, paste0("
       schemaname, tablename;
            "))
 ```
+
 
 # Importation des parcelles sur l'ensemble du département et des périodes données
 
@@ -98,7 +109,7 @@ dbExecute(conn, paste0("
 "))
 ```
 
-```{r import commune}
+```{r import commune, eval=FALSE}
 commune <- st_read(conn, query = paste0("SELECT * FROM com_", num_departement, ";"))
 
 ajout_tot <- st_read(conn, query = "SELECT * FROM ajout_tot;")
@@ -176,7 +187,7 @@ dbExecute(conn, paste0("
 ```
 
 
-```{r bordure sql}
+```{r bordure sql, eval=FALSE}
 bordure <- st_read(conn, query = "SELECT * FROM bordure;") %>%
   mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
 
@@ -332,7 +343,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r modif iou_ajust -> translation}
+```{r modif iou_ajust -> translation, eval=FALSE}
 translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
 contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
@@ -385,7 +396,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis}
+```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis, eval=FALSE}
 contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
@@ -422,7 +433,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r convex}
+```{r convex, eval=FALSE}
 contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 
 modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
@@ -462,7 +473,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r presomption sql}
+```{r presomption sql, eval=FALSE}
 contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
 
@@ -471,7 +482,25 @@ modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 ```
 
 
-```{r mapview typologie parcelles modifiées, eval=FALSE, include=FALSE}
+```{r mapview typologie parcelles modifiées, eval=FALSE}
+bordure <- st_read(conn, query = "SELECT * FROM bordure;")
+ins_parc_avant <- st_read(conn, query = paste0("SELECT * FROM ", 
+                                               ifelse(indic_bordure, 
+                                                      'ins_parc_avant;', 
+                                                      paste0("parc_", num_departement, "_", temps_avant, ";"))))
+
+ins_parc_apres <- st_read(conn, query = paste0("SELECT * FROM ", 
+                                               ifelse(indic_bordure, 
+                                                      'ins_parc_apres;', 
+                                                      paste0("parc_", num_departement, "_", temps_apres, ";"))))
+
+contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
+translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+
+modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
+modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+
 map <- mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightgrey", 
                alpha.regions = 0.5, homebutton = F,
                map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
@@ -549,7 +578,7 @@ dbExecute(conn, "
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
 
-```{r parcelle changeant de communes}
+```{r parcelle changeant de communes, eval=FALSE}
 parc_com_abs_sql <- st_read(conn, query = "SELECT * FROM parc_com_abs;")
 ```
 
@@ -654,7 +683,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r fusion/subdivision}
+```{r fusion/subdivision, eval=FALSE}
 subdiv_sql <- st_read(conn, query = "SELECT * FROM subdiv;")
 fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
 ```
@@ -703,7 +732,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r contour translation ou translation seule}
+```{r contour translation ou translation seule, eval=FALSE}
 translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
 contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
 ```
@@ -712,7 +741,7 @@ contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translat
 
 ```{r ajout/supp iou_multi -> multi-subdivision et contours}
 dbExecute(conn, "TRUNCATE TABLE multi_calcul_cache, supp_iou_multi, 
-          multi_subdiv, contour_transfo;")
+          redecoupage, contour_transfo;")
 
 dbExecute(conn, "
   INSERT INTO supp_iou_multi
@@ -725,7 +754,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  INSERT INTO multi_subdiv
+  INSERT INTO redecoupage
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_multi, 
       participants_avant, participants_apres, geometry
   FROM supp_iou_multi
@@ -751,21 +780,21 @@ dbExecute(conn, "
 
 dbExecute(conn, "
   DELETE FROM ajout_iou_translate
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM multi_subdiv)
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM redecoupage)
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour_transfo);
 ")
 
 dbExecute(conn, "
   DELETE FROM supp_iou_multi
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM multi_subdiv)
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM redecoupage)
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour_transfo);
 ")
 ```
 
-```{r multisubdiv sql}
-multi_subdiv_sql <- st_read(conn, query = "SELECT * FROM multi_subdiv;")
+```{r multisubdiv sql, eval=FALSE}
+redecoupage_sql <- st_read(conn, query = "SELECT * FROM redecoupage;")
 contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
 contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
 ```
@@ -840,7 +869,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r contour_transfo_translation_rapide}
+```{r contour_transfo_translation_rapide, eval=FALSE}
 contour_transfo_translation_sql <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
 ```
 
@@ -880,7 +909,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r contour_fusion_translation}
+```{r contour_fusion_translation, eval=FALSE}
 contour_transfo_translation_sql <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
 ```
 
@@ -937,7 +966,7 @@ dbExecute(conn, "
 ")
 ```
 
-```{r le reste}
+```{r le reste, eval=FALSE}
 ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
 supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
 
@@ -948,12 +977,44 @@ vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 # 13041000AM0018 parcelle participant a une multi subdiv mais qui a l'air iou parfait
 ```
 
+```{r nettoyage table inutile}
+dbExecute(conn, "
+  DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout, supp, ajout_tot, supp_tot,
+  modif_avant, modif_apres, modif, modif_avant_iou, modif_avant_iou_multi, 
+  ajout_simp, supp_simp, supp_iou, ajout_iou, ajout_iou_translate, 
+  supp_iou_multi, supp_iou_multi_translate_rapide, max_iou, 
+  multi_translate_rapide, supp_iou_multi_translate CASCADE
+;")
+dbListTables(conn)
+```
+
 # Visualisation finale sur une carte du département
 
-```{r mapview typologie parcelles, eval=FALSE, include=FALSE}
+```{r mapview typologie parcelles, eval=FALSE}
+bordure <- st_read(conn, query = "SELECT * FROM bordure;")
+ins_parc_avant <- st_read(conn, query = paste0("SELECT * FROM parc_", num_departement, "_", temps_avant, ";"))
+ins_parc_apres <- st_read(conn, query = paste0("SELECT * FROM parc_", num_departement, "_", temps_apres, ";"))
+
+contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
+translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour_transfo_translation_sql <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
+redecoupage_sql <- st_read(conn, query = "SELECT * FROM redecoupage;")
+contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
+parc_com_abs_sql <- st_read(conn, query = "SELECT * FROM parc_com_abs;")
+subdiv_sql <- st_read(conn, query = "SELECT * FROM subdiv;")
+fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
+vrai_ajout_sql <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
+vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
+
+ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
+supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
+modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+
 map <- mapview(bordure, 
-               layer.name = "Bordures étendues", col.regions = "lightgrey", 
-               alpha.regions = 0.5, homebutton = F,
+               layer.name = "Bordures étendues", col.regions = "#E8E8E8", 
+               alpha.regions = 0.7, homebutton = F,
                map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
 
 if (nrow(translation_sql) > 0) {
@@ -971,14 +1032,14 @@ if (nrow(fusion_sql) > 0) {
   map <- map + mapview(fusion_sql, 
                        layer.name = paste0("Parcelles fusionnéees (état 20",temps_apres,")"),
                        col.regions = "darkmagenta", alpha.regions = 0.5, homebutton = F) +
-    mapview(supp_tot %>%
+    mapview(ins_parc_avant %>%
               filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))),  
             layer.name = paste0("Parcelles fusionnéees (état 20",temps_avant,")"), 
             col.regions = "darkmagenta",
             alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(subdiv_sql) > 0) {
-  map <- map + mapview(ajout_tot %>%
+  map <- map + mapview(ins_parc_apres %>%
                          filter(idu %in% unlist(str_split(subdiv_sql$participants, ",\\s*"))),  
                        layer.name = paste0("Parcelles subdivisées (état 20",temps_apres,")"), 
                        col.regions = "purple",
@@ -987,13 +1048,13 @@ if (nrow(subdiv_sql) > 0) {
             layer.name = paste0("Parcelles subdivisées (état 20",temps_avant,")"), 
             col.regions = "purple", alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(multi_subdiv_sql) > 0) {
-  map <- map + mapview(ajout_tot %>%
-                         filter(idu %in% unlist(str_split(multi_subdiv_sql$participants_apres, ",\\s*"))),
+if (nrow(redecoupage_sql) > 0) {
+  map <- map + mapview(ins_parc_apres %>%
+                         filter(idu %in% unlist(str_split(redecoupage_sql$participants_apres, ",\\s*"))),
                        layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
                        col.regions = "magenta",
                        alpha.regions = 0.5, homebutton = F) +
-    mapview(multi_subdiv_sql,  
+    mapview(redecoupage_sql,  
             layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
             col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
   
@@ -1009,7 +1070,7 @@ if (nrow(contour_sql) > 0) {
             alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(contour_transfo_sql) > 0) {
-  map <- map + mapview(ajout_tot %>%
+  map <- map + mapview(ins_parc_apres %>%
                          filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))),  
                        layer.name = paste0("Parcelles transfo + contours (état 20",temps_apres,")"),
                        col.regions = "pink",
@@ -1028,7 +1089,7 @@ if (nrow(contour_translation_sql) > 0) {
             alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(contour_transfo_translation_sql) > 0) {
-  map <- map + mapview(ajout_tot %>%
+  map <- map + mapview(ins_parc_apres %>%
                          filter(idu %in% unlist(str_split(contour_transfo_translation_sql$participants_apres_translate, ",\\s*"))),
                        layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
                        col.regions = "lightblue", alpha.regions = 0.5, homebutton = F) +
@@ -1042,7 +1103,7 @@ if (nrow(parc_com_abs_sql) > 0) {
                        layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
                        col.regions = "lightgreen",
                        alpha.regions = 0.5, homebutton = F) +
-    mapview(supp_tot %>%
+    mapview(ins_parc_avant %>%
               filter(idu %in% parc_com_abs_sql$idu_avant),  
             layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
             col.regions = "lightgreen", alpha.regions = 0.5, homebutton = F)
@@ -1083,15 +1144,3 @@ if (nrow(modif_avant_sql) > 0) {
 }
 mapshot(map, url = paste0("parcelles_",num_departement,"_",temps_apres,"-",temps_avant,".html"))
 ```
-
-```{r nettoyage table inutile}
-dbExecute(conn, "
-  DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout, supp, ajout_tot, supp_tot,
-  modif_avant, modif_apres, modif, modif_avant_iou, modif_avant_iou_multi, 
-  ajout_simp, supp_simp, supp_iou, ajout_iou, ajout_iou_translate, 
-  supp_iou_multi, supp_iou_multi_translate_rapide, max_iou, 
-  multi_translate_rapide, supp_iou_multi_translate CASCADE
-;")
-dbListTables(conn)
-```
-

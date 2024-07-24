@@ -16,23 +16,23 @@ source("database/connexion_db.R", encoding = "utf-8")
 source("database/fonction_create_db.R")
 conn <- connecter()
 
-DBI::dbListObjects(conn)
-
 # 2- Ajout de la base de données ####
 
-resultats <- list()
-
 # 1:19, 2a, 2b, 21:95, 971:978 
-num_departements <- c('21')
+num_departements <- c('2a', '2b')
 num_annee <- 23
 indic_parc <- T
-# A RAJOUTER INDEX_NOM COM
+
 # 8 min 1 département parcelle
 for (i in 1:length(num_departements)){
   
   commune <- process_departement(gestion_num_departement(toupper(num_departements[i])), 
                                  paste0("20", num_annee), 
                                  indic_parc)
+  
+  if(indic_parc) {
+    commune <- traitement(commune)
+  }
   
   constru_table(commune, num_departements[i], num_annee, indic_parc)
 }
