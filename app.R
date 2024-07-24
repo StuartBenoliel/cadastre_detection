@@ -6,37 +6,57 @@ library(stringr)
 library(leafsync)
 library(leaflet.extras2)
 library(DBI)
-
 source(file = "database/connexion_db.R")
+rm(list=ls())
 conn <- connecter()
 num_departement <- 85
 temps_apres <- 24
 temps_avant <- 23
 
-dbExecute(conn, paste0(
-  "SET search_path TO traitement_cadastre_", temps_apres, "_", temps_avant,
-  ", cadastre_", num_departement, ", public"))
+# Fonction pour mettre à jour le search path
+update_search_path <- function(conn, departement) {
+  dbExecute(conn, paste0(
+    "SET search_path TO traitement_", temps_apres, "_", temps_avant, "_cadastre_" , departement, 
+    ", cadastre_", departement, ", public"
+  ))
+}
 
-commune <- st_read(conn, query = paste0("SELECT * FROM com_", num_departement, ";"))
+# Fonction pour lire les communes
+load_communes <- function(conn, departement) {
+  dbGetQuery(conn, paste0("SELECT nom_com FROM com_", departement, ";"))
+}
+
+# Charger les communes initiales
+update_search_path(conn, num_departement)
+commune <- load_communes(conn, num_departement)
 
 # Define UI
 ui <- fluidPage(
-  titlePanel(
-    paste0("Détection des évolutions des parcelles cadastrales du département ",
-    num_departement, " entre 20", temps_apres, " et 20", temps_avant)),
+  titlePanel("Détection des évolutions des parcelles cadastrales par commune du département"
+  ),
   
   # Navigation panel
   tabsetPanel(
     id = "tabsetPanel",  # Give an ID to the tabsetPanel
     type = "tabs",
     tabPanel("Comparaison par commune",
+             br(),
              fluidRow(
-               column(12,
+               column(3,
+                      selectInput("depart_select", "Choisir un département:",
+                                  choices = c(13, 85),
+                                  selected = num_departement)
+               ),
+               column(3,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
                                   choices = sort(unique(commune$nom_com)),
-                                  selected = sort(unique(commune$nom_com))[1]),
-                      hr(),
-               )
+                                  selected = sort(unique(commune$nom_com))[1])
+               ),
+               column(3,
+                      selectInput("temps_select", "Choisir une période de temps:",
+                                  choices = c("24-23"),
+                                  selected = c("24-23"))
+               ),
              ),
              uiOutput("dynamicMaps")  # Use UI output to render maps
     ),
@@ -59,12 +79,21 @@ ui <- fluidPage(
 # Define server logic
 server <- function(input, output, session) {
   
-  # Render maps dynamically
+  # Mise à jour lors de la sélection d'un département
+  observeEvent(input$depart_select, {
+    num_departement <<- input$depart_select
+    update_search_path(conn, num_departement)
+    commune <<- load_communes(conn, num_departement)
+
+    updateSelectInput(session, "nom_com_select",
+                      choices = sort(unique(commune$nom_com)),
+                      selected = sort(unique(commune$nom_com))[1])
+  })
+  
+  # Rendu dynamique des cartes
   output$dynamicMaps <- renderUI({
     req(input$tabsetPanel == "Comparaison par commune")
     
-    commune <- st_read(conn, query = paste0(
-      "SELECT * FROM com_", num_departement, " WHERE nom_com = '", input$nom_com_select, "';"))
     bordure <- st_read(conn, query = paste0(
       "SELECT * FROM bordure WHERE nom_com = '", input$nom_com_select, "';"))
     ins_parc_avant <- st_read(conn, query = paste0(

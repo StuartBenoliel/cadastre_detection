@@ -1,10 +1,10 @@
 # Créer le schéma temporaire cadastre_temp
 dbExecute(conn, paste0(
-  "CREATE SCHEMA IF NOT EXISTS traitement_cadastre_", temps_apres, "_", temps_avant))
+  "CREATE SCHEMA IF NOT EXISTS traitement_", temps_apres, "_", temps_avant, "_cadastre_" , num_departement, ";"))
 
 # Changer le search_path pour inclure le schéma temporaire
 dbExecute(conn, paste0(
-  "SET search_path TO traitement_cadastre_", temps_apres, "_", temps_avant,
+  "SET search_path TO traitement_", temps_apres, "_", temps_avant, "_cadastre_" , num_departement,
   ", cadastre_", num_departement, ", public"))
 
 dbExecute(conn, "

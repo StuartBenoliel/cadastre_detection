@@ -128,6 +128,12 @@ constru_table <- function(table_sf, num_departement, num_annee, indic_parc = T) 
       ' ON parc_', num_departement, '_', num_annee,
       ' USING GIST(geometry);'))
     
+    dbExecute(conn,paste0(
+      'CREATE INDEX ',
+      'idx_parc_', num_departement, '_', num_annee, '_nom_com',
+      ' ON parc_', num_departement, '_', num_annee,
+      ' (nom_com);'))
+    
     # Remplissage ####
     sf::st_write(
       obj = table_sf %>% rename_with(tolower),
@@ -162,6 +168,12 @@ constru_table <- function(table_sf, num_departement, num_annee, indic_parc = T) 
       'idx_com_', num_departement, '_geometry',
       ' ON com_', num_departement,
       ' USING GIST(geometry);'))
+    
+    dbExecute(conn,paste0(
+      'CREATE INDEX ',
+      'idx_com_', num_departement, '_nom_com',
+      ' ON com_', num_departement,
+      ' (nom_com);'))
     
     # Remplissage ####
     sf::st_write(
