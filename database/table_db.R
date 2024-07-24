@@ -341,6 +341,15 @@ dbExecute(conn, "
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_translate_geometry ON supp_iou_multi_translate USING GIST(geometry);")
 
 dbExecute(conn, "
+  CREATE TABLE multi_ajout (
+      idu text PRIMARY KEY,
+      iou_multi numeric,
+      participants_avant text,
+      participants_apres text
+  );
+")
+
+dbExecute(conn, "
   CREATE TABLE supp_iou_restant (
       idu text PRIMARY KEY,
       nom_com text,
@@ -424,9 +433,23 @@ dbExecute(conn, "
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_translation_nom_com ON contour_translation (nom_com);")
 
+# Avant
+dbExecute(conn, "
+  CREATE TABLE defusion_com (
+      idu text PRIMARY KEY,
+      nom_com text,
+      code_com text,
+      com_abs text,
+      contenance numeric,
+      idu_apres text,
+      geometry geometry(multipolygon, 2154)
+  );
+")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_defusion_com_nom_com ON defusion_com (nom_com);")
+
 # Apres
 dbExecute(conn, "
-  CREATE TABLE parc_com_abs (
+  CREATE TABLE fusion_com (
       idu text PRIMARY KEY,
       nom_com text,
       code_com text,
@@ -436,7 +459,7 @@ dbExecute(conn, "
       geometry geometry(multipolygon, 2154)
   );
 ")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_parc_com_abs_nom_com ON parc_com_abs (nom_com);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fusion_com_nom_com ON fusion_com (nom_com);")
 
 # Avant
 dbExecute(conn, "

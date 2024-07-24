@@ -253,7 +253,7 @@ dbExecute(conn, "
 
       -- Calculer l'IoU
       IF NOT ST_IsEmpty(enveloppe_convex_avant) AND NOT ST_IsEmpty(enveloppe_convex_apres) THEN
-          iou_convex := calcul_iou(enveloppe_convex_avant, enveloppe_convex_avant);
+          iou_convex := calcul_iou(enveloppe_convex_avant, enveloppe_convex_apres);
           RETURN iou_convex;
       ELSE
           RETURN NULL;

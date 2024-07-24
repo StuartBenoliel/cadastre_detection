@@ -19,7 +19,7 @@ conn <- connecter()
 # 2- Ajout de la base de données ####
 
 # 1:19, 2a, 2b, 21:95, 971:978 
-num_departements <- c('2a', '2b')
+num_departements <- c('60')
 num_annee <- 23
 indic_parc <- T
 

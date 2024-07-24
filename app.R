@@ -45,7 +45,7 @@ ui <- fluidPage(
   titlePanel(
     div(
       img(src = "Insee_logo.png", height = "60px", align = "right"),
-      h1("Détection des évolutions des parcelles cadastrales par commune")
+      h1("Détection des évolutions des parcelles cadastrales")
     )
   ),
   
@@ -168,8 +168,10 @@ server <- function(input, output, session) {
       "SELECT * FROM contour WHERE nom_com = '",input$nom_com_select, "';"))
     contour_translation_sql <- st_read(conn, query = paste0(
       "SELECT * FROM contour_translation WHERE nom_com = '",input$nom_com_select, "';"))
-    parc_com_abs_sql <- st_read(conn, query = paste0(
-      "SELECT * FROM parc_com_abs WHERE nom_com = '", input$nom_com_select, "';"))
+    defusion_com_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM defusion_com WHERE nom_com = '", input$nom_com_select, "';"))
+    fusion_com_sql <- st_read(conn, query = paste0(
+      "SELECT * FROM fusion_com WHERE nom_com = '", input$nom_com_select, "';"))
     subdiv_sql <- st_read(conn, query = paste0(
       "SELECT * FROM subdiv WHERE nom_com = '", input$nom_com_select, "';"))
     fusion_sql <- st_read(conn, query = paste0(
@@ -190,6 +192,79 @@ server <- function(input, output, session) {
                      alpha.regions = 0.7, homebutton = F, 
                      map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
     
+    if (nrow(defusion_com_sql) > 0) {
+      
+      defusion_com_apres_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM parc_", num_departement, "_", temps_apres, 
+        " WHERE idu IN 
+            (SELECT idu_apres FROM defusion_com WHERE nom_com = '", input$nom_com_select, "');"))
+      
+      map_1 <- map_1 + mapview(defusion_com_apres_sql,  
+                               layer.name = paste0("Parcelles défusion de communes (état 20",temps_apres,")"), 
+                               col.regions = "white",
+                               alpha.regions = 0.5, homebutton = F) +
+        mapview(defusion_com_sql,  
+                layer.name = paste0("Parcelles défusion de communes (état 20",temps_avant,")"), 
+                col.regions = "white", alpha.regions = 0.5, homebutton = F)
+      
+      ins_parc_apres <- ins_parc_apres %>% 
+        bind_rows(defusion_com_apres_sql)
+    }
+    if (nrow(fusion_com_sql) > 0) {
+      
+      fusion_com_avant_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM parc_", num_departement, "_", temps_avant, 
+        " WHERE idu IN 
+            (SELECT idu_avant FROM fusion_com WHERE nom_com = '", input$nom_com_select, "');"))
+      
+      map_1 <- map_1 + mapview(fusion_com_sql,  
+                               layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
+                               col.regions = "white",
+                               alpha.regions = 0.5, homebutton = F) +
+        mapview(fusion_com_avant_sql,  
+                layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
+                col.regions = "white", alpha.regions = 0.5, homebutton = F)
+      
+      nom_com_fusion <- dbGetQuery(conn, paste0("
+        SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_avant, " 
+        WHERE idu IN 
+            (SELECT idu_avant FROM fusion_com 
+              WHERE nom_com = '", input$nom_com_select, "');"))
+      
+      nom_com_fusion <- paste0("'", paste(nom_com_fusion$nom_com, collapse = "', '"), "'")
+      
+      ins_parc_avant <- st_read(conn, query = paste0(
+        "SELECT * FROM parc_", num_departement, "_", temps_avant, 
+        " WHERE nom_com = '", input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      modif_avant_sql <- st_read(conn, query =  paste0(
+        "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '",input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      ajout_sql <- st_read(conn, query =  paste0(
+        "SELECT * FROM ajout_iou_restant WHERE nom_com = '",input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      contour_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM contour WHERE nom_com = '",input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      contour_translation_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM contour_translation WHERE nom_com = '",input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      subdiv_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM subdiv WHERE nom_com = '", input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      redecoupage_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM redecoupage WHERE nom_com = '", input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      contour_transfo_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM contour_transfo WHERE nom_com = '", input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      contour_transfo_translation_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM contour_transfo_translation WHERE nom_com = '", input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+      vrai_ajout_sql <- st_read(conn, query = paste0(
+        "SELECT * FROM vrai_ajout WHERE nom_com = '", input$nom_com_select, "'
+           OR nom_com IN (",nom_com_fusion,");"))
+    }
     if (nrow(translation_sql) > 0) {
       
       map_1 <- map_1 + mapview(translation_sql,
@@ -278,17 +353,6 @@ server <- function(input, output, session) {
                 layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
                 col.regions = "lightblue",
                 alpha.regions = 0.5, homebutton = F)
-    }
-    if (nrow(parc_com_abs_sql) > 0) {
-      
-      map_1 <- map_1 + mapview(parc_com_abs_sql,  
-                               layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
-                               col.regions = "lightgreen",
-                               alpha.regions = 0.5, homebutton = F) +
-        mapview(ins_parc_avant %>%
-                  filter(idu %in% parc_com_abs_sql$idu_avant),  
-                layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
-                col.regions = "lightgreen", alpha.regions = 0.5, homebutton = F)
     }
     if (nrow(vrai_ajout_sql) > 0) {
       
