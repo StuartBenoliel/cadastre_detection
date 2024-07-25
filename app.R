@@ -6,6 +6,7 @@ library(stringr)
 library(leafsync)
 library(leaflet.extras2)
 library(DBI)
+library(DT)
 rm(list=ls())
 source(file = "database/connexion_db.R")
 conn <- connecter()
@@ -53,7 +54,7 @@ ui <- fluidPage(
   tabsetPanel(
     id = "tabsetPanel",  # Give an ID to the tabsetPanel
     type = "tabs",
-    tabPanel("Comparaison par commune",
+    tabPanel("Carte des comparaison par commune",
              br(),
              fluidRow(
                column(3,
@@ -62,9 +63,25 @@ ui <- fluidPage(
                                   selected = departements[length(departements)])
                ),
                column(3,
+                      selectInput("temps_select", "Choisir une période de temps:",
+                                  choices = NULL,
+                                  selected = NULL)
+               ),
+               column(3,
                       selectInput("nom_com_select", "Choisir un nom de commune:",
                                   choices = NULL,
                                   selected = NULL)
+               ),
+             ),
+             uiOutput("dynamicMaps")  # Use UI output to render maps
+    ),
+    tabPanel("Liste des changments par département",
+             br(),
+             fluidRow(
+               column(3,
+                      selectInput("depart_select", "Choisir un département:",
+                                  choices = departements,
+                                  selected = departements[length(departements)])
                ),
                column(3,
                       selectInput("temps_select", "Choisir une période de temps:",
@@ -72,7 +89,7 @@ ui <- fluidPage(
                                   selected = NULL)
                ),
              ),
-             uiOutput("dynamicMaps")  # Use UI output to render maps
+             DTOutput("table")
     ),
   ),
   
@@ -96,7 +113,7 @@ server <- function(input, output, session) {
   # Mise à jour lors de la sélection d'un département
   observeEvent(input$depart_select, {
     num_departement <<- input$depart_select
-    print("input_dep")
+    print(paste0("Changement au niveau du département: ", num_departement))
     commune <- load_communes(conn, num_departement)
     
     updateSelectInput(session, "nom_com_select",
@@ -128,7 +145,7 @@ server <- function(input, output, session) {
   temps_reactive <- reactive({
     req(input$temps_select)  # Assure que input$temps_select n'est pas NULL
     req(input$depart_select)
-    print("input_temps")
+    print(paste0("Changement au niveau de la période de temps: ", input$temps_select))
     temps_split <- strsplit(input$temps_select, "-")[[1]]
     temps_apres <<- temps_split[1]
     temps_avant <<- temps_split[2]
@@ -137,14 +154,14 @@ server <- function(input, output, session) {
   
   # Rendu dynamique des cartes
   output$dynamicMaps <- renderUI({
-    req(input$tabsetPanel == "Comparaison par commune")
+    req(input$tabsetPanel == "Carte des comparaison par commune")
     req(input$nom_com_select)
     req(input$temps_select)
     # Assurer que temps_reactive est terminé avant de continuer
     isolate({
       temps_reactive()  # Ce qui déclenche l'exécution de temps_reactive
     })
-    print("cartes")
+    print(paste0("Affichage des cartes pour la commune: ", input$nom_com_select))
     nom_com_select <- gsub("'", "''", input$nom_com_select)
     
     bordure <- st_read(conn, query = paste0(
@@ -315,7 +332,7 @@ server <- function(input, output, session) {
            OR nom_com IN (",nom_com_fusion,");"))
       supp <- st_read(conn, query =  paste0(
         "SELECT * FROM supp_iou_restant WHERE nom_com = '",nom_com_select, "'
-           OR nom_com IN (",nom_com_defusion,");"))
+           OR nom_com IN (",nom_com_fusion,");"))
       contour <- st_read(conn, query = paste0(
         "SELECT * FROM contour WHERE nom_com = '",nom_com_select, "'
            OR nom_com IN (",nom_com_fusion,");"))
@@ -376,11 +393,11 @@ server <- function(input, output, session) {
       
       map_1 <- map_1 + mapview(ins_parc_apres %>%
                                  filter(idu %in% unlist(str_split(redecoupage$participants_apres, ",\\s*"))),
-                               layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
+                               layer.name = paste0("Parcelles redécoupage (état 20",temps_apres,")"),
                                col.regions = "magenta",
                                alpha.regions = 0.5, homebutton = F) +
         mapview(redecoupage,  
-                layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
+                layer.name = paste0("Parcelles redécoupage (état 20",temps_avant,")"), 
                 col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
     }
     if (nrow(contour) > 0) {
@@ -491,7 +508,107 @@ server <- function(input, output, session) {
     sync(map_1, map_compa@map, ncol = 1)
     
   })
+  
+  output$table <- renderDT({
+    req(input$tabsetPanel == "Liste des changments par département")
+    isolate({
+      temps_reactive()  # Ce qui déclenche l'exécution de temps_reactive
+    })
+    print(paste0("Affichage de la liste des changements au niveau du département: ", input$depart_select))
+    
+    final_df <- dbGetQuery(conn, paste0("
+      WITH parc_avant AS (
+        SELECT nom_com, code_com, COUNT(*) AS nb_parcelles_temps_avant
+        FROM parc_", num_departement, "_", temps_avant, "
+        GROUP BY code_com, nom_com
+      ),
+      parc_apres AS (
+        SELECT nom_com, code_com, COUNT(*) AS nb_parcelles_temps_apres
+        FROM parc_", num_departement, "_", temps_apres, "
+        GROUP BY code_com, nom_com
+      ),
+      modif_restant_avant AS(
+        SELECT code_com, COUNT(*) AS nb_modif_restant_avant
+        FROM modif_avant_iou_convex 
+        GROUP BY code_com
+      ),
+      supp_restant AS(
+        SELECT code_com, COUNT(*) AS nb_supp_restant
+        FROM supp_iou_restant
+        GROUP BY code_com
+      ),
+      modif_restant_apres AS(
+        SELECT code_com, COUNT(*) AS nb_modif_restant_apres
+        FROM modif_apres_iou 
+        GROUP BY code_com
+      ),
+      ajout_restant AS(
+        SELECT code_com, COUNT(*) AS nb_ajout_restant
+        FROM ajout_iou_restant
+        GROUP BY code_com
+      ),
+      vrai_ajout AS(
+        SELECT code_com, COUNT(*) AS nb_ajout
+        FROM vrai_ajout
+        GROUP BY code_com
+      ),
+      vrai_supp AS(
+        SELECT code_com, COUNT(*) AS nb_supp
+        FROM vrai_supp
+        GROUP BY code_com
+      ),
+      translation AS(
+        SELECT code_com, COUNT(*) AS nb_translation
+        FROM translation
+        GROUP BY code_com
+      ),
+      contour_translation AS(
+        SELECT code_com, COUNT(*) AS nb_contour_translation
+        FROM contour_translation
+        GROUP BY code_com
+      ),
+      subdiv AS(
+        SELECT code_com, COUNT(*) AS nb_subdiv
+        FROM subdiv
+        GROUP BY code_com
+      ),
+      fusion AS(
+        SELECT code_com, COUNT(*) AS nb_fusion
+        FROM fusion
+        GROUP BY code_com
+      )
+      SELECT 
+        COALESCE(parc_avant.nom_com, parc_apres.nom_com) AS nom_com,
+        COALESCE(parc_avant.code_com, parc_apres.code_com) AS code_com,
+        COALESCE(nb_parcelles_temps_avant, 0) AS parcelles_temps_avant,
+        COALESCE(nb_parcelles_temps_apres, 0) AS parcelles_temps_apres,
+        COALESCE(nb_modif_restant_avant, 0) + COALESCE(nb_supp_restant, 0) AS parcelles_restantes_avant,
+        COALESCE(nb_modif_restant_apres, 0) + COALESCE(nb_ajout_restant, 0) AS parcelles_restantes_apres,
+        COALESCE(nb_ajout, 0) AS vrai_ajout,
+        COALESCE(nb_supp, 0) AS vrai_supp,
+        COALESCE(nb_translation, 0) AS translation,
+        COALESCE(nb_contour_translation, 0) AS contour_translation,
+        COALESCE(nb_subdiv, 0) AS subdiv,
+        COALESCE(nb_fusion, 0) AS fusion
+      FROM parc_avant
+      FULL OUTER JOIN parc_apres ON parc_avant.code_com = parc_apres.code_com
+      FULL OUTER JOIN modif_restant_avant ON parc_avant.code_com = modif_restant_avant.code_com
+      FULL OUTER JOIN supp_restant ON parc_avant.code_com = supp_restant.code_com
+      FULL OUTER JOIN modif_restant_apres ON parc_avant.code_com = modif_restant_apres.code_com
+      FULL OUTER JOIN ajout_restant ON parc_avant.code_com = ajout_restant.code_com
+      FULL OUTER JOIN vrai_ajout ON parc_avant.code_com = vrai_ajout.code_com
+      FULL OUTER JOIN vrai_supp ON parc_avant.code_com = vrai_supp.code_com
+      FULL OUTER JOIN translation ON parc_avant.code_com = translation.code_com
+      FULL OUTER JOIN contour_translation ON parc_avant.code_com = contour_translation.code_com
+      FULL OUTER JOIN subdiv ON parc_avant.code_com = subdiv.code_com
+      FULL OUTER JOIN fusion ON parc_avant.code_com = fusion.code_com;"))
+    
+    final_df <- final_df %>%
+      mutate(across(where(bit64::is.integer64), as.integer))
+    
+    datatable(final_df, options = list(pageLength = 15, autoWidth = TRUE, ordering = TRUE))
+  })
 }
 
-# Run the application
+# contour defusion fusion redecoupage contour_transfo contour_transfo_translation
 shinyApp(ui, server)

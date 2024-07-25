@@ -25,7 +25,7 @@ conn <- connecter()
 source(file = "database/fonction_sql.R")
 
 indic_bordure <- F
-num_departement <- '60'
+num_departement <- '85'
 temps_apres <- 24
 temps_avant <- 23
 ```
@@ -60,8 +60,9 @@ dbGetQuery(conn, paste0("
   FROM 
       pg_indexes 
   WHERE 
-      schemaname = '", paste0("cadastre_", num_departement), "'
-      OR schemaname = 'public';
+      tablename LIKE 'parc_%'
+  ORDER BY 
+      schemaname, tablename;
            "))
 ```
 
@@ -595,7 +596,7 @@ dbExecute(conn, paste0("
   FROM
       avant
   JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
-  WHERE avant.nom_com IN (SELECT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
+  WHERE avant.nom_com IN (SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
@@ -643,7 +644,7 @@ dbExecute(conn, paste0("
   FROM
       avant
   JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
-  WHERE avant.nom_com NOT IN (SELECT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
+  WHERE avant.nom_com NOT IN (SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
 
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
@@ -1227,11 +1228,11 @@ if (nrow(subdiv) > 0) {
 if (nrow(redecoupage) > 0) {
   map <- map + mapview(ins_parc_apres %>%
                          filter(idu %in% unlist(str_split(redecoupage$participants_apres, ",\\s*"))),
-                       layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
+                       layer.name = paste0("Parcelles redécoupage (état 20",temps_apres,")"),
                        col.regions = "magenta",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(redecoupage,  
-            layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
+            layer.name = paste0("Parcelles redécoupage (état 20",temps_avant,")"), 
             col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
   
 }
