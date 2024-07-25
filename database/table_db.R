@@ -433,7 +433,7 @@ dbExecute(conn, "
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_translation_nom_com ON contour_translation (nom_com);")
 
-# Avant
+# Apres
 dbExecute(conn, "
   CREATE TABLE defusion_com (
       idu text PRIMARY KEY,
@@ -441,7 +441,7 @@ dbExecute(conn, "
       code_com text,
       com_abs text,
       contenance numeric,
-      idu_apres text,
+      idu_avant text,
       geometry geometry(multipolygon, 2154)
   );
 ")

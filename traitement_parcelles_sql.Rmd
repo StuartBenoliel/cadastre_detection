@@ -25,7 +25,7 @@ conn <- connecter()
 source(file = "database/fonction_sql.R")
 
 indic_bordure <- F
-num_departement <- '85'
+num_departement <- '60'
 temps_apres <- 24
 temps_avant <- 23
 ```
@@ -344,11 +344,11 @@ dbExecute(conn, "
 ```
 
 ```{r modif iou_ajust -> translation, eval=FALSE}
-translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+translation <- st_read(conn, query = "SELECT * FROM translation;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
+contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
 
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou;")
 ```
 
 ## Cas plus compliqués de détection des mêmes cas
@@ -397,9 +397,9 @@ dbExecute(conn, "
 ```
 
 ```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis, eval=FALSE}
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
+contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
 ```
 
 ```{r enveloppe convexe}
@@ -434,10 +434,10 @@ dbExecute(conn, "
 ```
 
 ```{r convex, eval=FALSE}
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
 
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
-modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
+modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 ```
 
 ```{r présomption}
@@ -474,11 +474,11 @@ dbExecute(conn, "
 ```
 
 ```{r presomption sql, eval=FALSE}
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
+contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
 
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
-modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
+modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 ```
 
 
@@ -494,56 +494,56 @@ ins_parc_apres <- st_read(conn, query = paste0("SELECT * FROM ",
                                                       'ins_parc_apres;', 
                                                       paste0("parc_", num_departement, "_", temps_apres, ";"))))
 
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
-translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
+translation <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
 
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
-modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
+modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 
 map <- mapview(bordure, layer.name = "Bordures étendues", col.regions = "lightgrey", 
                alpha.regions = 0.5, homebutton = F,
                map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
 
-if (nrow(translation_sql) > 0) {
-  map <- map + mapview(translation_sql,
+if (nrow(translation) > 0) {
+  map <- map + mapview(translation,
                        layer.name = paste0("Parcelles translatées (état 20",temps_apres,")"), 
                        col.regions = "darkcyan",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
-              filter(idu %in% translation_sql$idu_translate),
+              filter(idu %in% translation$idu_translate),
             col.regions = "darkcyan",
             layer.name = paste0("Parcelles translatées (état 20",temps_avant,")"), 
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(contour_sql) > 0) {
+if (nrow(contour) > 0) {
   map <- map + mapview(ins_parc_apres %>%
-                         filter(idu %in% contour_sql$idu),  
+                         filter(idu %in% contour$idu),  
                        layer.name = paste0("Parcelles contours (état 20",temps_apres,")"), 
                        col.regions = "orange", alpha.regions = 0.5, homebutton = F)  +
-    mapview(contour_sql,  
+    mapview(contour,  
             layer.name = paste0("Parcelles contours (état 20",temps_avant,")"),
             col.regions = "orange",
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(contour_translation_sql) > 0) {
-  map <- map + mapview(contour_translation_sql,  
+if (nrow(contour_translation) > 0) {
+  map <- map + mapview(contour_translation,  
                        layer.name = paste0("Parcelles translatées + contours (état 20",temps_apres,")"), 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
-              filter(idu %in% contour_translation_sql$idu_translate),
+              filter(idu %in% contour_translation$idu_translate),
             layer.name = paste0("Parcelles translatées + contours (état 20",temps_avant,")"), 
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(modif_apres_sql) > 0) {
-  map <- map + mapview(modif_apres_sql, 
+if (nrow(modif_apres) > 0) {
+  map <- map + mapview(modif_apres, 
                        z = c("iou_ajust"), 
                        layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"), 
                        alpha.regions = 0.5, homebutton = F)
   
 }
-if (nrow(modif_avant_sql) > 0) {
-  map <- map + mapview(modif_avant_sql, 
+if (nrow(modif_avant) > 0) {
+  map <- map + mapview(modif_avant, 
                        z = c("iou_ajust"), 
                        layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"), 
                        alpha.regions = 0.5, homebutton = F)
@@ -561,25 +561,47 @@ dbExecute(conn, "TRUNCATE TABLE defusion_com;")
 
 dbExecute(conn, "
   INSERT INTO defusion_com
-  SELECT idu, nom_com, code_com, com_abs, contenance,
-         SUBSTR(idu, 1, 2) || com_abs || '000' || SUBSTR(idu, 9, 14) AS idu_apres,
-         geometry
-  FROM supp
-  WHERE com_abs != '000';
+  WITH avant AS (
+      SELECT
+          idu,
+          SUBSTR(idu, 1, 2) || com_abs || '000' || SUBSTR(idu, 9, 14) AS idu_apres
+      FROM
+          supp
+      WHERE com_abs != '000'
+  )
+  SELECT 
+      ajout.idu, ajout.nom_com, ajout.code_com, ajout.com_abs, ajout.contenance,
+         avant.idu, ajout.geometry
+  FROM
+      avant
+  JOIN ajout ON ajout.idu = avant.idu_apres;
 ")
 
-dbExecute(conn, "
-  DELETE FROM defusion_com
-  WHERE idu_apres NOT IN 
-      (SELECT idu FROM ajout
-        WHERE idu IN (SELECT idu_apres FROM defusion_com));
-")
+dbExecute(conn, paste0("
+  INSERT INTO defusion_com
+  WITH avant AS (
+      SELECT
+          idu,
+          nom_com,
+          SUBSTR(idu, 1, 2) AS prefix_idu,
+          SUBSTR(idu, 6, 14) AS suffix_idu
+      FROM
+          supp
+      WHERE com_abs != '000'
+  )
+  SELECT 
+      ajout.idu, ajout.nom_com, ajout.code_com, ajout.com_abs, ajout.contenance,
+         avant.idu, ajout.geometry
+  FROM
+      avant
+  JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
+  WHERE avant.nom_com IN (SELECT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
 
 ```{r parcelle changeant de communes, eval=FALSE}
-defusion_com_sql <- st_read(conn, query = "SELECT * FROM defusion_com;")
+defusion_com <- st_read(conn, query = "SELECT * FROM defusion_com;")
 ```
 
 ## Cas des parcelles dans le cas d'une fusion de communes
@@ -603,11 +625,32 @@ dbExecute(conn, "
         WHERE idu IN (SELECT idu_avant FROM fusion_com));
 ")
 
+dbExecute(conn, paste0("
+  INSERT INTO fusion_com
+  WITH avant AS (
+      SELECT
+          idu,
+          nom_com,
+          SUBSTR(idu, 1, 2) AS prefix_idu,
+          SUBSTR(idu, 6, 14) AS suffix_idu
+      FROM
+          supp
+      WHERE com_abs != '000'
+  )
+  SELECT 
+      ajout.idu, ajout.nom_com, ajout.code_com, ajout.com_abs, ajout.contenance,
+         avant.idu, ajout.geometry
+  FROM
+      avant
+  JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
+  WHERE avant.nom_com NOT IN (SELECT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
+
+
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
 
 ```{r parcelle changeant de communes, eval=FALSE}
-fusion_com_sql <- st_read(conn, query = "SELECT * FROM fusion_com;")
+fusion_com <- st_read(conn, query = "SELECT * FROM fusion_com;")
 ```
 
 # Focus parcelles avec changement "majeur" lié à un changement impactant l'identifiant des parcelles
@@ -712,8 +755,8 @@ dbExecute(conn, "
 ```
 
 ```{r fusion/subdivision, eval=FALSE}
-subdiv_sql <- st_read(conn, query = "SELECT * FROM subdiv;")
-fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
+subdiv <- st_read(conn, query = "SELECT * FROM subdiv;")
+fusion <- st_read(conn, query = "SELECT * FROM fusion;")
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation, modification de contour avec translation
@@ -761,8 +804,8 @@ dbExecute(conn, "
 ```
 
 ```{r contour translation ou translation seule, eval=FALSE}
-translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
+translation <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
 ```
 
 ## Reconnaissances des cas de multi-subdivision (ex : 2 -> 3) ou modification de contours
@@ -822,9 +865,9 @@ dbExecute(conn, "
 ```
 
 ```{r multisubdiv sql, eval=FALSE}
-redecoupage_sql <- st_read(conn, query = "SELECT * FROM redecoupage;")
-contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
+redecoupage <- st_read(conn, query = "SELECT * FROM redecoupage;")
+contour_transfo <- st_read(conn, query = "SELECT * FROM contour_transfo;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
 ```
 
 ## Reconnaissances des cas de modification de contours plus compliquée
@@ -898,7 +941,7 @@ dbExecute(conn, "
 ```
 
 ```{r contour_transfo_translation_rapide, eval=FALSE}
-contour_transfo_translation_sql <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
+contour_transfo_translation <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
@@ -938,7 +981,7 @@ dbExecute(conn, "
 ```
 
 ```{r contour_fusion_translation, eval=FALSE}
-contour_transfo_translation_sql <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
+contour_transfo_translation <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
 ```
 
 # Ajout d'un iou_multi pour ajout
@@ -1064,43 +1107,43 @@ dbExecute(conn, "
 
 
 ```{r le reste, eval=FALSE}
-ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
-supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
+supp <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
 
-vrai_ajout_sql <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
-vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
+vrai_ajout <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
+vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
 # 132078330A0082 cas d'une parcelle disparu en 2024 mais pas affiché comme vrai supp -> multipolygon empty
 # 13041000AM0018 parcelle participant a une multi subdiv mais qui a l'air iou parfait
 ```
 
 ```{r carte reste, eval=FALSE}
-ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
-supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
-modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
+supp <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
+modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 
 map <- mapview()
 
-if (nrow(ajout_sql) > 0) {
-  map <- map + mapview(ajout_sql,
+if (nrow(ajout) > 0) {
+  map <- map + mapview(ajout,
                        z = c("iou_ajust"), layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"), 
                        alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(supp_sql) > 0) {
-  map <- map + mapview(supp_sql, 
+if (nrow(supp) > 0) {
+  map <- map + mapview(supp, 
                        z = c("iou_multi"), layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"), 
                        alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(modif_apres_sql) > 0) {
-  map <- map + mapview(modif_apres_sql, 
+if (nrow(modif_apres) > 0) {
+  map <- map + mapview(modif_apres, 
                        z = c("iou_ajust"), 
                        layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"), 
                        alpha.regions = 0.5, homebutton = F)
   
 }
-if (nrow(modif_avant_sql) > 0) {
-  map <- map + mapview(modif_avant_sql, 
+if (nrow(modif_avant) > 0) {
+  map <- map + mapview(modif_avant, 
                        z = c("iou_ajust"), 
                        layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"), 
                        alpha.regions = 0.5, homebutton = F)
@@ -1127,160 +1170,160 @@ bordure <- st_read(conn, query = "SELECT * FROM bordure;")
 ins_parc_avant <- st_read(conn, query = paste0("SELECT * FROM parc_", num_departement, "_", temps_avant, ";"))
 ins_parc_apres <- st_read(conn, query = paste0("SELECT * FROM parc_", num_departement, "_", temps_apres, ";"))
 
-contour_sql <- st_read(conn, query = "SELECT * FROM contour;")
-translation_sql <- st_read(conn, query = "SELECT * FROM translation;")
-contour_translation_sql <- st_read(conn, query = "SELECT * FROM contour_translation;")
-contour_transfo_translation_sql <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
-redecoupage_sql <- st_read(conn, query = "SELECT * FROM redecoupage;")
-contour_transfo_sql <- st_read(conn, query = "SELECT * FROM contour_transfo;")
-defusion_com_sql <- st_read(conn, query = "SELECT * FROM defusion_com;")
-fusion_com_sql <- st_read(conn, query = "SELECT * FROM fusion_com;")
-subdiv_sql <- st_read(conn, query = "SELECT * FROM subdiv;")
-fusion_sql <- st_read(conn, query = "SELECT * FROM fusion;")
-vrai_ajout_sql <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
-vrai_supp_sql <- st_read(conn, query = "SELECT * FROM vrai_supp;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
+translation <- st_read(conn, query = "SELECT * FROM translation;")
+contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
+contour_transfo_translation <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
+redecoupage <- st_read(conn, query = "SELECT * FROM redecoupage;")
+contour_transfo <- st_read(conn, query = "SELECT * FROM contour_transfo;")
+defusion_com <- st_read(conn, query = "SELECT * FROM defusion_com;")
+fusion_com <- st_read(conn, query = "SELECT * FROM fusion_com;")
+subdiv <- st_read(conn, query = "SELECT * FROM subdiv;")
+fusion <- st_read(conn, query = "SELECT * FROM fusion;")
+vrai_ajout <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
+vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
-ajout_sql <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
-supp_sql <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
-modif_avant_sql <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
-modif_apres_sql <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
+supp <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_convex;")
+modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 
 map <- mapview(bordure, 
                layer.name = "Bordures étendues", col.regions = "#E8E8E8", 
                alpha.regions = 0.7, homebutton = F,
                map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
 
-if (nrow(translation_sql) > 0) {
-  map <- map + mapview(translation_sql,
+if (nrow(translation) > 0) {
+  map <- map + mapview(translation,
                        layer.name = paste0("Parcelles translatées (état 20",temps_apres,")"), 
                        col.regions = "darkcyan",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
-              filter(idu %in% translation_sql$idu_translate),
+              filter(idu %in% translation$idu_translate),
             col.regions = "darkcyan",
             layer.name = paste0("Parcelles translatées (état 20",temps_avant,")"), 
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(fusion_sql) > 0) {
-  map <- map + mapview(fusion_sql, 
+if (nrow(fusion) > 0) {
+  map <- map + mapview(fusion, 
                        layer.name = paste0("Parcelles fusionnéees (état 20",temps_apres,")"),
                        col.regions = "darkmagenta", alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
-              filter(idu %in% unlist(str_split(fusion_sql$participants, ",\\s*"))),  
+              filter(idu %in% unlist(str_split(fusion$participants, ",\\s*"))),  
             layer.name = paste0("Parcelles fusionnéees (état 20",temps_avant,")"), 
             col.regions = "darkmagenta",
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(subdiv_sql) > 0) {
+if (nrow(subdiv) > 0) {
   map <- map + mapview(ins_parc_apres %>%
-                         filter(idu %in% unlist(str_split(subdiv_sql$participants, ",\\s*"))),  
+                         filter(idu %in% unlist(str_split(subdiv$participants, ",\\s*"))),  
                        layer.name = paste0("Parcelles subdivisées (état 20",temps_apres,")"), 
                        col.regions = "purple",
                        alpha.regions = 0.5, homebutton = F) +
-    mapview(subdiv_sql,  
+    mapview(subdiv,  
             layer.name = paste0("Parcelles subdivisées (état 20",temps_avant,")"), 
             col.regions = "purple", alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(redecoupage_sql) > 0) {
+if (nrow(redecoupage) > 0) {
   map <- map + mapview(ins_parc_apres %>%
-                         filter(idu %in% unlist(str_split(redecoupage_sql$participants_apres, ",\\s*"))),
+                         filter(idu %in% unlist(str_split(redecoupage$participants_apres, ",\\s*"))),
                        layer.name = paste0("Parcelles multi-subdivision (état 20",temps_apres,")"),
                        col.regions = "magenta",
                        alpha.regions = 0.5, homebutton = F) +
-    mapview(redecoupage_sql,  
+    mapview(redecoupage,  
             layer.name = paste0("Parcelles multi-subdivision (état 20",temps_avant,")"), 
             col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
   
 }
-if (nrow(contour_sql) > 0) {
+if (nrow(contour) > 0) {
   map <- map + mapview(ins_parc_apres %>%
-                         filter(idu %in% unlist(str_split(contour_sql$participants_apres, ",\\s*"))),  
+                         filter(idu %in% unlist(str_split(contour$participants_apres, ",\\s*"))),  
                        layer.name = paste0("Parcelles contours (état 20",temps_apres,")"), 
                        col.regions = "orange", alpha.regions = 0.5, homebutton = F)  +
-    mapview(contour_sql,  
+    mapview(contour,  
             layer.name = paste0("Parcelles contours (état 20",temps_avant,")"),
             col.regions = "orange",
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(contour_transfo_sql) > 0) {
+if (nrow(contour_transfo) > 0) {
   map <- map + mapview(ins_parc_apres %>%
-                         filter(idu %in% unlist(str_split(contour_transfo_sql$participants_apres, ",\\s*"))),  
+                         filter(idu %in% unlist(str_split(contour_transfo$participants_apres, ",\\s*"))),  
                        layer.name = paste0("Parcelles transfo + contours (état 20",temps_apres,")"),
                        col.regions = "pink",
                        alpha.regions = 0.5, homebutton = F) +
-    mapview(contour_transfo_sql,
+    mapview(contour_transfo,
             layer.name = paste0("Parcelles transfo + contours (état 20",temps_avant,")"), 
             col.regions = "pink", alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(contour_translation_sql) > 0) {
-  map <- map + mapview(contour_translation_sql,  
+if (nrow(contour_translation) > 0) {
+  map <- map + mapview(contour_translation,  
                        layer.name = paste0("Parcelles translatées + contours (état 20",temps_apres,")"), 
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
-              filter(idu %in% contour_translation_sql$idu_translate),
+              filter(idu %in% contour_translation$idu_translate),
             layer.name = paste0("Parcelles translatées + contours (état 20",temps_avant,")"), 
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(contour_transfo_translation_sql) > 0) {
+if (nrow(contour_transfo_translation) > 0) {
   map <- map + mapview(ins_parc_apres %>%
-                         filter(idu %in% unlist(str_split(contour_transfo_translation_sql$participants_apres_translate, ",\\s*"))),
+                         filter(idu %in% unlist(str_split(contour_transfo_translation$participants_apres_translate, ",\\s*"))),
                        layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
                        col.regions = "lightblue", alpha.regions = 0.5, homebutton = F) +
-    mapview(contour_transfo_translation_sql,  
+    mapview(contour_transfo_translation,  
             layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
             col.regions = "lightblue",
             alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(defusion_com_sql) > 0) {
-  map <- map + mapview(ins_parc_apres %>%
-                       filter(idu %in% defusion_com_sql$idu_apres),  
-                       layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
+if (nrow(defusion_com) > 0) {
+  map <- map + mapview(defusion_com,  
+                       layer.name = paste0("Parcelles défusion de communes (état 20",temps_apres,")"), 
                        col.regions = "white",
                        alpha.regions = 0.5, homebutton = F) +
-    mapview(defusion_com_sql,  
-            layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
+    mapview(ins_parc_avant %>%
+                       filter(idu %in% defusion_com$idu_avant),  
+            layer.name = paste0("Parcelles défusion de communes (état 20",temps_avant,")"), 
             col.regions = "white", alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(fusion_com_sql) > 0) {
-  map <- map + mapview(fusion_com_sql,  
+if (nrow(fusion_com) > 0) {
+  map <- map + mapview(fusion_com,  
                        layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
                        col.regions = "white",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(ins_parc_avant %>%
-              filter(idu %in% fusion_com_sql$idu_avant),  
+              filter(idu %in% fusion_com$idu_avant),  
             layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
             col.regions = "white", alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(vrai_ajout_sql) > 0) {
-  map <- map + mapview(vrai_ajout_sql, 
+if (nrow(vrai_ajout) > 0) {
+  map <- map + mapview(vrai_ajout, 
                        layer.name = "Parcelles véritablement ajoutées", 
                        col.regions = "green", alpha.regions = 0.5, homebutton = F)
   
 }
-if (nrow(vrai_supp_sql) > 0) {
-  map <- map + mapview(vrai_supp_sql,
+if (nrow(vrai_supp) > 0) {
+  map <- map + mapview(vrai_supp,
                        layer.name = "Parcelles véritablement supprimées",
                        col.regions = "red", alpha.regions = 0.5, homebutton = F) 
 }
-if (nrow(ajout_sql) > 0) {
-  map <- map + mapview(ajout_sql,
+if (nrow(ajout) > 0) {
+  map <- map + mapview(ajout,
                        z = c("iou_ajust"), layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"), 
                        alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(supp_sql) > 0) {
-  map <- map + mapview(supp_sql, 
+if (nrow(supp) > 0) {
+  map <- map + mapview(supp, 
                        z = c("iou_multi"), layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"), 
                        alpha.regions = 0.5, homebutton = F)
 }
-if (nrow(modif_apres_sql) > 0) {
-  map <- map + mapview(modif_apres_sql, 
+if (nrow(modif_apres) > 0) {
+  map <- map + mapview(modif_apres, 
                        z = c("iou_ajust"), 
                        layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"), 
                        alpha.regions = 0.5, homebutton = F)
   
 }
-if (nrow(modif_avant_sql) > 0) {
-  map <- map + mapview(modif_avant_sql, 
+if (nrow(modif_avant) > 0) {
+  map <- map + mapview(modif_avant, 
                        z = c("iou_ajust"), 
                        layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"), 
                        alpha.regions = 0.5, homebutton = F)
