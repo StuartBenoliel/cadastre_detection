@@ -64,6 +64,9 @@ dbGetQuery(conn, paste0("
   ORDER BY 
       schemaname, tablename;
            "))
+test <- dbGetQuery(conn, "SELECT nom_com, COUNT(*) AS nb_redecoupage
+        FROM traitement_24_23_cadastre_60.contour_translation
+        GROUP BY nom_com")
 ```
 
 

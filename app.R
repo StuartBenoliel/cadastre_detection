@@ -528,87 +528,115 @@ server <- function(input, output, session) {
         GROUP BY code_com, nom_com
       ),
       modif_restant_avant AS(
-        SELECT code_com, COUNT(*) AS nb_modif_restant_avant
+        SELECT nom_com, COUNT(*) AS nb_modif_restant_avant
         FROM modif_avant_iou_convex 
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       supp_restant AS(
-        SELECT code_com, COUNT(*) AS nb_supp_restant
+        SELECT nom_com, COUNT(*) AS nb_supp_restant
         FROM supp_iou_restant
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       modif_restant_apres AS(
-        SELECT code_com, COUNT(*) AS nb_modif_restant_apres
+        SELECT nom_com, COUNT(*) AS nb_modif_restant_apres
         FROM modif_apres_iou 
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       ajout_restant AS(
-        SELECT code_com, COUNT(*) AS nb_ajout_restant
+        SELECT nom_com, COUNT(*) AS nb_ajout_restant
         FROM ajout_iou_restant
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       vrai_ajout AS(
-        SELECT code_com, COUNT(*) AS nb_ajout
+        SELECT nom_com, COUNT(*) AS nb_ajout
         FROM vrai_ajout
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       vrai_supp AS(
-        SELECT code_com, COUNT(*) AS nb_supp
+        SELECT nom_com, COUNT(*) AS nb_supp
         FROM vrai_supp
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       translation AS(
-        SELECT code_com, COUNT(*) AS nb_translation
+        SELECT nom_com, COUNT(*) AS nb_translation
         FROM translation
-        GROUP BY code_com
+        GROUP BY nom_com
+      ),
+      contour AS(
+        SELECT nom_com, COUNT(*) AS nb_contour
+        FROM contour
+        GROUP BY nom_com
       ),
       contour_translation AS(
-        SELECT code_com, COUNT(*) AS nb_contour_translation
+        SELECT nom_com, COUNT(*) AS nb_contour_translation
         FROM contour_translation
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       subdiv AS(
-        SELECT code_com, COUNT(*) AS nb_subdiv
+        SELECT nom_com, COUNT(*) AS nb_subdiv
         FROM subdiv
-        GROUP BY code_com
+        GROUP BY nom_com
       ),
       fusion AS(
-        SELECT code_com, COUNT(*) AS nb_fusion
+        SELECT nom_com, COUNT(*) AS nb_fusion
         FROM fusion
-        GROUP BY code_com
+        GROUP BY nom_com
+      ),
+      redecoupage AS(
+        SELECT nom_com, COUNT(DISTINCT participants_avant) AS nb_redecoupage
+        FROM redecoupage
+        GROUP BY nom_com
+      ),
+      contour_transfo AS(
+        SELECT nom_com, COUNT(DISTINCT participants_avant) AS nb_contour_transfo
+        FROM contour_transfo
+        GROUP BY nom_com
+      ),
+      contour_transfo_translation AS(
+        SELECT nom_com, COUNT(DISTINCT participants_avant_translate) AS nb_contour_transfo_translation
+        FROM contour_transfo_translation
+        GROUP BY nom_com
       )
       SELECT 
         COALESCE(parc_avant.nom_com, parc_apres.nom_com) AS nom_com,
         COALESCE(parc_avant.code_com, parc_apres.code_com) AS code_com,
-        COALESCE(nb_parcelles_temps_avant, 0) AS parcelles_temps_avant,
-        COALESCE(nb_parcelles_temps_apres, 0) AS parcelles_temps_apres,
-        COALESCE(nb_modif_restant_avant, 0) + COALESCE(nb_supp_restant, 0) AS parcelles_restantes_avant,
-        COALESCE(nb_modif_restant_apres, 0) + COALESCE(nb_ajout_restant, 0) AS parcelles_restantes_apres,
+        COALESCE(nb_parcelles_temps_apres, 0) AS parcelles_20",temps_apres,",
+        COALESCE(nb_parcelles_temps_avant, 0) AS parcelles_20",temps_avant,",
+        COALESCE(nb_modif_restant_apres, 0) + COALESCE(nb_ajout_restant, 0) AS parcelles_restantes_20",temps_apres,",
+        COALESCE(nb_modif_restant_avant, 0) + COALESCE(nb_supp_restant, 0) AS parcelles_restantes_20",temps_avant,",
         COALESCE(nb_ajout, 0) AS vrai_ajout,
         COALESCE(nb_supp, 0) AS vrai_supp,
         COALESCE(nb_translation, 0) AS translation,
+        COALESCE(nb_contour, 0) AS contour,
         COALESCE(nb_contour_translation, 0) AS contour_translation,
         COALESCE(nb_subdiv, 0) AS subdiv,
-        COALESCE(nb_fusion, 0) AS fusion
+        COALESCE(nb_fusion, 0) AS fusion,
+        COALESCE(nb_redecoupage, 0) AS redecoupage,
+        COALESCE(nb_contour_transfo, 0) AS contour_transfo,
+        COALESCE(nb_contour_transfo_translation, 0) AS contour_transfo_translation
       FROM parc_avant
-      FULL OUTER JOIN parc_apres ON parc_avant.code_com = parc_apres.code_com
-      FULL OUTER JOIN modif_restant_avant ON parc_avant.code_com = modif_restant_avant.code_com
-      FULL OUTER JOIN supp_restant ON parc_avant.code_com = supp_restant.code_com
-      FULL OUTER JOIN modif_restant_apres ON parc_avant.code_com = modif_restant_apres.code_com
-      FULL OUTER JOIN ajout_restant ON parc_avant.code_com = ajout_restant.code_com
-      FULL OUTER JOIN vrai_ajout ON parc_avant.code_com = vrai_ajout.code_com
-      FULL OUTER JOIN vrai_supp ON parc_avant.code_com = vrai_supp.code_com
-      FULL OUTER JOIN translation ON parc_avant.code_com = translation.code_com
-      FULL OUTER JOIN contour_translation ON parc_avant.code_com = contour_translation.code_com
-      FULL OUTER JOIN subdiv ON parc_avant.code_com = subdiv.code_com
-      FULL OUTER JOIN fusion ON parc_avant.code_com = fusion.code_com;"))
+      FULL OUTER JOIN parc_apres ON parc_avant.nom_com = parc_apres.nom_com
+      FULL OUTER JOIN modif_restant_avant ON parc_avant.nom_com = modif_restant_avant.nom_com OR parc_apres.nom_com= modif_restant_avant.nom_com
+      FULL OUTER JOIN supp_restant ON parc_avant.nom_com = supp_restant.nom_com
+      FULL OUTER JOIN modif_restant_apres ON parc_avant.nom_com = modif_restant_apres.nom_com
+      FULL OUTER JOIN ajout_restant ON parc_avant.nom_com = ajout_restant.nom_com
+      FULL OUTER JOIN vrai_ajout ON parc_avant.nom_com = vrai_ajout.nom_com
+      FULL OUTER JOIN vrai_supp ON parc_avant.nom_com = vrai_supp.nom_com
+      FULL OUTER JOIN translation ON parc_avant.nom_com = translation.nom_com
+      FULL OUTER JOIN contour ON parc_avant.nom_com = contour.nom_com
+      FULL OUTER JOIN contour_translation ON parc_avant.nom_com = contour_translation.nom_com
+      FULL OUTER JOIN subdiv ON parc_avant.nom_com = subdiv.nom_com
+      FULL OUTER JOIN fusion ON parc_avant.nom_com = fusion.nom_com
+      FULL OUTER JOIN redecoupage ON parc_avant.nom_com = redecoupage.nom_com
+      FULL OUTER JOIN contour_transfo ON parc_avant.nom_com = contour_transfo.nom_com
+      FULL OUTER JOIN contour_transfo_translation ON parc_avant.nom_com = contour_transfo_translation.nom_com;"))
     
     final_df <- final_df %>%
       mutate(across(where(bit64::is.integer64), as.integer))
     
-    datatable(final_df, options = list(pageLength = 15, autoWidth = TRUE, ordering = TRUE))
+    datatable(final_df, options = list(pageLength = 15, autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
   })
 }
 
-# contour defusion fusion redecoupage contour_transfo contour_transfo_translation
+# defusion fusion
 shinyApp(ui, server)

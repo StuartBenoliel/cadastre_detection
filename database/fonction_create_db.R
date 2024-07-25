@@ -7,7 +7,7 @@ gestion_num_departement <- function(num_depart) {
 }
 
 # Fonction pour télécharger et traiter chaque département
-process_departement <- function(num_depart, num_annee, indic_parc = T) {
+telechargement_departement <- function(num_depart, num_annee, indic_parc = T) {
   
   archive_months <- c(
     "2022" = "01",
@@ -74,7 +74,7 @@ process_departement <- function(num_depart, num_annee, indic_parc = T) {
 }
 
 # Fonction pour traiter les arrondissements et les cas de doublon de parcelles
-traitement <- function(table_sf) {
+traitement_doublon_et_arrondissement <- function(table_sf) {
   
   duplicates <- table_sf %>%
     group_by(IDU) %>%

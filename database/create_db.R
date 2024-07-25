@@ -26,12 +26,12 @@ indic_parc <- T
 # 8 min 1 département parcelle
 for (i in 1:length(num_departements)){
   
-  commune <- process_departement(gestion_num_departement(toupper(num_departements[i])), 
+  commune <- telechargement_departement(gestion_num_departement(toupper(num_departements[i])), 
                                  paste0("20", num_annee), 
                                  indic_parc)
   
   if(indic_parc) {
-    commune <- traitement(commune)
+    commune <- traitement_doublon_et_arrondissement(commune)
   }
   
   constru_table(commune, num_departements[i], num_annee, indic_parc)
