@@ -433,19 +433,24 @@ dbExecute(conn, "
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_translation_nom_com ON contour_translation (nom_com);")
 
-# Apres
 dbExecute(conn, "
-  CREATE TABLE defusion_com (
-      idu text PRIMARY KEY,
-      nom_com text,
+  CREATE TABLE cas_disparition_commune (
+      nom_com text PRIMARY KEY,
       code_com text,
-      com_abs text,
-      contenance numeric,
-      idu_avant text,
-      geometry geometry(multipolygon, 2154)
+      nom_com_avant text,
+      code_com_avant text
   );
 ")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_defusion_com_nom_com ON defusion_com (nom_com);")
+
+dbExecute(conn, "
+  CREATE TABLE chgt_commune (
+      nom_com text PRIMARY KEY,
+      code_com text,
+      changement text,
+      participants text,
+      participants_code_com text
+  );
+")
 
 # Apres
 dbExecute(conn, "
@@ -456,10 +461,28 @@ dbExecute(conn, "
       com_abs text,
       contenance numeric,
       idu_avant text,
+      nom_com_avant text,
+      code_com_avant text,
       geometry geometry(multipolygon, 2154)
   );
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fusion_com_nom_com ON fusion_com (nom_com);")
+
+# Apres
+dbExecute(conn, "
+  CREATE TABLE defusion_com (
+      idu text PRIMARY KEY,
+      nom_com text,
+      code_com text,
+      com_abs text,
+      contenance numeric,
+      idu_avant text,
+      nom_com_avant text,
+      code_com_avant text,
+      geometry geometry(multipolygon, 2154)
+  );
+")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_defusion_com_nom_com ON defusion_com (nom_com);")
 
 # Avant
 dbExecute(conn, "

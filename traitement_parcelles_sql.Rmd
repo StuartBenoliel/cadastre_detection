@@ -25,7 +25,7 @@ conn <- connecter()
 source(file = "database/fonction_sql.R")
 
 indic_bordure <- F
-num_departement <- '85'
+num_departement <- '60'
 temps_apres <- 24
 temps_avant <- 23
 ```
@@ -561,13 +561,13 @@ mapshot(map, url = paste0("parcelles_modifiés_",num_departement,"_",temps_apres
 ## Cas des parcelles dans le cas d'une défusion de communes
 
 ```{r ajout/supp -> focus défusion commune}
-dbExecute(conn, "TRUNCATE TABLE defusion_com;")
+dbExecute(conn, "TRUNCATE TABLE defusion_com, cas_disparition_commune, chgt_commune;")
 
 dbExecute(conn, "
   INSERT INTO defusion_com
   WITH avant AS (
       SELECT
-          idu,
+          idu, nom_com, code_com,
           SUBSTR(idu, 1, 2) || com_abs || '000' || SUBSTR(idu, 9, 14) AS idu_apres
       FROM
           supp
@@ -575,18 +575,48 @@ dbExecute(conn, "
   )
   SELECT 
       ajout.idu, ajout.nom_com, ajout.code_com, ajout.com_abs, ajout.contenance,
-         avant.idu, ajout.geometry
+         avant.idu, avant.nom_com, avant.code_com, ajout.geometry
   FROM
-      avant
-  JOIN ajout ON ajout.idu = avant.idu_apres;
+      ajout
+  JOIN avant ON ajout.idu = avant.idu_apres;
 ")
+
+dbExecute(conn, paste0("
+  INSERT INTO cas_disparition_commune
+  SELECT defusion_com.nom_com, defusion_com.code_com, 
+        defusion_com.nom_com_avant, defusion_com.code_com_avant  
+        FROM defusion_com
+  UNION DISTINCT
+  SELECT 
+      fusion_ajout.nom_com, fusion_ajout.code_com, 
+      fusion_ajout.nom_com_avant, fusion_ajout.code_com_avant
+  FROM (
+      WITH avant AS (
+          SELECT
+              idu, nom_com, code_com,
+              SUBSTR(idu, 1, 2) AS prefix_idu,
+              SUBSTR(idu, 6, 14) AS suffix_idu
+          FROM
+              supp
+          WHERE com_abs != '000'
+      )
+      SELECT 
+          ajout.nom_com, ajout.code_com, 
+          avant.nom_com AS nom_com_avant, avant.code_com AS code_com_avant
+      FROM
+          avant
+      JOIN 
+          ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
+      WHERE avant.nom_com NOT IN (SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_apres, ")
+  ) AS fusion_ajout
+  ;
+"))
 
 dbExecute(conn, paste0("
   INSERT INTO defusion_com
   WITH avant AS (
       SELECT
-          idu,
-          nom_com,
+          idu, nom_com, code_com,
           SUBSTR(idu, 1, 2) AS prefix_idu,
           SUBSTR(idu, 6, 14) AS suffix_idu
       FROM
@@ -595,11 +625,48 @@ dbExecute(conn, paste0("
   )
   SELECT 
       ajout.idu, ajout.nom_com, ajout.code_com, ajout.com_abs, ajout.contenance,
-         avant.idu, ajout.geometry
+         avant.idu, avant.nom_com, avant.code_com, ajout.geometry
   FROM
       avant
   JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
-  WHERE avant.nom_com IN (SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
+  WHERE avant.nom_com IN (SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_apres,") OR
+  avant.nom_com IN (SELECT nom_com_avant FROM cas_disparition_commune GROUP BY nom_com_avant HAVING COUNT(nom_com) > 1);"))
+
+dbExecute(conn, paste0(" 
+  INSERT INTO chgt_commune
+  WITH defusion_data AS (
+      SELECT
+          nom_com_avant, 
+          code_com_avant, 
+          STRING_AGG(DISTINCT nom_com, ', ') AS participants,
+          STRING_AGG(DISTINCT code_com, ', ') AS participants_code_com
+      FROM
+          defusion_com
+      GROUP BY 
+          nom_com_avant, code_com_avant
+  ),
+  com_apres AS (
+      SELECT DISTINCT
+          nom_com, code_com
+      FROM 
+          parc_", num_departement, "_", temps_apres,"
+  )
+  SELECT
+      df.nom_com_avant,
+      df.code_com_avant,
+      CASE 
+          WHEN c.nom_com IS NOT NULL THEN 
+              'Défusion partielle'
+          ELSE 
+              'Défusion totale'
+      END AS changement,
+      df.participants,
+      df.participants_code_com
+  FROM
+      defusion_data df
+  LEFT JOIN 
+      com_apres c ON c.nom_com = df.nom_com_avant
+;"))
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
@@ -615,26 +682,28 @@ dbExecute(conn, "TRUNCATE TABLE fusion_com;")
 
 dbExecute(conn, "
   INSERT INTO fusion_com
-  SELECT idu, nom_com, code_com, com_abs, contenance,
-         SUBSTR(idu, 1, 2) || com_abs || '000' || SUBSTR(idu, 9, 14) AS idu_avant,
-         geometry
-  FROM ajout
-  WHERE com_abs != '000';
-")
-
-dbExecute(conn, "
-  DELETE FROM fusion_com
-  WHERE idu_avant NOT IN 
-      (SELECT idu FROM supp
-        WHERE idu IN (SELECT idu_avant FROM fusion_com));
+  WITH apres AS (
+      SELECT
+          idu, nom_com, code_com, com_abs, contenance,
+          SUBSTR(idu, 1, 2) || com_abs || '000' || SUBSTR(idu, 9, 14) AS idu_avant,
+          geometry
+      FROM
+          ajout
+      WHERE com_abs != '000'
+  )
+  SELECT 
+      apres.idu, apres.nom_com, apres.code_com, apres.com_abs, apres.contenance,
+         supp.idu, supp.nom_com, supp.code_com, apres.geometry
+  FROM
+      apres
+  JOIN supp ON apres.idu_avant = supp.idu;
 ")
 
 dbExecute(conn, paste0("
   INSERT INTO fusion_com
   WITH avant AS (
       SELECT
-          idu,
-          nom_com,
+          idu, nom_com, code_com,
           SUBSTR(idu, 1, 2) AS prefix_idu,
           SUBSTR(idu, 6, 14) AS suffix_idu
       FROM
@@ -643,19 +712,65 @@ dbExecute(conn, paste0("
   )
   SELECT 
       ajout.idu, ajout.nom_com, ajout.code_com, ajout.com_abs, ajout.contenance,
-         avant.idu, ajout.geometry
+         avant.idu, avant.nom_com, avant.code_com, ajout.geometry
   FROM
       avant
   JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
-  WHERE avant.nom_com NOT IN (SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_apres,");"))
+  WHERE avant.nom_com NOT IN (SELECT DISTINCT nom_com FROM parc_", num_departement, "_", temps_apres,") AND
+  avant.nom_com IN (SELECT nom_com_avant FROM cas_disparition_commune GROUP BY nom_com_avant HAVING COUNT(nom_com) = 1);"))
 
+
+dbExecute(conn, paste0(" 
+  INSERT INTO chgt_commune
+  WITH fusion_data AS (
+      SELECT
+          nom_com, 
+          code_com, 
+          STRING_AGG(DISTINCT nom_com_avant, ', ') AS participants,
+          STRING_AGG(DISTINCT code_com_avant, ', ') AS participants_code_com
+      FROM
+          fusion_com
+      GROUP BY 
+          nom_com, code_com
+  ),
+  com_avant AS (
+      SELECT DISTINCT
+          nom_com, code_com
+      FROM 
+          parc_", num_departement, "_", temps_avant,"
+  )
+  SELECT
+      f.nom_com,
+      f.code_com,
+      'Fusion' AS changement,
+      CASE 
+          WHEN c.nom_com IS NOT NULL THEN 
+              STRING_AGG(DISTINCT c.nom_com || ', ' || f.participants, ', ')
+          ELSE 
+              f.participants 
+      END AS participants,
+      CASE 
+          WHEN c.nom_com IS NOT NULL THEN 
+              STRING_AGG(DISTINCT c.code_com || ', ' || f.participants_code_com , ', ')
+          ELSE 
+              f.participants_code_com 
+      END AS participants_code_com
+  FROM
+      fusion_data f
+  LEFT JOIN 
+      com_avant c ON f.nom_com = c.nom_com
+  GROUP BY
+      f.nom_com, c.nom_com, f.code_com, f.participants, f.participants_code_com
+;"))
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
 
 ```{r parcelle changeant de communes, eval=FALSE}
+chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_commune;")
 fusion_com <- st_read(conn, query = "SELECT * FROM fusion_com;")
 ```
+
 
 # Focus parcelles avec changement "majeur" lié à un changement impactant l'identifiant des parcelles
 
@@ -1161,7 +1276,7 @@ dbExecute(conn, "
   DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout, supp, ajout_tot, supp_tot,
   modif_avant, modif_apres, modif, modif_avant_iou, modif_avant_iou_multi, 
   ajout_simp, supp_simp, supp_iou, ajout_iou, ajout_iou_translate, 
-  supp_iou_multi, supp_iou_multi_translate_rapide, max_iou, 
+  supp_iou_multi, supp_iou_multi_translate_rapide, max_iou, cas_disparition_commune,
   multi_translate_rapide, supp_iou_multi_translate, multi_ajout CASCADE
 ;")
 dbListTables(conn)

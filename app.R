@@ -9,8 +9,8 @@ library(DBI)
 library(DT)
 rm(list=ls())
 source(file = "database/connexion_db.R")
-conn <- connecter()
 source(file = "fonction_shiny.R")
+conn <- connecter()
 
 result <- dbGetQuery(conn, paste0(" 
   SELECT 
@@ -27,7 +27,6 @@ departements <- result$schema_name %>%
   unique() %>%
   sort()
 
-
 # Define UI
 ui <- fluidPage(
   titlePanel(
@@ -41,42 +40,43 @@ ui <- fluidPage(
   tabsetPanel(
     id = "tabsetPanel",  # Give an ID to the tabsetPanel
     type = "tabs",
-    tabPanel("Carte des comparaison par commune",
+    tabPanel("Carte des comparaisons par commune",
              br(),
              fluidRow(
                column(3,
-                      selectInput("depart_select", "Choisir un département:",
+                      selectInput("depart_select_carte", "Choisir un département:",
                                   choices = departements,
                                   selected = departements[length(departements)])
                ),
                column(3,
-                      selectInput("temps_select", "Choisir une période de temps:",
+                      selectInput("temps_select_carte", "Choisir une période de temps:",
                                   choices = NULL,
                                   selected = NULL)
                ),
                column(3,
-                      selectInput("nom_com_select", "Choisir un nom de commune:",
+                      selectInput("nom_com_select_carte", "Choisir un nom de commune:",
                                   choices = NULL,
                                   selected = NULL)
                ),
              ),
              uiOutput("dynamicMaps")  # Use UI output to render maps
     ),
-    tabPanel("Liste des changments par département",
+    tabPanel("Tableau des changments par commune",
              br(),
              fluidRow(
                column(3,
-                      selectInput("depart_select_2", "Choisir un département:",
+                      selectInput("depart_select_tableau", "Choisir un département:",
                                   choices = departements,
                                   selected = departements[length(departements)])
                ),
                column(3,
-                      selectInput("temps_select_2", "Choisir une période de temps:",
+                      selectInput("temps_select_tableau", "Choisir une période de temps:",
                                   choices = NULL,
                                   selected = NULL)
                ),
              ),
-             DTOutput("table")
+             DTOutput("table"),
+             DTOutput("changement_commune")
     ),
   ),
   
@@ -98,116 +98,90 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   
   observeEvent(input$tabsetPanel, {
-    req(input$temps_select) # Evite que cela se lance au démarage
+    req(input$temps_select_carte) # Evite que cela se lance au démarage
     print("Changement d'onglet")
-    if (input$tabsetPanel == "Carte des comparaison par commune") {
-      update_search_path(conn, input$depart_select, temps_apres, temps_avant)
+    if (input$tabsetPanel == "Carte des comparaisons par commune") {
+      update_search_path(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
     }
   })
   
   # Lancement au démarage
-  observeEvent(input$depart_select, {
-    num_departement <<- input$depart_select
-    print(paste0("Changement au niveau du département main: ", input$depart_select))
-    commune <- load_communes(conn, input$depart_select)
+  observeEvent(input$depart_select_carte, {
+    num_departement <<- input$depart_select_carte
+    print(paste0("Changement au niveau du département carte: ", num_departement))
+    commune <- load_communes(conn, num_departement)
     
-    updateSelectInput(session, "nom_com_select",
+    updateSelectInput(session, "nom_com_select_carte",
                       choices = sort(unique(commune$nom_com)),
                       selected = sort(unique(commune$nom_com))[1])
     
-    result <- dbGetQuery(conn, paste0(" 
-      SELECT 
-          schema_name
-      FROM 
-          information_schema.schemata
-      WHERE 
-          schema_name LIKE 'traitement_%_%_cadastre_", input$depart_select,"';
-               "))
     
-    int_temps <- result$schema_name %>%
-      str_extract("traitement_(\\d{2})_(\\d{2})_cadastre") %>%
-      str_replace_all("traitement_(\\d{2})_(\\d{2})_cadastre", "\\1-\\2") %>%
-      as.character()
+    int_temps <- intervalle_temps(conn, num_departement)
     
-    int_temps <- int_temps[order(as.numeric(str_extract(int_temps, "^[0-9]+")) , decreasing = TRUE)]
-    
-    updateSelectInput(session, "temps_select",
+    updateSelectInput(session, "temps_select_carte",
                       choices = int_temps,
                       selected = int_temps[1])
     
   })
 
   temps_reactive <- reactive({
-    print(paste0("Changement au niveau de la période de temps main: ", input$temps_select))
-    temps_split <- strsplit(input$temps_select, "-")[[1]]
-    temps_apres <<- temps_split[1]
-    temps_avant <<- temps_split[2]
-    update_search_path(conn, input$depart_select, temps_apres, temps_avant)
+    print(paste0("Changement au niveau de la période de temps carte: ", input$temps_select_carte))
+    temps_vec_carte <<- strsplit(input$temps_select_carte, "-")[[1]]
+    update_search_path(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
   })
   
   # Rendu dynamique des cartes
   output$dynamicMaps <- renderUI({
-    req(input$tabsetPanel == "Carte des comparaison par commune")
-    req(input$temps_select)
+    req(input$tabsetPanel == "Carte des comparaisons par commune")
+    req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
     # Assurer que temps_reactive est terminé avant de continuer
     isolate({
       temps_reactive()
     })
-    print(paste0("Affichage des cartes pour la commune: ", input$nom_com_select))
-    nom_com_select <- gsub("'", "''", input$nom_com_select)
+    print(paste0("Affichage des cartes pour la commune: ", input$nom_com_select_carte))
+    nom_com <- gsub("'", "''", input$nom_com_select_carte)
     
-    cartes_dynamiques(conn, num_departement, temps_apres, temps_avant, nom_com_select)
+    cartes_dynamiques(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2], nom_com)
   })
   
   # Lancement au démarage
-  observeEvent(input$depart_select_2, {
-    print(paste0("Changement au niveau du département: ", input$depart_select_2))
-    
-    num_departement_2 <<- input$depart_select_2
-    
-    result <- dbGetQuery(conn, paste0(" 
-      SELECT 
-          schema_name
-      FROM 
-          information_schema.schemata
-      WHERE 
-          schema_name LIKE 'traitement_%_%_cadastre_", input$depart_select_2,"';
-               "))
-    
-    int_temps <- result$schema_name %>%
-      str_extract("traitement_(\\d{2})_(\\d{2})_cadastre") %>%
-      str_replace_all("traitement_(\\d{2})_(\\d{2})_cadastre", "\\1-\\2") %>%
-      as.character()
-    
-    int_temps <- int_temps[order(as.numeric(str_extract(int_temps, "^[0-9]+")) , decreasing = TRUE)]
+  observeEvent(input$depart_select_tableau, {
+    print(paste0("Changement au niveau du département tableau: ", input$depart_select_tableau))
+    int_temps <- intervalle_temps(conn, input$depart_select_tableau)
+    temps_vec_tableau <<- strsplit(int_temps[1], "-")[[1]]
 
-    updateSelectInput(session, "temps_select_2",
+    updateSelectInput(session, "temps_select_tableau",
                       choices = int_temps,
                       selected = int_temps[1])
-    
-    temps_split <- strsplit(int_temps[1], "-")[[1]]
-    temps_apres_2 <<- temps_split[1]
-    temps_avant_2 <<- temps_split[2]
   })
   
-  observeEvent(input$temps_select_2, {
-    req(input$tabsetPanel == "Liste des changments par département")
-    print(paste0("Changement au niveau de la période de temps: ", input$temps_select_2))
-    temps_split <- strsplit(input$temps_select_2, "-")[[1]]
-    temps_apres_2 <<- temps_split[1]
-    temps_avant_2 <<- temps_split[2]
+  observeEvent(input$temps_select_tableau, {
+    req(input$tabsetPanel == "Tableau des changments par commune")
+    print(paste0("Changement au niveau de la période de temps tableau: ", input$temps_select_tableau))
+    temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
   })
 
   output$table <- renderDT({
-    req(input$tabsetPanel == "Liste des changments par département")
-    req(input$temps_select_2)
-
+    req(input$tabsetPanel == "Tableau des changments par commune")
+    req(input$temps_select_tableau) # Permet de relancer lors d'un changement de temps
     # Exécuter la mise à jour du chemin de recherche uniquement après le changement de département et de période
     isolate({
-      update_search_path(conn, input$depart_select_2, temps_apres_2, temps_avant_2)
+      update_search_path(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
     })
-    print(paste0("Affichage de la liste des changements au niveau du département: ", num_departement_2))
-    tableau_recap(conn, input$depart_select_2, temps_apres_2, temps_avant_2)
+    print(paste0("Affichage du tableau des changements au niveau du département: ", input$depart_select_tableau))
+    tableau_recap(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+  })
+  output$changement_commune <- renderDT({
+    req(input$tabsetPanel == "Tableau des changments par commune")
+    req(input$temps_select_tableau) # Permet de relancer lors d'un changement de temps
+    # Exécuter la mise à jour du chemin de recherche uniquement après le changement de département et de période
+    isolate({
+      update_search_path(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+    })
+    
+    chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_commune;")
+    
+    datatable(chgt_com, options = list(pageLength = 15, autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
   })
 }
 

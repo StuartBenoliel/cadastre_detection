@@ -4,8 +4,8 @@ update_search_path <- function(conn, departement, temps_apres, temps_avant) {
     "SET search_path TO traitement_", temps_apres, "_", temps_avant, "_cadastre_" , departement, 
     ", cadastre_", departement, ", public"
   ))
-  print(paste("temps_apres:", temps_apres, ", temps_avant:", temps_avant, 
-              ", departement:", departement))
+  print(paste0("Période de temps: 20", temps_apres, " - 20", temps_avant, 
+              ", département: ", departement))
 }
 
 # Fonction pour lire les communes
@@ -13,11 +13,22 @@ load_communes <- function(conn, departement) {
   dbGetQuery(conn, paste0("SELECT nom_com FROM cadastre_", departement, ".com_", departement, ";"))
 }
 
-changement_temps <- function(temps){
-  print(paste0("Changement au niveau de la période de temps: ", temps))
-  temps_split <- strsplit(temps, "-")[[1]]
-  temps_apres_2 <<- temps_split[1]
-  temps_avant_2 <<- temps_split[2]
+intervalle_temps <- function(conn, departement){
+  result <- dbGetQuery(conn, paste0(" 
+      SELECT 
+          schema_name
+      FROM 
+          information_schema.schemata
+      WHERE 
+          schema_name LIKE 'traitement_%_%_cadastre_", departement,"';
+               "))
+  
+  int_temps <- result$schema_name %>%
+    str_extract("traitement_(\\d{2})_(\\d{2})_cadastre") %>%
+    str_replace_all("traitement_(\\d{2})_(\\d{2})_cadastre", "\\1-\\2") %>%
+    as.character()
+  
+  int_temps <- int_temps[order(as.numeric(str_extract(int_temps, "^[0-9]+")) , decreasing = TRUE)]
 }
 
 cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, nom_com_select) {
