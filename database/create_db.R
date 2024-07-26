@@ -13,7 +13,7 @@ options(timeout = 6000)
 
 # 1- Connexion à la base de données ####
 source("database/connexion_db.R", encoding = "utf-8")
-source("database/fonction_create_db.R")
+source("fonctions/fonction_create_db.R")
 conn <- connecter()
 
 # 2- Ajout de la base de données ####

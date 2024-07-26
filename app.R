@@ -1,4 +1,5 @@
 library(shiny)
+library(shinythemes)
 library(sf)
 library(mapview)
 library(leaflet)
@@ -9,7 +10,7 @@ library(DBI)
 library(DT)
 rm(list=ls())
 source(file = "database/connexion_db.R")
-source(file = "fonction_shiny.R")
+source(file = "fonctions/fonction_shiny.R")
 conn <- connecter()
 
 result <- dbGetQuery(conn, paste0(" 
@@ -35,6 +36,8 @@ ui <- fluidPage(
       h1("Détection des évolutions des parcelles cadastrales")
     )
   ),
+  br(),
+  theme = shinytheme('flatly'),
   
   # Navigation panel
   tabsetPanel(
@@ -74,15 +77,44 @@ ui <- fluidPage(
                                   choices = NULL,
                                   selected = NULL)
                ),
+               column(6,
+                      checkboxGroupInput("show_vars", "Variables à afficher:",
+                                         NULL, selected = NULL, inline = T)
+               ),
              ),
-             DTOutput("table"),
-             DTOutput("changement_commune")
+             wellPanel(class = "well-panel",
+                       DTOutput("table")),
+             br(),
+             h3("Fusion / défusion de communes:"),
+             wellPanel(class = "well-pane-small",
+                       uiOutput("changement_communes"))
     ),
   ),
   
   tags$style(HTML("
-    .leaflet {
-      height: 100%;
+    .well-panel {
+      background-color: #fff;
+      border-color: #2c3e50;
+      height: 720px; /* Ensure the height is set */
+      overflow-y: auto; /* Add vertical scrolling if content overflows */
+      margin-bottom: 15px; /* Space between panels */
+    }
+    .well-panel-small {
+      background-color: #fff;
+      border-color: #2c3e50;
+      min-height: 100px; /* Minimum height for small panels */
+      max-height: 300px; /* Maximum height for small panels */
+      overflow-y: auto;
+      margin-bottom: 15px;
+    }
+    .dataTables_wrapper {
+      overflow-x: auto;
+    }
+    .dataTables_scroll {
+      overflow: hidden;
+    }
+    .dataTables_scrollBody {
+      overflow-y: auto;
     }
     .shiny-output-container {
       margin: 0;  /* Remove margins */
@@ -96,6 +128,8 @@ ui <- fluidPage(
 
 # Define server logic
 server <- function(input, output, session) {
+  
+  rv <- reactiveVal(F)
   
   observeEvent(input$tabsetPanel, {
     req(input$temps_select_carte) # Evite que cela se lance au démarage
@@ -153,15 +187,42 @@ server <- function(input, output, session) {
     updateSelectInput(session, "temps_select_tableau",
                       choices = int_temps,
                       selected = int_temps[1])
+    
+    vars <- c('nom_com', 'code_com', 
+                 paste0('parcelles_20', temps_vec_tableau[1]), 
+                 paste0('parcelles_20', temps_vec_tableau[2]), 
+                 paste0('restantes_20', temps_vec_tableau[1]),
+                 paste0('restantes_20', temps_vec_tableau[2]), 
+                 'vrai_ajout', 'vrai_supp', 
+                 'translation', 'contour', 
+                 'contour_translation', 'subdiv', 
+                 'fusion', 'redecoupage', 
+                 'contour_transfo','contour_transfo_translation')
+    
+    updateCheckboxGroupInput(session, "show_vars",
+                             choices = vars,
+                             selected = vars, inline = T)
+    
   })
   
   observeEvent(input$temps_select_tableau, {
     req(input$tabsetPanel == "Tableau des changments par commune")
     print(paste0("Changement au niveau de la période de temps tableau: ", input$temps_select_tableau))
     temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
+    
+    var <- c('nom_com', 'code_com', paste0('parcelles_20',temps_vec_tableau[1]), 
+             paste0('parcelles_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
+             paste0('restantes_20',temps_vec_tableau[2]), 'vrai_ajout', 'vrai_supp', 
+             'translation', 'contour', 'contour_translation', 'subdiv', 
+             'fusion', 'redecoupage', 'contour_transfo','contour_transfo_translation')
+    
+    updateCheckboxGroupInput(session, "show_vars",
+                             choices = var,
+                             selected = var, inline = T)
   })
-
+  
   output$table <- renderDT({
+    print(rv())
     req(input$tabsetPanel == "Tableau des changments par commune")
     req(input$temps_select_tableau) # Permet de relancer lors d'un changement de temps
     # Exécuter la mise à jour du chemin de recherche uniquement après le changement de département et de période
@@ -169,19 +230,32 @@ server <- function(input, output, session) {
       update_search_path(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
     })
     print(paste0("Affichage du tableau des changements au niveau du département: ", input$depart_select_tableau))
-    tableau_recap(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+    tableau_recap(conn, input$depart_select_tableau, 
+                  temps_vec_tableau[1], temps_vec_tableau[2], input$show_vars)
   })
-  output$changement_commune <- renderDT({
+  
+  output$changement_communes <- renderUI({
     req(input$tabsetPanel == "Tableau des changments par commune")
-    req(input$temps_select_tableau) # Permet de relancer lors d'un changement de temps
-    # Exécuter la mise à jour du chemin de recherche uniquement après le changement de département et de période
+    req(input$temps_select_tableau)
+
+    print(paste0("Affichage du tableau des fusion/défusions au niveau du département: ", input$depart_select_tableau))
+    
     isolate({
       update_search_path(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
     })
     
     chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_commune;")
     
-    datatable(chgt_com, options = list(pageLength = 15, autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
+    tagList(
+      # Render the small data table if it has content
+      if (nrow(chgt_com) > 0) {
+        datatable(chgt_com, options = list(paging = FALSE, searching = FALSE, 
+                                           autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
+      } else {
+        # Alternative content if the data is empty or not available
+        h4("Aucune")
+      }
+    )
   })
 }
 

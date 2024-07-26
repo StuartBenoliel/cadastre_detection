@@ -1,11 +1,11 @@
 # Créer le schéma temporaire cadastre_temp
 dbExecute(conn, paste0(
-  "CREATE SCHEMA IF NOT EXISTS traitement_", temps_apres, "_", temps_avant, "_cadastre_" , num_departement, ";"))
+  "CREATE SCHEMA IF NOT EXISTS traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_" , params$num_departement, ";"))
 
 # Changer le search_path pour inclure le schéma temporaire
 dbExecute(conn, paste0(
-  "SET search_path TO traitement_", temps_apres, "_", temps_avant, "_cadastre_" , num_departement,
-  ", cadastre_", num_departement, ", public"))
+  "SET search_path TO traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_" , params$num_departement,
+  ", cadastre_", params$num_departement, ", public"))
 
 dbExecute(conn, "
   CREATE TABLE multi_calcul_cache (

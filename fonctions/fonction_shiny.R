@@ -5,7 +5,7 @@ update_search_path <- function(conn, departement, temps_apres, temps_avant) {
     ", cadastre_", departement, ", public"
   ))
   print(paste0("Période de temps: 20", temps_apres, " - 20", temps_avant, 
-              ", département: ", departement))
+               ", département: ", departement))
 }
 
 # Fonction pour lire les communes
@@ -376,7 +376,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   sync(map_1, map_compa@map, ncol = 1)
 }
 
-tableau_recap <- function(conn, num_departement, temps_apres, temps_avant) {
+tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) {
   final_df <- dbGetQuery(conn, paste0("
       WITH parc_avant AS (
         SELECT nom_com, code_com, COUNT(*) AS nb_parcelles_temps_avant
@@ -503,5 +503,19 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant) {
   final_df <- final_df %>%
     mutate(across(where(bit64::is.integer64), as.integer))
   
-  datatable(final_df, options = list(pageLength = 15, autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
+  datatable(final_df[, var], 
+            options = list(pageLength = 15, 
+                           autoWidth = TRUE, 
+                           ordering = TRUE, 
+                           orderClasses = TRUE, 
+                           rowCallback = DT::JS(
+                             'function(row, data) {
+                  // Bold cells for those >= 1.0 in all numeric columns
+                  for (var i = 0; i < data.length; i++) {
+                    var cellValue = parseFloat(data[i]);
+                    if (!isNaN(cellValue) && cellValue >= 1.0) {
+                      $("td:eq(" + i + ")", row).css("font-weight", "bold");
+                    }
+                  }
+                }')), rownames = FALSE)
 }
