@@ -23,7 +23,7 @@ dbExecute(conn, "
         
           -- Calculer l'IoU
           iou := aire_intersection / aire_union;
-          RETURN iou;
+          RETURN ROUND(iou, 3);
       ELSE
           RETURN NULL;
       END IF;

@@ -13,14 +13,14 @@ options(timeout = 6000)
 
 # 1- Connexion à la base de données ####
 source("database/connexion_db.R", encoding = "utf-8")
-source("fonctions/fonction_create_db.R")
+source("fonctions/fonction_creation_db.R")
 conn <- connecter()
 
 # 2- Ajout de la base de données ####
 
 # 1:19, 2a, 2b, 21:95, 971:978 
 num_departements <- c('60')
-num_annee <- 23
+num_annee <- 22
 indic_parc <- T
 
 # 8 min 1 département parcelle

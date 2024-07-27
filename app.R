@@ -13,32 +13,18 @@ source(file = "database/connexion_db.R")
 source(file = "fonctions/fonction_shiny.R")
 conn <- connecter()
 
-result <- dbGetQuery(conn, paste0(" 
-  SELECT 
-      schema_name
-  FROM 
-      information_schema.schemata
-  WHERE 
-      schema_name LIKE 'traitement_%_%_cadastre_%';
-           "))
-
-departements <- result$schema_name %>%
-  str_extract("cadastre_(..)\\z") %>%
-  str_replace_all("cadastre_", "") %>%
-  unique() %>%
-  sort()
+departements <- departement_traite(conn)
 
 # Define UI
 ui <- fluidPage(
+  theme = shinytheme("spacelab"),
   titlePanel(
     div(
       img(src = "Insee_logo.png", height = "60px", align = "right"),
-      h1("Détection des évolutions des parcelles cadastrales")
+      h1("Cadastat : détection des évolutions des parcelles cadastrales")
     )
   ),
   br(),
-  theme = shinytheme('flatly'),
-  
   # Navigation panel
   tabsetPanel(
     id = "tabsetPanel",  # Give an ID to the tabsetPanel
@@ -57,11 +43,26 @@ ui <- fluidPage(
                                   selected = NULL)
                ),
                column(3,
-                      selectInput("nom_com_select_carte", "Choisir un nom de commune:",
-                                  choices = NULL)
+                      div(class = "input-group",
+                          selectInput("nom_com_select_carte", 
+                                      label = "Choisir un nom de commune:",
+                                      choices = NULL),
+                          # Ajouter un icône avec une info-bulle à droite du selectInput
+                          tags$span(
+                            title = "Les communes proposées sont les communes existantes à l'année la plus tardive de la période de temps choisie.",
+                            class = "info-icon",
+                            icon("info-circle")
+                          )
+                      )
                ),
              ),
-             uiOutput("dynamicMaps")  # Use UI output to render maps
+             wellPanel(class = "well-panel",
+                       uiOutput("dynamicMaps")),
+             br(),
+             h3("Cas de parcelles avec géomètrie absente:"),
+             wellPanel(class = "well-pane-small",
+                       uiOutput("parcelles_absentes"))
+             
     ),
     tabPanel("Tableau des changments par commune",
              br(),
@@ -77,7 +78,7 @@ ui <- fluidPage(
                                   selected = NULL)
                ),
                column(6,
-                      checkboxGroupInput("show_vars", "Variables à afficher:",
+                      checkboxGroupInput("var_tableau", "Variables à afficher:",
                                          NULL, selected = NULL, inline = T)
                ),
              ),
@@ -91,6 +92,19 @@ ui <- fluidPage(
   ),
   
   tags$style(HTML("
+    .input-group {
+        display: flex;
+        align-items: center;
+      }
+      .info-icon {
+        color: black;
+        font-size: 18px;
+        cursor: pointer;
+        margin-left: 10px;
+      }
+      .info-icon:hover {
+        color: #0056b3;
+      }
     .well-panel {
       background-color: #fff;
       border-color: #2c3e50;
@@ -121,20 +135,20 @@ ui <- fluidPage(
     }
     .selectize-dropdown {
     z-index: 2000; /* Valeur plus élevée pour être au-dessus des cartes */
-  }
+    }
   "))
 )
 
 # Define server logic
 server <- function(input, output, session) {
-  
-  rv <- reactiveVal(F)
-  
+
   observeEvent(input$tabsetPanel, {
     req(input$temps_select_carte) # Evite que cela se lance au démarage
     print("Changement d'onglet")
     if (input$tabsetPanel == "Carte des comparaisons par commune") {
-      update_search_path(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
+      maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
+    } else {
+      maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
     }
   })
   
@@ -144,127 +158,131 @@ server <- function(input, output, session) {
     print(paste0("Changement au niveau du département carte: ", num_departement))
     
     int_temps <- intervalle_temps(conn, num_departement)
-    
     updateSelectInput(session, "temps_select_carte",
-                      choices = int_temps,
-                      selected = int_temps[1])
-    update_search_path(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
+                      choices = int_temps, 
+                      selected = ifelse(input$temps_select_carte %in% int_temps, 
+                                        input$temps_select_carte, int_temps[1]))
+    temps_vec_carte <<- strsplit(int_temps[1], "-")[[1]]
+    maj_chemin(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
     
-    commune <- load_communes(conn, num_departement, temps_vec_carte[1])
-    
-    commune <- sort(paste(commune$nom_com, commune$code_com))
-    
+    commune <<- nom_code_commune(conn, num_departement, temps_vec_carte[1])
     updateSelectInput(session, "nom_com_select_carte",
                       choices = commune,
                       selected = commune[1])
     
   })
-
-  temps_reactive <- reactive({
+  
+  observeEvent(input$temps_select_carte, {
+    req(input$temps_select_carte) # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau de la période de temps carte: ", input$temps_select_carte))
+    
     temps_vec_carte <<- strsplit(input$temps_select_carte, "-")[[1]]
-    update_search_path(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
-    commune <- load_communes(conn, num_departement, temps_vec_carte[1])
+    maj_chemin(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
     
-    commune <- sort(paste(commune$nom_com, commune$code_com))
-    
+    commune <<- nom_code_commune(conn, num_departement, temps_vec_carte[1])
     updateSelectInput(session, "nom_com_select_carte",
-                      choices = commune,
-                      selected = commune[1])
+                      choices = commune, 
+                      selected = ifelse(input$nom_com_select_carte %in% commune, 
+                                        input$nom_com_select_carte, commune[1]))
   })
   
   # Rendu dynamique des cartes
   output$dynamicMaps <- renderUI({
     req(input$tabsetPanel == "Carte des comparaisons par commune")
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
-    # Assurer que temps_reactive est terminé avant de continuer
-    isolate({
-      temps_reactive()
-    })
-    print(paste0("Affichage des cartes pour la commune: ", input$nom_com_select_carte))
-    nom_com <-sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
     
-    cartes_dynamiques(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2], nom_com)
+    if (input$nom_com_select_carte %in% commune){
+      nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
+      print(paste0("Affichage des cartes pour la commune: ", nom_com))
+      cartes_dynamiques(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2], nom_com)
+    } 
   })
+  
+  output$parcelles_absentes <- renderUI({
+    req(input$tabsetPanel == "Carte des comparaisons par commune")
+    req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
+    
+    if (input$nom_com_select_carte %in% commune){
+      nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
+      print(paste0("Affichage des parcelles manquantes pour la commune: ", nom_com))
+      
+      parc_null <- dbGetQuery(conn, paste0(
+        "SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[1], "' AS période 
+            FROM parc_", num_departement, "_", temps_vec_carte[1], " 
+            WHERE ST_IsEmpty(geometry) AND nom_com = '", nom_com, "'
+        UNION ALL
+        SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[2], "' AS période 
+            FROM parc_", num_departement, "_", temps_vec_carte[2], " 
+            WHERE ST_IsEmpty(geometry) AND nom_com = '", nom_com, "';"
+      ))
+      
+      tableau_si_donnee(parc_null)
+    } 
+  })
+  
+  indic <- reactiveVal(FALSE)
   
   # Lancement au démarage
   observeEvent(input$depart_select_tableau, {
+    
     print(paste0("Changement au niveau du département tableau: ", input$depart_select_tableau))
     int_temps <- intervalle_temps(conn, input$depart_select_tableau)
-    temps_vec_tableau <<- strsplit(int_temps[1], "-")[[1]]
-
+    
+    if (!identical(int_temps[1], input$temps_select_tableau)){
+      indic(FALSE) 
+    }
+    
     updateSelectInput(session, "temps_select_tableau",
                       choices = int_temps,
-                      selected = int_temps[1])
+                      selected = ifelse(input$temps_select_tableau %in% int_temps, 
+                                        input$temps_select_tableau, int_temps[1]))
+    temps_vec_tableau <<- strsplit(int_temps[1], "-")[[1]]
     
-    vars <- c('nom_com', 'code_com', 
-                 paste0('parcelles_20', temps_vec_tableau[1]), 
-                 paste0('parcelles_20', temps_vec_tableau[2]), 
-                 paste0('restantes_20', temps_vec_tableau[1]),
-                 paste0('restantes_20', temps_vec_tableau[2]), 
-                 'vrai_ajout', 'vrai_supp', 
-                 'translation', 'contour', 
-                 'contour_translation', 'subdiv', 
-                 'fusion', 'redecoupage', 
-                 'contour_transfo','contour_transfo_translation')
-    
-    updateCheckboxGroupInput(session, "show_vars",
-                             choices = vars,
-                             selected = vars, inline = T)
-    
+    maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
   })
   
   observeEvent(input$temps_select_tableau, {
-    req(input$tabsetPanel == "Tableau des changments par commune")
+    req(input$temps_select_tableau) # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau de la période de temps tableau: ", input$temps_select_tableau))
     temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
     
-    var <- c('nom_com', 'code_com', paste0('parcelles_20',temps_vec_tableau[1]), 
-             paste0('parcelles_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
-             paste0('restantes_20',temps_vec_tableau[2]), 'vrai_ajout', 'vrai_supp', 
-             'translation', 'contour', 'contour_translation', 'subdiv', 
-             'fusion', 'redecoupage', 'contour_transfo','contour_transfo_translation')
+    col_tableau <- c('nom_com', 'code_com', paste0('parcelles_20',temps_vec_tableau[1]), 
+                     paste0('parcelles_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
+                     paste0('restantes_20',temps_vec_tableau[2]), 'vrai_ajout', 'vrai_supp', 
+                     'translation', 'contour', 'contour_translation', 'subdiv', 
+                     'fusion', 'redecoupage', 'contour_transfo','contour_transfo_translation')
     
-    updateCheckboxGroupInput(session, "show_vars",
-                             choices = var,
-                             selected = var, inline = T)
+    updateCheckboxGroupInput(session, "var_tableau",
+                             choices = col_tableau,
+                             selected = col_tableau, inline = T)
+    
+    maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+    
+    indic(FALSE) 
   })
   
+  observeEvent(input$var_tableau, {
+    indic(TRUE)  # Active l'indicateur pour D une fois que C est mis à jour
+  })
+  
+  # Erreur lorsque changement de temps et ou déparement du au reset des noms_colonnes
   output$table <- renderDT({
-    print(rv())
     req(input$tabsetPanel == "Tableau des changments par commune")
-    req(input$temps_select_tableau) # Permet de relancer lors d'un changement de temps
-    # Exécuter la mise à jour du chemin de recherche uniquement après le changement de département et de période
-    isolate({
-      update_search_path(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
-    })
+    req(indic())
+    
     print(paste0("Affichage du tableau des changements au niveau du département: ", input$depart_select_tableau))
     tableau_recap(conn, input$depart_select_tableau, 
-                  temps_vec_tableau[1], temps_vec_tableau[2], input$show_vars)
+                  temps_vec_tableau[1], temps_vec_tableau[2], input$var_tableau)
+    
   })
   
   output$changement_communes <- renderUI({
     req(input$tabsetPanel == "Tableau des changments par commune")
-    req(input$temps_select_tableau)
-
+    req(indic())
+    
     print(paste0("Affichage du tableau des fusion/défusions au niveau du département: ", input$depart_select_tableau))
-    
-    isolate({
-      update_search_path(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
-    })
-    
     chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_commune;")
-    
-    tagList(
-      # Render the small data table if it has content
-      if (nrow(chgt_com) > 0) {
-        datatable(chgt_com, options = list(paging = FALSE, searching = FALSE, 
-                                           autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
-      } else {
-        # Alternative content if the data is empty or not available
-        h4("Aucune")
-      }
-    )
+    tableau_si_donnee(chgt_com)
   })
 }
 

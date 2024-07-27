@@ -1,26 +1,38 @@
+departement_traite <- function(conn) {
+  result <- dbGetQuery(conn, paste0(" 
+  SELECT 
+      schema_name
+  FROM 
+      information_schema.schemata
+  WHERE 
+      schema_name LIKE 'traitement_%_%_cadastre_%';
+           "))
+  
+  departements <- result$schema_name %>%
+    str_extract("cadastre_(..)\\z") %>%
+    str_replace_all("cadastre_", "") %>%
+    unique() %>%
+    sort()
+}
+
 # Fonction pour mettre à jour le search path
-update_search_path <- function(conn, departement, temps_apres, temps_avant) {
+maj_chemin <- function(conn, num_departement, temps_apres, temps_avant) {
   dbExecute(conn, paste0(
-    "SET search_path TO traitement_", temps_apres, "_", temps_avant, "_cadastre_" , departement, 
-    ", cadastre_", departement, ", public"
+    "SET search_path TO traitement_", temps_apres, "_", temps_avant, "_cadastre_" , num_departement, 
+    ", cadastre_", num_departement, ", public"
   ))
-  print(paste0("Période de temps: 20", temps_apres, " - 20", temps_avant, 
-               ", département: ", departement))
+  print(paste0("MAJ chemin: période de temps: 20", temps_apres, " - 20", temps_avant, 
+               ", département: ", num_departement))
 }
 
-# Fonction pour lire les communes
-load_communes <- function(conn, departement, temps_apres) {
-  dbGetQuery(conn, paste0("SELECT DISTINCT nom_com, code_com FROM parc_", num_departement, "_", temps_apres, ";"))
-}
-
-intervalle_temps <- function(conn, departement){
+intervalle_temps <- function(conn, num_departement){
   result <- dbGetQuery(conn, paste0(" 
       SELECT 
           schema_name
       FROM 
           information_schema.schemata
       WHERE 
-          schema_name LIKE 'traitement_%_%_cadastre_", departement,"';
+          schema_name LIKE 'traitement_%_%_cadastre_", num_departement,"';
                "))
   
   int_temps <- result$schema_name %>%
@@ -31,44 +43,50 @@ intervalle_temps <- function(conn, departement){
   int_temps <- int_temps[order(as.numeric(str_extract(int_temps, "^[0-9]+")) , decreasing = TRUE)]
 }
 
-cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, nom_com_select) {
+nom_code_commune <- function(conn, num_departement, temps_apres){
+  commune <- dbGetQuery(conn, paste0(
+    "SELECT DISTINCT nom_com, code_com FROM parc_", num_departement, "_", temps_apres, ";"))
+  commune <- sort(paste(commune$nom_com, commune$code_com))
+}
+
+cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, nom_com) {
   
   bordure <- st_read(conn, query = paste0(
-    "SELECT * FROM bordure WHERE nom_com = '", nom_com_select, "';"))
-  ins_parc_avant <- st_read(conn, query = paste0(
-    "SELECT * FROM parc_", num_departement, "_", temps_avant, " WHERE nom_com = '", nom_com_select, "';"))
-  ins_parc_apres <- st_read(conn, query = paste0(
-    "SELECT * FROM parc_", num_departement, "_", temps_apres, " WHERE nom_com = '", nom_com_select, "';"))
+    "SELECT * FROM bordure WHERE nom_com = '", nom_com, "';"))
+  parc_avant <- st_read(conn, query = paste0(
+    "SELECT * FROM parc_", num_departement, "_", temps_avant, " WHERE nom_com = '", nom_com, "';"))
+  parc_apres <- st_read(conn, query = paste0(
+    "SELECT * FROM parc_", num_departement, "_", temps_apres, " WHERE nom_com = '", nom_com, "';"))
   
   modif_apres <- st_read(conn, query =  paste0(
-    "SELECT * FROM modif_apres_iou WHERE nom_com = '",nom_com_select, "';"))
+    "SELECT * FROM modif_apres_iou WHERE nom_com = '",nom_com, "';"))
   ajout <- st_read(conn, query =  paste0(
-    "SELECT * FROM ajout_iou_restant WHERE nom_com = '",nom_com_select, "';"))
+    "SELECT * FROM ajout_iou_restant WHERE nom_com = '",nom_com, "';"))
   supp <- st_read(conn, query =  paste0(
-    "SELECT * FROM supp_iou_restant WHERE nom_com = '",nom_com_select, "';"))
+    "SELECT * FROM supp_iou_restant WHERE nom_com = '",nom_com, "';"))
   
   translation <- st_read(conn, query = paste0(
-    "SELECT * FROM translation WHERE nom_com = '",nom_com_select, "';"))
+    "SELECT * FROM translation WHERE nom_com = '",nom_com, "';"))
   fusion <- st_read(conn, query = paste0(
-    "SELECT * FROM fusion WHERE nom_com = '", nom_com_select, "';"))
+    "SELECT * FROM fusion WHERE nom_com = '", nom_com, "';"))
   vrai_ajout <- st_read(conn, query = paste0(
-    "SELECT * FROM vrai_ajout WHERE nom_com = '", nom_com_select, "';"))
+    "SELECT * FROM vrai_ajout WHERE nom_com = '", nom_com, "';"))
   vrai_supp <- st_read(conn, query = paste0(
-    "SELECT * FROM vrai_supp WHERE nom_com = '", nom_com_select, "';"))
+    "SELECT * FROM vrai_supp WHERE nom_com = '", nom_com, "';"))
   
   is_fusion_com <- dbGetQuery(conn, paste0(
-    "SELECT * FROM chgt_commune WHERE nom_com = '", nom_com_select, "' AND changement = 'Fusion';"))
+    "SELECT * FROM chgt_commune WHERE nom_com = '", nom_com, "' AND changement = 'Fusion';"))
   
   is_defusion_part_com  <- dbGetQuery(conn, paste0(
-    "SELECT * FROM chgt_commune WHERE nom_com = '", nom_com_select, "' AND changement = 'Défusion partielle' ;"))
+    "SELECT * FROM chgt_commune WHERE nom_com = '", nom_com, "' AND changement = 'Défusion partielle' ;"))
   
   is_defusion_com  <- dbGetQuery(conn, paste0(
-    "SELECT * FROM chgt_commune WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*'))
+    "SELECT * FROM chgt_commune WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*'))
       AND changement != 'Fusion';"))
   
   if (nrow(bordure) > 0) {
     map_base <- mapview(bordure, 
-                        layer.name = "Bordures étendues", col.regions = "#E8E8E8", 
+                        layer.name = "Bordures étendues", col.regions = "#F2F2F2", 
                         alpha.regions = 0.7, homebutton = F, 
                         map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
   } else {
@@ -80,73 +98,73 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   if (nrow(is_fusion_com) > 0) {
     
     fusion_com <- st_read(conn, query = paste0(
-      "SELECT * FROM fusion_com WHERE nom_com = '", nom_com_select, "';"))
+      "SELECT * FROM fusion_com WHERE nom_com = '", nom_com, "';"))
     
     fusion_com_avant <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_avant, 
       " WHERE idu IN 
-            (SELECT idu_avant FROM fusion_com WHERE nom_com = '", nom_com_select, "');"))
+            (SELECT idu_avant FROM fusion_com WHERE nom_com = '", nom_com, "');"))
     
-    ins_parc_avant <- st_read(conn, query = paste0(
+    parc_avant <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_avant, 
-      " WHERE nom_com = '", nom_com_select, "'
+      " WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     modif_avant <- st_read(conn, query =  paste0(
-      "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     supp <- st_read(conn, query =  paste0(
-      "SELECT * FROM supp_iou_restant WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM supp_iou_restant WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     vrai_supp <- st_read(conn, query = paste0(
-      "SELECT * FROM vrai_supp WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM vrai_supp WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     contour <- st_read(conn, query = paste0(
-      "SELECT * FROM contour WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM contour WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     contour_translation <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_translation WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM contour_translation WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     subdiv <- st_read(conn, query = paste0(
-      "SELECT * FROM subdiv WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM subdiv WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     redecoupage <- st_read(conn, query = paste0(
-      "SELECT * FROM redecoupage WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM redecoupage WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     contour_transfo <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM contour_transfo WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     contour_transfo_translation <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo_translation WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM contour_transfo_translation WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-          FROM chgt_commune WHERE nom_com = '", nom_com_select, "');"))
+          FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     map_1 <- map_1 + mapview(fusion_com,  
                              layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
@@ -159,58 +177,58 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   } else if (nrow(is_defusion_part_com) > 0) {
     
     defusion_com <- st_read(conn, query = paste0(
-      "SELECT * FROM defusion_com WHERE nom_com_avant = '", nom_com_select, "';"))
+      "SELECT * FROM defusion_com WHERE nom_com_avant = '", nom_com, "';"))
     
     defusion_com_avant <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_avant, 
-      " WHERE idu IN (SELECT idu_avant FROM defusion_com WHERE nom_com_avant = '", nom_com_select, "');"))
+      " WHERE idu IN (SELECT idu_avant FROM defusion_com WHERE nom_com_avant = '", nom_com, "');"))
     
     modif_avant <- st_read(conn, query = paste0(
       "SELECT mav.* 
          FROM modif_avant_iou_convex mav
          JOIN parc_", num_departement, "_", temps_apres, " pa ON mav.idu = pa.idu
-         WHERE pa.nom_com = '", nom_com_select, "';"))
+         WHERE pa.nom_com = '", nom_com, "';"))
     
     contour <- st_read(conn, query = paste0(
       "SELECT co.* 
          FROM contour co
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(co.participants_apres, ','))
-         WHERE pa.nom_com = '", nom_com_select, "';"))
+         WHERE pa.nom_com = '", nom_com, "';"))
     
     contour_translation <- st_read(conn, query = paste0(
       "SELECT cot.* 
          FROM contour_translation cot
          JOIN parc_", num_departement, "_", temps_apres, " pa ON cot.idu_translate = pa.idu
-         WHERE pa.nom_com = '", nom_com_select, "';"))
+         WHERE pa.nom_com = '", nom_com, "';"))
     
     subdiv <- st_read(conn, query = paste0(
       "SELECT sub.* 
          FROM subdiv sub
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(sub.participants, ','))
-         WHERE pa.nom_com = '", nom_com_select, "';"))
+         WHERE pa.nom_com = '", nom_com, "';"))
     
     redecoupage <- st_read(conn, query = paste0(
       "SELECT red.* 
          FROM redecoupage red
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(red.participants_apres, ','))
-         WHERE pa.nom_com = '", nom_com_select, "';"))
+         WHERE pa.nom_com = '", nom_com, "';"))
     
     contour_transfo <- st_read(conn, query = paste0(
       "SELECT cot.* 
          FROM contour_transfo cot
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(cot.participants_apres, ','))
-         WHERE pa.nom_com = '", nom_com_select, "';"))
+         WHERE pa.nom_com = '", nom_com, "';"))
     
     contour_transfo_translation <- st_read(conn, query = paste0(
       "SELECT cott.* 
          FROM contour_transfo_translation cott
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(cott.participants_apres_translate, ','))
-         WHERE pa.nom_com = '", nom_com_select, "';"))
+         WHERE pa.nom_com = '", nom_com, "';"))
     
     map_1 <- map_1 + mapview(defusion_com,  
                              layer.name = paste0("Parcelles défusion de communes (état 20",temps_apres,")"), 
@@ -223,18 +241,18 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   } else if (nrow(is_defusion_com) > 0) {
     
     defusion_com <- st_read(conn, query = paste0(
-      "SELECT * FROM defusion_com WHERE nom_com = '", nom_com_select, "';"))
+      "SELECT * FROM defusion_com WHERE nom_com = '", nom_com, "';"))
     
     defusion_com_avant <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_avant, 
-      " WHERE idu IN (SELECT idu_avant FROM defusion_com WHERE nom_com = '", nom_com_select, "');"))
+      " WHERE idu IN (SELECT idu_avant FROM defusion_com WHERE nom_com = '", nom_com, "');"))
     
-    ins_parc_avant <- st_read(conn, query = paste0(
+    parc_avant <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_avant, 
-      " WHERE nom_com = '", nom_com_select, "'
+      " WHERE nom_com = '", nom_com, "'
            OR nom_com =
         (SELECT nom_com FROM chgt_commune 
-          WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
+          WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
     
     modif_avant <- st_read(conn, query = paste0(
       "SELECT mav.* 
@@ -242,20 +260,20 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
          JOIN parc_", num_departement, "_", temps_apres, " pa ON mav.idu = pa.idu
          WHERE mav.nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
-           AND pa.nom_com = '", nom_com_select, "';"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
+           AND pa.nom_com = '", nom_com, "';"))
     
     supp <- st_read(conn, query =  paste0(
-      "SELECT * FROM supp_iou_restant WHERE nom_com = '",nom_com_select, "'
+      "SELECT * FROM supp_iou_restant WHERE nom_com = '",nom_com, "'
            OR nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
     
     vrai_supp <- st_read(conn, query = paste0(
-      "SELECT * FROM vrai_supp WHERE nom_com = '", nom_com_select, "'
+      "SELECT * FROM vrai_supp WHERE nom_com = '", nom_com, "'
            OR nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
     
     contour <- st_read(conn, query = paste0(
       "SELECT co.* 
@@ -264,8 +282,8 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
            pa.idu = ANY (string_to_array(co.participants_apres, ','))
          WHERE co.nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
-           AND pa.nom_com = '", nom_com_select, "';"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
+           AND pa.nom_com = '", nom_com, "';"))
     
     contour_translation <- st_read(conn, query = paste0(
       "SELECT cot.* 
@@ -273,8 +291,8 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
          JOIN parc_", num_departement, "_", temps_apres, " pa ON cot.idu_translate = pa.idu
          WHERE cot.nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
-           AND pa.nom_com = '", nom_com_select, "';"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
+           AND pa.nom_com = '", nom_com, "';"))
     
     subdiv <- st_read(conn, query = paste0(
       "SELECT sub.* 
@@ -283,8 +301,8 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
            pa.idu = ANY (string_to_array(sub.participants, ','))
          WHERE sub.nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
-           AND pa.nom_com = '", nom_com_select, "';"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
+           AND pa.nom_com = '", nom_com, "';"))
     
     redecoupage <- st_read(conn, query = paste0(
       "SELECT red.* 
@@ -293,8 +311,8 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
            pa.idu = ANY (string_to_array(red.participants_apres, ','))
          WHERE red.nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
-           AND pa.nom_com = '", nom_com_select, "';"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
+           AND pa.nom_com = '", nom_com, "';"))
     
     contour_transfo <- st_read(conn, query = paste0(
       "SELECT cot.* 
@@ -303,8 +321,8 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
            pa.idu = ANY (string_to_array(cot.participants_apres, ','))
          WHERE cot.nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
-           AND pa.nom_com = '", nom_com_select, "';"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
+           AND pa.nom_com = '", nom_com, "';"))
     
     contour_transfo_translation <- st_read(conn, query = paste0(
       "SELECT cott.* 
@@ -313,8 +331,8 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
            pa.idu = ANY (string_to_array(cott.participants_apres_translate, ','))
          WHERE cott.nom_com = 
               (SELECT nom_com FROM chgt_commune 
-                WHERE '", nom_com_select, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
-           AND pa.nom_com = '", nom_com_select, "';"))
+                WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
+           AND pa.nom_com = '", nom_com, "';"))
     
     map_1 <- map_1 + mapview(defusion_com,  
                              layer.name = paste0("Parcelles défusion de communes (état 20",temps_apres,")"), 
@@ -326,30 +344,30 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     
   } else {
     modif_avant <- st_read(conn, query =  paste0(
-      "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '", nom_com_select, "';"))
+      "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '", nom_com, "';"))
     contour <- st_read(conn, query = paste0(
-      "SELECT * FROM contour WHERE nom_com = '",nom_com_select, "';"))
+      "SELECT * FROM contour WHERE nom_com = '",nom_com, "';"))
     contour_translation <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_translation WHERE nom_com = '",nom_com_select, "';"))
+      "SELECT * FROM contour_translation WHERE nom_com = '",nom_com, "';"))
     subdiv <- st_read(conn, query = paste0(
-      "SELECT * FROM subdiv WHERE nom_com = '", nom_com_select, "';"))
+      "SELECT * FROM subdiv WHERE nom_com = '", nom_com, "';"))
     redecoupage <- st_read(conn, query = paste0(
-      "SELECT * FROM redecoupage WHERE nom_com = '", nom_com_select, "';"))
+      "SELECT * FROM redecoupage WHERE nom_com = '", nom_com, "';"))
     contour_transfo <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo WHERE nom_com = '", nom_com_select, "';"))
+      "SELECT * FROM contour_transfo WHERE nom_com = '", nom_com, "';"))
     contour_transfo_translation <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo_translation WHERE nom_com = '", nom_com_select, "';"))
+      "SELECT * FROM contour_transfo_translation WHERE nom_com = '", nom_com, "';"))
   }
   
   if (nrow(translation) > 0) {
     
     map_1 <- map_1 + mapview(translation,
                              layer.name = paste0("Parcelles translatées (état 20",temps_apres,")"), 
-                             col.regions = "darkcyan",
+                             col.regions = "#069F9C",
                              alpha.regions = 0.5, homebutton = F) +
-      mapview(ins_parc_avant %>%
+      mapview(parc_avant %>%
                 filter(idu %in% translation$idu_translate), 
-              col.regions = "darkcyan",
+              col.regions = "#069F9C",
               layer.name = "Parcelles translatées (état 2023)", 
               alpha.regions = 0.5, homebutton = F)
   }
@@ -357,63 +375,63 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     
     map_1 <- map_1 + mapview(fusion, 
                              layer.name = paste0("Parcelles fusionnéees (état 20",temps_apres,")"),
-                             col.regions = "darkmagenta", alpha.regions = 0.5, homebutton = F) +
-      mapview(ins_parc_avant %>%
+                             col.regions = "#5F1972", alpha.regions = 0.5, homebutton = F) +
+      mapview(parc_avant %>%
                 filter(idu %in% unlist(str_split(fusion$participants, ",\\s*"))),  
               layer.name = paste0("Parcelles fusionnéees (état 20",temps_avant,")"), 
-              col.regions = "darkmagenta",
+              col.regions = "#5F1972",
               alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(subdiv) > 0) {
     
-    map_1 <- map_1 + mapview(ins_parc_apres %>%
+    map_1 <- map_1 + mapview(parc_apres %>%
                                filter(idu %in% unlist(str_split(subdiv$participants, ",\\s*"))),  
                              layer.name = paste0("Parcelles subdivisées (état 20",temps_apres,")"), 
-                             col.regions = "purple",
+                             col.regions = "#AE48C0",
                              alpha.regions = 0.5, homebutton = F) +
       mapview(subdiv,  
               layer.name = paste0("Parcelles subdivisées (état 20",temps_avant,")"), 
-              col.regions = "purple", alpha.regions = 0.5, homebutton = F)
+              col.regions = "#AE48C0", alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(redecoupage) > 0) {
     
-    map_1 <- map_1 + mapview(ins_parc_apres %>%
+    map_1 <- map_1 + mapview(parc_apres %>%
                                filter(idu %in% unlist(str_split(redecoupage$participants_apres, ",\\s*"))),
                              layer.name = paste0("Parcelles redécoupage (état 20",temps_apres,")"),
-                             col.regions = "magenta",
+                             col.regions = "#E0BDE6",
                              alpha.regions = 0.5, homebutton = F) +
       mapview(redecoupage,  
               layer.name = paste0("Parcelles redécoupage (état 20",temps_avant,")"), 
-              col.regions = "magenta", alpha.regions = 0.5, homebutton = F)
+              col.regions = "#E0BDE6", alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(contour) > 0) {
     
-    map_1 <- map_1 + mapview(ins_parc_apres %>%
+    map_1 <- map_1 + mapview(parc_apres %>%
                                filter(idu %in% unlist(str_split(contour$participants_apres, ",\\s*"))),  
                              layer.name = paste0("Parcelles contours (état 20",temps_apres,")"), 
-                             col.regions = "orange", alpha.regions = 0.5, homebutton = F) +
+                             col.regions = "#D79700", alpha.regions = 0.5, homebutton = F) +
       mapview(contour,  
               layer.name = paste0("Parcelles contours (état 20",temps_avant,")"),
-              col.regions = "orange",
+              col.regions = "#D79700",
               alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(contour_transfo) > 0) {
     
-    map_1 <- map_1 + mapview(ins_parc_apres %>%
+    map_1 <- map_1 + mapview(parc_apres %>%
                                filter(idu %in% unlist(str_split(contour_transfo$participants_apres, ",\\s*"))),  
                              layer.name = paste0("Parcelles transfo + contours (état 20",temps_apres,")"),
-                             col.regions = "pink",
+                             col.regions = "#FFB9BB",
                              alpha.regions = 0.5, homebutton = F) +
       mapview(contour_transfo,
               layer.name = paste0("Parcelles transfo + contours (état 20",temps_avant,")"), 
-              col.regions = "pink", alpha.regions = 0.5, homebutton = F)
+              col.regions = "#FFB9BB", alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(contour_translation) > 0) {
     
     map_1 <- map_1 + mapview(contour_translation,  
                              layer.name = paste0("Parcelles translatées + contours (état 20",temps_apres,")"), 
                              alpha.regions = 0.5, homebutton = F) +
-      mapview(ins_parc_avant %>%
+      mapview(parc_avant %>%
                 filter(idu %in% contour_translation$idu_translate),
               layer.name = paste0("Parcelles translatées + contours (état 20",temps_avant,")"), 
               alpha.regions = 0.5, homebutton = F)
@@ -421,69 +439,79 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   }
   if (nrow(contour_transfo_translation) > 0) {
     
-    map_1 <- map_1 + mapview(ins_parc_apres %>%
+    map_1 <- map_1 + mapview(parc_apres %>%
                                filter(idu %in% unlist(str_split(contour_transfo_translation$participants_apres_translate, ",\\s*"))),
                              layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
-                             col.regions = "lightblue", alpha.regions = 0.5, homebutton = F) +
+                             col.regions = "#B5E1FF", alpha.regions = 0.5, homebutton = F) +
       mapview(contour_transfo_translation,  
               layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
-              col.regions = "lightblue",
+              col.regions = "#B5E1FF",
               alpha.regions = 0.5, homebutton = F)
   }
-  if (nrow(vrai_ajout) > 0) {
+  if (nrow(vrai_ajout[!st_is_empty(vrai_ajout), ]) > 0) {
     
     map_1 <- map_1 + mapview(vrai_ajout, 
-                             layer.name = "Parcelles véritablement ajoutées", 
-                             col.regions = "green", alpha.regions = 0.5, homebutton = F)
+                             layer.name = "Parcelles ajoutées", 
+                             col.regions = "#26A44B", alpha.regions = 0.5, homebutton = F)
   }
-  if (nrow(vrai_supp) > 0) {
+  if (nrow(vrai_supp[!st_is_empty(vrai_supp), ]) > 0) {
     
     map_1 <- map_1 + mapview(vrai_supp,
-                             layer.name = "Parcelles véritablement supprimées",
-                             col.regions = "red", alpha.regions = 0.5, homebutton = F) 
+                             layer.name = "Parcelles supprimées",
+                             col.regions = "#E91422", alpha.regions = 0.5, homebutton = F) 
   }
   if (nrow(ajout) > 0) {
     
-    map_1 <- map_1 + mapview(ajout,
-                             z = c("iou_ajust"), layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"), 
+    map_1 <- map_1 + mapview(ajout, col.regions = "#DAF7E2",
+                             layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"), 
                              alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(supp) > 0) {
     
-    map_1 <- map_1 + mapview(supp, 
-                             z = c("iou_multi"), layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"), 
+    map_1 <- map_1 + mapview(supp, col.regions = "#FFE2E2",
+                             layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"), 
                              alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(modif_apres) > 0) {
     
-    map_1 <- map_1 + mapview(modif_apres, 
-                             z = c("iou_ajust"), 
+    map_1 <- map_1 + mapview(modif_apres,  col.regions = "#DAF7E2",
                              layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"),
                              alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(modif_avant) > 0) {
     
-    map_1 <- map_1 + mapview(modif_avant, 
-                             z = c("iou_ajust"), 
+    map_1 <- map_1 + mapview(modif_avant, col.regions = "#FFE2E2",
                              layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"),
                              alpha.regions = 0.5, homebutton = F)
   }
   
-  map_2 <- map_base + 
-    mapview(ins_parc_apres, 
-            layer.name = paste0("Parcelles (état 20",temps_apres,")"),
-            col.regions = "#286AC7", 
-            homebutton = FALSE)
+  map_2 <- mapview(parc_apres, 
+                   layer.name = paste0("Parcelles (état 20",temps_apres,")"),
+                   col.regions = "#286AC7", 
+                   homebutton = FALSE) + map_base
   
-  map_3 <- map_base + 
-    mapview(ins_parc_avant, 
-            layer.name = paste0("Parcelles (état 20",temps_avant,")"), 
-            col.regions = "#FFC300",
-            homebutton = FALSE) 
+  map_3 <- mapview(parc_avant, 
+                   layer.name = paste0("Parcelles (état 20",temps_avant,")"), 
+                   col.regions = "#FFC300",
+                   homebutton = FALSE) + map_base
   
   map_compa <- map_2 | map_3
   
   sync(map_1, map_compa@map, ncol = 1)
+}
+
+tableau_si_donnee <- function(table) {
+  tagList(
+    if (nrow(table) > 0) {
+      datatable(table, options = list(paging = FALSE, searching = FALSE, 
+                                          autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
+    } else {
+      div(
+        style = "text-align: center; margin-top: 20px;",  # Centrage du texte et espacement
+        h4("Aucun cas à priori")
+      )
+    }
+  )
 }
 
 tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) {

@@ -2,6 +2,10 @@
 title: "Gestion des schémas de la base Postgre"
 output: html_document
 date: "2024-06-18"
+params:
+  num_departement: "13"
+  temps_apres: 24
+  temps_avant: 23
 ---
 
 ```{r setup, include=FALSE}
@@ -11,12 +15,14 @@ rm(list = ls())
 
 ```{r package message=FALSE, warning=FALSE}
 library(dplyr)
+library(sf)
 library(DBI)
 source(file = "connexion_db.R")
 conn <- connecter()
-num_departement <- '60'
-temps_apres <- 24
-temps_avant <- 23
+nom_com <- "Marseille 3eme"
+dbExecute(conn, paste0(
+  "SET search_path TO traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_" , params$num_departement,
+  ", cadastre_", params$num_departement, ", public"))
 ```
 
 ```{r voir les schémas contenant les tables nécessaires}

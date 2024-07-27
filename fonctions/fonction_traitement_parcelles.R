@@ -1,7 +1,7 @@
 traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant) {
   dbExecute(conn, paste0(
     "DROP SCHEMA IF EXISTS traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_", params$num_departement, " CASCADE;"))
-  source(file = "database/table_db.R")
+  source(file = "database/table_traitement_db.R")
   
   dbExecute(conn, paste0("
   INSERT INTO ajout_tot

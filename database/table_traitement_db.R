@@ -17,67 +17,6 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE TABLE ajout_tot (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      geometry geometry(multipolygon, 2154)
-  );
-")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_tot_geometry ON ajout_tot USING GIST(geometry);")
-
-dbExecute(conn, "
-  CREATE TABLE supp_tot (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      geometry geometry(multipolygon, 2154)
-  );
-")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_tot_geometry ON supp_tot USING GIST(geometry);")
-
-
-dbExecute(conn, "
-  CREATE TABLE bordure (
-      code_insee text PRIMARY KEY,
-      nom_com text,
-      geometry geometry(multipolygon, 2154)
-  );
-")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_geometry ON bordure USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_nom_com ON bordure (nom_com);")
-
-dbExecute(conn, "
-  CREATE TABLE ins_parc_avant (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      geometry geometry(multipolygon, 2154)
-  );
-")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_avant_geometry ON ins_parc_avant USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_avant_nom_com ON ins_parc_avant (nom_com);")
-
-dbExecute(conn, "
-  CREATE TABLE ins_parc_apres (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      geometry geometry(multipolygon, 2154)
-  );
-")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_apres_geometry ON ins_parc_apres USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ins_parc_apres_nom_com ON ins_parc_apres (nom_com);")
-
-dbExecute(conn, "
   CREATE TABLE ajout (
       idu text PRIMARY KEY,
       nom_com text,
