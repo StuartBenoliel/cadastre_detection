@@ -58,8 +58,7 @@ ui <- fluidPage(
                ),
                column(3,
                       selectInput("nom_com_select_carte", "Choisir un nom de commune:",
-                                  choices = NULL,
-                                  selected = NULL)
+                                  choices = NULL)
                ),
              ),
              uiOutput("dynamicMaps")  # Use UI output to render maps
@@ -143,18 +142,21 @@ server <- function(input, output, session) {
   observeEvent(input$depart_select_carte, {
     num_departement <<- input$depart_select_carte
     print(paste0("Changement au niveau du département carte: ", num_departement))
-    commune <- load_communes(conn, num_departement)
-    
-    updateSelectInput(session, "nom_com_select_carte",
-                      choices = sort(unique(commune$nom_com)),
-                      selected = sort(unique(commune$nom_com))[1])
-    
     
     int_temps <- intervalle_temps(conn, num_departement)
     
     updateSelectInput(session, "temps_select_carte",
                       choices = int_temps,
                       selected = int_temps[1])
+    update_search_path(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
+    
+    commune <- load_communes(conn, num_departement, temps_vec_carte[1])
+    
+    commune <- sort(paste(commune$nom_com, commune$code_com))
+    
+    updateSelectInput(session, "nom_com_select_carte",
+                      choices = commune,
+                      selected = commune[1])
     
   })
 
@@ -162,6 +164,13 @@ server <- function(input, output, session) {
     print(paste0("Changement au niveau de la période de temps carte: ", input$temps_select_carte))
     temps_vec_carte <<- strsplit(input$temps_select_carte, "-")[[1]]
     update_search_path(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
+    commune <- load_communes(conn, num_departement, temps_vec_carte[1])
+    
+    commune <- sort(paste(commune$nom_com, commune$code_com))
+    
+    updateSelectInput(session, "nom_com_select_carte",
+                      choices = commune,
+                      selected = commune[1])
   })
   
   # Rendu dynamique des cartes
@@ -173,9 +182,9 @@ server <- function(input, output, session) {
       temps_reactive()
     })
     print(paste0("Affichage des cartes pour la commune: ", input$nom_com_select_carte))
-    nom_com <- gsub("'", "''", input$nom_com_select_carte)
+    nom_com <-sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
     
-    cartes_dynamiques(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2], nom_com)
+    cartes_dynamiques(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2], nom_com)
   })
   
   # Lancement au démarage
