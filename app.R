@@ -248,8 +248,8 @@ server <- function(input, output, session) {
     
     col_tableau <- c('nom_com', 'code_com', paste0('parcelles_20',temps_vec_tableau[1]), 
                      paste0('parcelles_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
-                     paste0('restantes_20',temps_vec_tableau[2]), 'vrai_ajout', 'vrai_supp', 
-                     'translation', 'contour', 'contour_translation', 'subdiv', 
+                     paste0('restantes_20',temps_vec_tableau[2]), 'ajout', 'suppression', 
+                     'translation', 'contour', 'contour_translation', 'subdivision', 
                      'fusion', 'redecoupage', 'contour_transfo','contour_transfo_translation')
     
     updateCheckboxGroupInput(session, "var_tableau",

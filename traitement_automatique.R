@@ -19,12 +19,11 @@ params_list <- list(
   list(num_departement = "21", temps_apres = 24, temps_avant = 23),
   list(num_departement = "13", temps_apres = 24, temps_avant = 23)
 )
-indic_bordure <- F
 
 # Boucle pour exécuter les blocs de code avec différents paramètres
 for (params in params_list) {
   traitement_parcelles(conn, params$num_departement, 
                        params$temps_apres, params$temps_avant)
-  print(paste0("Traitement déparement ", params$num_departement, 
+  print(paste0("Traitement département ", params$num_departement, 
                " pour les années 20", params$temps_apres, " - 20", params$temps_avant, " terminé !"))
 }

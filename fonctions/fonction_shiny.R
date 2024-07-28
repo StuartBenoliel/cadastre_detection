@@ -113,7 +113,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     modif_avant <- st_read(conn, query =  paste0(
-      "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '", nom_com, "'
+      "SELECT * FROM modif_avant_iou_multi WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
@@ -185,7 +185,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     
     modif_avant <- st_read(conn, query = paste0(
       "SELECT mav.* 
-         FROM modif_avant_iou_convex mav
+         FROM modif_avant_iou_multi mav
          JOIN parc_", num_departement, "_", temps_apres, " pa ON mav.idu = pa.idu
          WHERE pa.nom_com = '", nom_com, "';"))
     
@@ -256,7 +256,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     
     modif_avant <- st_read(conn, query = paste0(
       "SELECT mav.* 
-         FROM modif_avant_iou_convex mav
+         FROM modif_avant_iou_multi mav
          JOIN parc_", num_departement, "_", temps_apres, " pa ON mav.idu = pa.idu
          WHERE mav.nom_com = 
               (SELECT nom_com FROM chgt_commune 
@@ -344,7 +344,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     
   } else {
     modif_avant <- st_read(conn, query =  paste0(
-      "SELECT * FROM modif_avant_iou_convex WHERE nom_com = '", nom_com, "';"))
+      "SELECT * FROM modif_avant_iou_multi WHERE nom_com = '", nom_com, "';"))
     contour <- st_read(conn, query = paste0(
       "SELECT * FROM contour WHERE nom_com = '",nom_com, "';"))
     contour_translation <- st_read(conn, query = paste0(
@@ -528,7 +528,7 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       ),
       modif_restant_avant AS (
         SELECT nom_com, COUNT(*) AS nb_modif_restant_avant
-        FROM modif_avant_iou_convex 
+        FROM modif_avant_iou_multi
         GROUP BY nom_com
       ),
       supp_restant AS (
@@ -612,12 +612,12 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         parcelles_20", temps_avant,",
         COALESCE(nb_modif_restant_apres, 0) + COALESCE(nb_ajout_restant, 0) AS restantes_20", temps_apres,",
         COALESCE(nb_modif_restant_avant, 0) + COALESCE(nb_supp_restant, 0) AS restantes_20", temps_avant,",
-        COALESCE(nb_ajout, 0) AS vrai_ajout,
-        COALESCE(nb_supp, 0) AS vrai_supp,
+        COALESCE(nb_ajout, 0) AS ajout,
+        COALESCE(nb_supp, 0) AS suppression,
         COALESCE(nb_translation, 0) AS translation,
         COALESCE(nb_contour, 0) AS contour,
         COALESCE(nb_contour_translation, 0) AS contour_translation,
-        COALESCE(nb_subdiv, 0) AS subdiv,
+        COALESCE(nb_subdiv, 0) AS subdivision,
         COALESCE(nb_fusion, 0) AS fusion,
         COALESCE(nb_redecoupage, 0) AS redecoupage,
         COALESCE(nb_contour_transfo, 0) AS contour_transfo,

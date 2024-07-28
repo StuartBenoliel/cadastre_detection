@@ -4,8 +4,8 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   source(file = "database/table_traitement_db.R")
   
   dbExecute(conn, paste0("
-  INSERT INTO ajout_tot
-  SELECT idu, nom_com, code_com, com_abs, contenance, geometry 
+  INSERT INTO ajout
+  SELECT idu, nom_com, code_com, com_abs, contenance, geometry
   FROM parc_", params$num_departement, "_", params$temps_apres, " apres
   WHERE NOT EXISTS (
     SELECT 1
@@ -15,8 +15,8 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
 "))
   
   dbExecute(conn, paste0("
-  INSERT INTO supp_tot
-  SELECT idu, nom_com, code_com, com_abs, contenance, geometry 
+  INSERT INTO supp
+  SELECT idu, nom_com, code_com, com_abs, contenance, geometry
   FROM parc_", params$num_departement, "_", params$temps_avant, " avant
   WHERE NOT EXISTS (
     SELECT 1
@@ -40,62 +40,13 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       com_", params$num_departement, ";"
   ))
   
-  if (indic_bordure){
-    dbExecute(conn, paste0("
-  INSERT INTO ins_parc_avant
-  SELECT DISTINCT
-      pa.idu, pa.nom_com, pa.code_com, pa.com_abs, pa.contenance, pa.geometry 
-  FROM
-      parc_", params$num_departement, "_", params$temps_avant, " pa
-  JOIN
-      bordure
-  ON
-      pa.geometry&&bordure.geometry AND ST_WITHIN(pa.geometry, bordure.geometry);"))
-    
-    dbExecute(conn, paste0("
-  INSERT INTO ins_parc_apres
-  SELECT DISTINCT
-      pa.idu, pa.nom_com, pa.code_com, pa.com_abs, pa.contenance, pa.geometry 
-  FROM
-      parc_", params$num_departement, "_", params$temps_apres, " pa
-  JOIN
-      bordure
-  ON
-      pa.geometry&&bordure.geometry AND ST_WITHIN(pa.geometry, bordure.geometry);"))
-    
-  }
-  
-  dbExecute(conn, paste0("
-  INSERT INTO ajout
-  SELECT DISTINCT
-      at.idu, at.nom_com, at.code_com, at.com_abs, at.contenance, at.geometry 
-  FROM
-      ajout_tot at", 
-                         ifelse(indic_bordure, "
-  JOIN
-      bordure
-  ON
-      at.geometry&&bordure.geometry AND ST_WITHIN(at.geometry, bordure.geometry);", ";")))
-  
-  dbExecute(conn, paste0("
-  INSERT INTO supp
-  SELECT DISTINCT
-      st.idu, st.nom_com, st.code_com, st.com_abs, st.contenance, st.geometry 
-  FROM
-      supp_tot st", 
-                         ifelse(indic_bordure, "
-  JOIN
-      bordure
-  ON
-      st.geometry&&bordure.geometry AND ST_WITHIN(st.geometry, bordure.geometry);", ";")))
-  
   dbExecute(conn, paste0("
   INSERT INTO identique
   SELECT apres.idu
-  FROM ", ifelse(indic_bordure, 'ins_parc_apres', paste0("parc_", params$num_departement, "_", params$temps_apres)), " apres
+  FROM parc_", params$num_departement, "_", params$temps_apres, " apres
   WHERE EXISTS (
       SELECT 1
-      FROM ", ifelse(indic_bordure, 'ins_parc_avant', paste0("parc_", params$num_departement, "_", params$temps_avant)), " avant
+      FROM parc_", params$num_departement, "_", params$temps_avant, " avant
       WHERE apres.idu = avant.idu
       AND ST_Equals(
           ST_SnapToGrid(apres.geometry, 0.0001), 
@@ -107,7 +58,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   INSERT INTO modif_avant
   SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
       avant.contenance, avant.geometry
-  FROM ", ifelse(indic_bordure, 'ins_parc_avant', paste0("parc_", params$num_departement, "_", params$temps_avant)), " avant
+  FROM parc_", params$num_departement, "_", params$temps_avant, " avant
   WHERE NOT EXISTS (
       SELECT 1
       FROM identique
@@ -123,7 +74,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   INSERT INTO modif_apres
   SELECT apres.idu, apres.nom_com, apres.code_com, apres.com_abs, 
       apres.contenance, apres.geometry
-  FROM ", ifelse(indic_bordure, 'ins_parc_apres', paste0("parc_", params$num_departement, "_", params$temps_apres)), " apres
+  FROM parc_", params$num_departement, "_", params$temps_apres, " apres
   WHERE NOT EXISTS (
       SELECT 1
       FROM identique
@@ -236,8 +187,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       avant.contenance, avant.iou_ajust, avant.idu, apres.geometry
   FROM modif_avant_iou_multi AS avant
   LEFT JOIN modif_apres apres ON avant.idu = apres.idu
-  WHERE ((LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou < iou_ajust))
-     OR iou_multi IS NULL;
+  WHERE iou_multi IS NULL;
 ")
   
   dbExecute(conn, "
@@ -252,37 +202,12 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
     OR idu IN (SELECT idu FROM contour_translation);
 ")
   
-  dbExecute(conn, "
-  INSERT INTO modif_avant_iou_convex
-  SELECT idu, nom_com, code_com, com_abs, contenance, iou, iou_ajust, iou_multi,
-      calcul_iou_convex('modif_avant_iou_multi', 'modif_apres_iou', participants_avant, participants_apres) AS iou_convex,
-      participants_avant, participants_apres, geometry
-  FROM modif_avant_iou_multi;
-")
-  
-  dbExecute(conn, "
-  INSERT INTO contour
-  SELECT idu, nom_com, code_com, com_abs, contenance, iou_convex AS iou_multi, 
-      participants_avant, participants_apres, geometry
-  FROM modif_avant_iou_convex
-  WHERE iou_convex > 0.99 AND LENGTH(participants_avant) = LENGTH(participants_apres);
-")
-  
-  dbExecute(conn, "
-  DELETE FROM modif_avant_iou_convex
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour);
-")
-  
-  dbExecute(conn, "
-  DELETE FROM modif_apres_iou
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour);
-")
   
   dbExecute(conn, "
   INSERT INTO contour
   SELECT idu, nom_com, code_com, com_abs, contenance,
          iou_multi, participants_avant, participants_apres, geometry
-  FROM modif_avant_iou_convex
+  FROM modif_avant_iou_multi
   WHERE iou_ajust < (iou + 0.1);
 ")
   
@@ -291,13 +216,13 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
          avant.contenance, avant.iou_ajust,
          avant.idu AS idu_translate, apres.geometry
-  FROM modif_avant_iou_convex AS avant
+  FROM modif_avant_iou_multi AS avant
   LEFT JOIN modif_apres apres ON avant.idu = apres.idu
   WHERE iou_ajust > (iou + 0.1);
 ")
   
   dbExecute(conn, "
-  DELETE FROM modif_avant_iou_convex
+  DELETE FROM modif_avant_iou_multi
   WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
@@ -507,8 +432,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, ST_SnapToGrid(geometry, 0.0001) AS geometry
   FROM supp;
 ")
-  
-  # Parcelles ajoutées n'ayant pas été modifiées
+
   dbExecute(conn, "
   DELETE FROM ajout
   WHERE idu IN 
@@ -516,7 +440,6 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
         JOIN supp_simp ON ST_Equals(ajout_simp.geometry, supp_simp.geometry));
 ")
   
-  # Parcelles supprimées n'ayant pas été modifiées
   dbExecute(conn, "
   DELETE FROM supp
   WHERE idu IN 
@@ -875,9 +798,9 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   
   dbExecute(conn, "
   DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout, supp, ajout_tot, supp_tot,
-  modif_avant, modif_apres, modif, modif_avant_iou, modif_avant_iou_multi, 
-  ajout_simp, supp_simp, supp_iou, ajout_iou, ajout_iou_translate, 
-  supp_iou_multi, supp_iou_multi_translate_rapide, max_iou, cas_disparition_commune,
+  modif_avant, modif_apres, modif, modif_avant_iou, ajout_simp, supp_simp, 
+  supp_iou, ajout_iou, ajout_iou_translate, supp_iou_multi, 
+  supp_iou_multi_translate_rapide, max_iou, cas_disparition_commune,
   multi_translate_rapide, supp_iou_multi_translate, multi_ajout CASCADE
 ;")
   

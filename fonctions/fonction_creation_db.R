@@ -1,13 +1,51 @@
 # Fonction pour gérer le format des numéros de département
-gestion_num_departement <- function(num_depart) {
-  while (nchar(num_depart) < 3) {
-    num_depart <- paste0("0", num_depart)
+gestion_num_departement <- function(num_departement) {
+  while (nchar(num_departement) < 3) {
+    num_departement <- paste0("0", num_departement)
   }
-  return(num_depart)
+  return(num_departement)
+}
+
+sys_projection <- function(num_departement) {
+  syst_proj <- c(
+    "971" = "RGAF09UTM20",
+    "972" = "RGAF09UTM20",
+    "973" = "UTM22RGFG95",
+    "974" = "RGR92UTM40S",
+    "976" = "RGM04UTM38S",
+    "977" = "RGAF09UTM20",
+    "978" = "RGAF09UTM20"
+  )
+  if (num_departement %in% names(syst_proj)) {
+    return(syst_proj[[num_departement]])
+  } else if (grepl("^0\\d{2}3$", num_departement)) {
+    return("LAMB93")
+  } else {
+    return(NULL)  # Ou une autre valeur par défaut si nécessaire
+  }
+}
+
+code_sys_projection <- function(num_departement) {
+  syst_proj <- c(
+    "971" = 5490,
+    "972" = 5490,
+    "973" = 2972,
+    "974" = 2975,
+    "976" = 4471,
+    "977" = 5490,
+    "978" = 5490
+  )
+  if (num_departement %in% names(syst_proj)) {
+    return(syst_proj[[num_departement]])
+  } else if (grepl("^0\\d{2}3$", num_departement)) {
+    return(2154)
+  } else {
+    return(NULL)  # Ou une autre valeur par défaut si nécessaire
+  }
 }
 
 # Fonction pour télécharger et traiter chaque département
-telechargement_departement <- function(num_depart, num_annee, indic_parc = T) {
+telechargement_departement <- function(num_departement, num_annee, indic_parc = T) {
   
   archive_months <- c(
     "2022" = "01",
@@ -15,19 +53,25 @@ telechargement_departement <- function(num_depart, num_annee, indic_parc = T) {
     "2020" = "01",
     "2019" = "07"
   )
-  
+
   # Construire l'URL du fichier .7z pour le département spécifié
   if (num_annee == 2024) {
-    url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
-                  num_depart,
-                  "_2024-04-01/PARCELLAIRE-EXPRESS_1-1__SHP_LAMB93_D",
-                  num_depart,
+    url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_",
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
+                  "_2024-04-01/PARCELLAIRE-EXPRESS_1-1__SHP_",
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
                   "_2024-04-01.7z")
   }
   
   if(num_annee == 2023) {
-    url <- paste0("https://files.opendatarchives.fr/professionnels.ign.fr/parcellaire-express/PARCELLAIRE_EXPRESS_1-1__SHP_LAMB93_D",
-                  num_depart,
+    url <- paste0("https://files.opendatarchives.fr/professionnels.ign.fr/parcellaire-express/PARCELLAIRE_EXPRESS_1-1__SHP_",
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
                   "_2023-07-01.7z")
   }
   
@@ -36,8 +80,10 @@ telechargement_departement <- function(num_depart, num_annee, indic_parc = T) {
                   num_annee,
                   "-",
                   archive_months[num_annee],
-                  "/PARCELLAIRE_EXPRESS_1-0__SHP_LAMB93_D",
-                  num_depart,
+                  "/PARCELLAIRE_EXPRESS_1-0__SHP_",
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
                   "_",
                   num_annee,
                   "-",
@@ -153,7 +199,7 @@ constru_table <- function(table_sf, num_departement, num_annee, indic_parc = T) 
       ' (IDU VARCHAR(14) PRIMARY KEY,',
       types_vars,
       'CONTENANCE NUMERIC,',
-      'geometry GEOMETRY(MULTIPOLYGON, 2154));'
+      'geometry GEOMETRY(MULTIPOLYGON, ', code_sys_projection(num_departement),'));'
     ))
     
     dbExecute(conn,paste0(
@@ -188,12 +234,12 @@ constru_table <- function(table_sf, num_departement, num_annee, indic_parc = T) 
     # Création de la table (structure vide) ####
     
     dbExecute(conn, paste0('DROP TABLE IF EXISTS com_', num_departement, ';'))
-    
+
     dbExecute(conn, paste0(
       'CREATE TABLE com_', num_departement,
       ' (CODE_INSEE VARCHAR(5) PRIMARY KEY,',
       types_vars,
-      'geometry GEOMETRY(MULTIPOLYGON, 2154));',
+      'geometry GEOMETRY(MULTIPOLYGON, ', code_sys_projection(num_departement),'));',
       collapse =''
     ))
     

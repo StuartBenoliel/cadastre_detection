@@ -17,10 +17,11 @@ source("fonctions/fonction_creation_db.R")
 conn <- connecter()
 
 # 2- Ajout de la base de données ####
+# 13, 21, 2a, 2b, 60, 85, (1:5, 83, 86:95, 971:974, 976:978)
 
-# 1:19, 2a, 2b, 21:95, 971:978 
-num_departements <- c('60')
-num_annee <- 22
+# 1:19, 2a, 2b, 21:95, 971:974, 976:978
+num_departements <- c(971:974, 976:978)
+num_annee <- 24
 indic_parc <- T
 
 # 8 min 1 département parcelle
@@ -34,7 +35,10 @@ for (i in 1:length(num_departements)){
     commune <- traitement_doublon_et_arrondissement(commune)
   }
   
-  constru_table(commune, num_departements[i], num_annee, indic_parc)
+  constru_table(commune, as.character(num_departements[i]), num_annee, indic_parc)
+  
+  print(paste0("Import département ", num_departements[i], 
+               " pour l'années 20", num_annee, " terminé !"))
 }
 
 parc_85_24 <- process_departement('085', "2024")

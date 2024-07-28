@@ -41,6 +41,16 @@ dbExecute(conn, "
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_geometry ON supp USING GIST(geometry);")
 
 dbExecute(conn, "
+  CREATE TABLE bordure (
+      code_insee text PRIMARY KEY,
+      nom_com text,
+      geometry geometry(multipolygon, 2154)
+  );
+")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_geometry ON bordure USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_nom_com ON bordure (nom_com);")
+
+dbExecute(conn, "
   CREATE TABLE identique (
       idu text PRIMARY KEY
   );
@@ -127,24 +137,7 @@ dbExecute(conn, "
   );
 ")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_avant_iou_multi_geometry ON modif_avant_iou_multi USING GIST(geometry);")
-
-dbExecute(conn, "
-  CREATE TABLE modif_avant_iou_convex (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou numeric,
-      iou_ajust numeric,
-      iou_multi numeric,
-      iou_convex numeric,
-      participants_avant text,
-      participants_apres text,
-      geometry geometry(multipolygon, 2154)
-  );
-")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_avant_iou_convex_nom_com ON modif_avant_iou_convex (nom_com);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_avant_iou_multi_nom_com ON modif_avant_iou_multi (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE ajout_simp (
