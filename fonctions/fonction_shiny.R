@@ -9,10 +9,16 @@ departement_traite <- function(conn) {
            "))
   
   departements <- result$schema_name %>%
-    str_extract("cadastre_(..)\\z") %>%
+    str_extract("cadastre_.*\\z") %>%
     str_replace_all("cadastre_", "") %>%
-    unique() %>%
-    sort()
+    unique()  %>%                                     # Obtenir des valeurs uniques
+    tibble(value = .) %>%                            # Convertir en tibble pour faciliter le tri
+    mutate(
+      numeric_part = as.numeric(str_extract(value, "\\d+")),    # Extraire la partie numérique
+      non_numeric_part = str_remove(value, "\\d+")              # Extraire la partie non numérique
+    ) %>%
+    arrange(numeric_part, non_numeric_part) %>%         # Trier d'abord par partie numérique, puis par partie non numérique
+    pull(value)   
 }
 
 # Fonction pour mettre à jour le search path
@@ -74,8 +80,8 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   vrai_supp <- st_read(conn, query = paste0(
     "SELECT * FROM vrai_supp WHERE nom_com = '", nom_com, "';"))
   
-  is_fusion_com <- dbGetQuery(conn, paste0(
-    "SELECT * FROM chgt_commune WHERE nom_com = '", nom_com, "' AND changement = 'Fusion';"))
+  is_fusion_or_nom__com <- dbGetQuery(conn, paste0(
+    "SELECT * FROM chgt_commune WHERE nom_com = '", nom_com, "' AND (changement = 'Fusion' OR changement = 'Changement de nom');"))
   
   is_defusion_part_com  <- dbGetQuery(conn, paste0(
     "SELECT * FROM chgt_commune WHERE nom_com = '", nom_com, "' AND changement = 'Défusion partielle' ;"))
@@ -95,7 +101,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   
   map_1 <- map_base
   
-  if (nrow(is_fusion_com) > 0) {
+  if (nrow(is_fusion_or_nom__com) > 0) {
     
     fusion_com <- st_read(conn, query = paste0(
       "SELECT * FROM fusion_com WHERE nom_com = '", nom_com, "';"))

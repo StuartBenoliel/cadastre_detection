@@ -17,11 +17,11 @@ source("fonctions/fonction_creation_db.R")
 conn <- connecter()
 
 # 2- Ajout de la base de données ####
-# 13, 21, 2a, 2b, 60, 85, (1:5, 83, 86:95, 971:974, 976:978)
+# 1:5, 13, 21, 2a, 2b, 60, 85:95, 971:974, 976:978 
 
 # 1:19, 2a, 2b, 21:95, 971:974, 976:978
-num_departements <- c(971:974, 976:978)
-num_annee <- 24
+num_departements <- c(90:95)
+num_annee <- 19
 indic_parc <- T
 
 # 8 min 1 département parcelle

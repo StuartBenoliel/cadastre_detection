@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "85"
-  temps_apres: 24
-  temps_avant: 23
+  num_departement: "91"
+  temps_apres: 21
+  temps_avant: 20
 ---
 
 ```{r setup, include=FALSE}
@@ -103,12 +103,14 @@ bordure <- st_read(conn, query = "SELECT * FROM bordure;") %>%
 ## Elimination des parcelles IDENTIQUES en tout point du polygone (méthode de base pour enlever les cas reconnaissables facilement)
 
 ```{r modif geometry egal sql}
-dbExecute(conn, "TRUNCATE TABLE identique, modif_apres, modif_avant, modif;")
+dbExecute(conn, "TRUNCATE TABLE identique, modif_apres, modif_avant, modif, cas_disparition_commune;")
 
 dbExecute(conn, paste0("
   INSERT INTO identique
-  SELECT apres.idu
+  SELECT apres.idu, apres.nom_com, avant.nom_com, apres.code_com
   FROM parc_", params$num_departement, "_", params$temps_apres, " apres
+  FULL JOIN parc_", params$num_departement, "_", params$temps_avant, " avant 
+    ON avant.idu = apres.idu
   WHERE EXISTS (
       SELECT 1
       FROM parc_", params$num_departement, "_", params$temps_avant, " avant
@@ -118,6 +120,16 @@ dbExecute(conn, paste0("
           ST_SnapToGrid(avant.geometry, 0.0001)
       )
   );"))
+
+dbExecute(conn, paste0(" 
+  INSERT INTO cas_disparition_commune
+  SELECT DISTINCT
+      nom_com_apres,
+      code_com,
+      nom_com_avant,
+      code_com
+  FROM identique 
+  WHERE nom_com_apres != nom_com_avant;"))
 
 dbExecute(conn, paste0("
   INSERT INTO modif_avant
@@ -411,7 +423,7 @@ mapshot(map, url = paste0("www/parcelles_modifiés_",params$num_departement,"_",
 ## Cas des parcelles dans le cas d'une défusion de communes
 
 ```{r ajout/supp -> focus défusion commune}
-dbExecute(conn, "TRUNCATE TABLE defusion_com, cas_disparition_commune, chgt_commune;")
+dbExecute(conn, "TRUNCATE TABLE defusion_com, chgt_commune;")
 
 dbExecute(conn, "
   INSERT INTO defusion_com
@@ -612,6 +624,23 @@ dbExecute(conn, paste0("
   GROUP BY
       f.nom_com, c.nom_com, f.code_com, f.participants, f.participants_code_com
 ;"))
+
+dbExecute(conn, paste0(" 
+  UPDATE chgt_commune
+  SET 
+      participants = cas_disparition_commune.nom_com_avant || ', ' || chgt_commune.participants,
+      participants_code_com = cas_disparition_commune.code_com_avant || ', ' || chgt_commune.participants_code_com
+  FROM cas_disparition_commune
+  WHERE chgt_commune.nom_com = cas_disparition_commune.nom_com;
+"))
+
+dbExecute(conn, paste0(" 
+  INSERT INTO chgt_commune
+  SELECT nom_com, code_com, 'Changement de nom', nom_com_avant, code_com_avant
+  FROM cas_disparition_commune
+  WHERE nom_com NOT IN (SELECT nom_com FROM chgt_commune);
+;"))
+
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```

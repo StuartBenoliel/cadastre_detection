@@ -14,6 +14,7 @@ source(file = "fonctions/fonction_shiny.R")
 conn <- connecter()
 
 departements <- departement_traite(conn)
+print(departements)
 
 # Define UI
 ui <- fluidPage(
@@ -85,7 +86,7 @@ ui <- fluidPage(
              wellPanel(class = "well-panel",
                        DTOutput("table")),
              br(),
-             h3("Fusion / défusion de communes:"),
+             h3("Fusion / défusion de communes ou changement de nom:"),
              wellPanel(class = "well-pane-small",
                        uiOutput("changement_communes"))
     ),
@@ -227,8 +228,8 @@ server <- function(input, output, session) {
     
     print(paste0("Changement au niveau du département tableau: ", input$depart_select_tableau))
     int_temps <- intervalle_temps(conn, input$depart_select_tableau)
-    
-    if (!identical(int_temps[1], input$temps_select_tableau)){
+
+    if (!input$temps_select_tableau %in% int_temps){
       indic(FALSE) 
     }
     
@@ -236,7 +237,8 @@ server <- function(input, output, session) {
                       choices = int_temps,
                       selected = ifelse(input$temps_select_tableau %in% int_temps, 
                                         input$temps_select_tableau, int_temps[1]))
-    temps_vec_tableau <<- strsplit(int_temps[1], "-")[[1]]
+
+    temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
     
     maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
   })

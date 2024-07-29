@@ -18,10 +18,8 @@ sys_projection <- function(num_departement) {
   )
   if (num_departement %in% names(syst_proj)) {
     return(syst_proj[[num_departement]])
-  } else if (grepl("^0\\d{2}3$", num_departement)) {
-    return("LAMB93")
   } else {
-    return(NULL)  # Ou une autre valeur par défaut si nécessaire
+    return("LAMB93")  # Ou une autre valeur par défaut si nécessaire
   }
 }
 
@@ -37,10 +35,8 @@ code_sys_projection <- function(num_departement) {
   )
   if (num_departement %in% names(syst_proj)) {
     return(syst_proj[[num_departement]])
-  } else if (grepl("^0\\d{2}3$", num_departement)) {
-    return(2154)
   } else {
-    return(NULL)  # Ou une autre valeur par défaut si nécessaire
+    return(2154)
   }
 }
 

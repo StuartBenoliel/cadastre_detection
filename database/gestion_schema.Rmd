@@ -49,6 +49,7 @@ dbGetQuery(conn, paste0("
       schema_name LIKE 'traitement_%';
            "))
 ```
+
 ```{r voir les tables de traitement fixe}
 dbGetQuery(conn, paste0(" 
   SELECT 

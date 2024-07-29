@@ -42,8 +42,10 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   
   dbExecute(conn, paste0("
   INSERT INTO identique
-  SELECT apres.idu
+  SELECT apres.idu, apres.nom_com, avant.nom_com, apres.code_com
   FROM parc_", params$num_departement, "_", params$temps_apres, " apres
+  FULL JOIN parc_", params$num_departement, "_", params$temps_avant, " avant 
+    ON avant.idu = apres.idu
   WHERE EXISTS (
       SELECT 1
       FROM parc_", params$num_departement, "_", params$temps_avant, " avant
@@ -53,6 +55,16 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
           ST_SnapToGrid(avant.geometry, 0.0001)
       )
   );"))
+  
+  dbExecute(conn, paste0(" 
+  INSERT INTO cas_disparition_commune
+  SELECT DISTINCT
+      nom_com_apres,
+      code_com,
+      nom_com_avant,
+      code_com
+  FROM identique 
+  WHERE nom_com_apres != nom_com_avant;"))
   
   dbExecute(conn, paste0("
   INSERT INTO modif_avant
@@ -419,6 +431,22 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       com_avant c ON f.nom_com = c.nom_com
   GROUP BY
       f.nom_com, c.nom_com, f.code_com, f.participants, f.participants_code_com
+;"))
+  
+  dbExecute(conn, paste0(" 
+  UPDATE chgt_commune
+  SET 
+      participants = cas_disparition_commune.nom_com_avant || ', ' || chgt_commune.participants,
+      participants_code_com = cas_disparition_commune.code_com_avant || ', ' || chgt_commune.participants_code_com
+  FROM cas_disparition_commune
+  WHERE chgt_commune.nom_com = cas_disparition_commune.nom_com;
+"))
+  
+  dbExecute(conn, paste0(" 
+  INSERT INTO chgt_commune
+  SELECT nom_com, code_com, 'Changement de nom', nom_com_avant, code_com_avant
+  FROM cas_disparition_commune
+  WHERE nom_com NOT IN (SELECT nom_com FROM chgt_commune);
 ;"))
   
   dbExecute(conn, "
