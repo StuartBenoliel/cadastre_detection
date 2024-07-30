@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "91"
-  temps_apres: 21
-  temps_avant: 20
+  num_departement: "85"
+  temps_apres: 24
+  temps_avant: 23
 ---
 
 ```{r setup, include=FALSE}
@@ -69,6 +69,9 @@ commune <- st_read(conn, query = paste0("SELECT * FROM com_", params$num_departe
 
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
+
+avant <- st_read(conn, query = paste0("SELECT * FROM parc_", params$num_departement, "_", params$temps_avant, " ORDER BY IDU LIMIT 100;"))
+apres <- st_read(conn, query = paste0("SELECT * FROM parc_", params$num_departement, "_", params$temps_apres, ";"))
 ```
 
 # Définition de la bordure dans laquelle je considère que mes parcelles doivent apartenir entièrement
@@ -114,7 +117,22 @@ dbExecute(conn, paste0("
   WHERE EXISTS (
       SELECT 1
       FROM parc_", params$num_departement, "_", params$temps_avant, " avant
-      WHERE apres.idu = avant.idu
+      WHERE apres.idu = avant.idu 
+      AND apres.contenance = avant.contenance
+  );"))
+
+dbExecute(conn, paste0("
+  INSERT INTO identique
+  SELECT apres.idu, apres.nom_com, avant.nom_com, apres.code_com
+  FROM parc_", params$num_departement, "_", params$temps_apres, " apres
+  FULL JOIN parc_", params$num_departement, "_", params$temps_avant, " avant 
+    ON avant.idu = apres.idu
+  WHERE EXISTS (
+      SELECT 1
+      FROM parc_", params$num_departement, "_", params$temps_avant, " avant
+      WHERE apres.idu = avant.idu 
+      AND ST_IsValid(ST_SnapToGrid(apres.geometry, 0.0001))
+      AND ST_IsValid(ST_SnapToGrid(avant.geometry, 0.0001))
       AND ST_Equals(
           ST_SnapToGrid(apres.geometry, 0.0001), 
           ST_SnapToGrid(avant.geometry, 0.0001)
@@ -180,7 +198,7 @@ dbExecute(conn, "
 # Elimine les parcelles "sans changement manifeste" plus les parcelles sans iou = parcelles n'ayant pas de geométrie  lors d'une année sur l'autre
 dbExecute(conn, "
   DELETE FROM modif
-  WHERE iou > 0.99 OR iou IS NULL;
+  WHERE iou >= 0.99 OR iou IS NULL;
 ")
 ```
 
@@ -215,7 +233,7 @@ dbExecute(conn, "
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu AS idu_translate, geometry
   FROM modif_apres_iou
-  WHERE iou_ajust > 0.99;
+  WHERE iou_ajust >= 0.99;
 ")
 
 dbExecute(conn, "
@@ -226,7 +244,7 @@ dbExecute(conn, "
          idu AS participants_apres,
          geometry
   FROM modif_avant_iou
-  WHERE iou > 0.95 AND iou_ajust < 0.99;
+  WHERE iou >= 0.95 AND iou_ajust < 0.99;
 ")
 
 dbExecute(conn, "
@@ -234,7 +252,7 @@ dbExecute(conn, "
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu AS idu_translate, geometry
   FROM modif_apres_iou
-  WHERE iou < 0.95 AND iou_ajust > 0.95 AND iou_ajust < 0.99;
+  WHERE iou < 0.95 AND iou_ajust >= 0.95 AND iou_ajust < 0.99;
 ")
 
 dbExecute(conn, "
@@ -675,7 +693,8 @@ dbExecute(conn, "
   DELETE FROM ajout
   WHERE idu IN 
       (SELECT ajout_simp.idu FROM ajout_simp
-        JOIN supp_simp ON ST_Equals(ajout_simp.geometry, supp_simp.geometry));
+        JOIN supp_simp ON ST_Equals(ajout_simp.geometry, supp_simp.geometry)
+        WHERE ST_IsValid(ajout_simp.geometry) AND ST_IsValid(supp_simp.geometry));
 ")
 
 # Parcelles supprimées n'ayant pas été modifiées
@@ -683,7 +702,8 @@ dbExecute(conn, "
   DELETE FROM supp
   WHERE idu IN 
       (SELECT supp_simp.idu FROM supp_simp
-        JOIN ajout_simp ON ST_Equals(supp_simp.geometry, ajout_simp.geometry));
+        JOIN ajout_simp ON ST_Equals(supp_simp.geometry, ajout_simp.geometry)
+        WHERE ST_IsValid(ajout_simp.geometry) AND ST_IsValid(supp_simp.geometry));
 ")
 ```
 
