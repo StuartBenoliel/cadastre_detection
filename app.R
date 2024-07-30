@@ -14,7 +14,6 @@ source(file = "fonctions/fonction_shiny.R")
 conn <- connecter()
 
 departements <- departement_traite(conn)
-print(departements)
 
 # Define UI
 ui <- fluidPage(
@@ -142,14 +141,35 @@ ui <- fluidPage(
 
 # Define server logic
 server <- function(input, output, session) {
-
+  
+  indic <- reactiveVal(FALSE)
+  indic_double <- reactiveVal(FALSE)
+  
   observeEvent(input$tabsetPanel, {
     req(input$temps_select_carte) # Evite que cela se lance au démarage
     print("Changement d'onglet")
     if (input$tabsetPanel == "Carte des comparaisons par commune") {
-      maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
+      
+      ifelse(input$depart_select_carte == input$depart_select_tableau & 
+               input$temps_select_carte == input$temps_select_tableau, indic(TRUE), indic(FALSE))
+      ifelse(input$depart_select_carte != input$depart_select_tableau & 
+               input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
+      updateSelectInput(session, "depart_select_carte", selected = input$depart_select_tableau)
+      updateSelectInput(session, "temps_select_carte",
+                        choices = int_temps, 
+                        selected = ifelse(input$temps_select_tableau %in% int_temps, 
+                                          input$temps_select_tableau, int_temps[1]))
     } else {
-      maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+      
+      ifelse(input$depart_select_carte == input$depart_select_tableau & 
+               input$temps_select_carte == input$temps_select_tableau, indic(TRUE) , indic(FALSE))
+      ifelse(input$depart_select_carte != input$depart_select_tableau & 
+               input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
+      updateSelectInput(session, "depart_select_tableau", selected = input$depart_select_carte)
+      updateSelectInput(session, "temps_select_tableau",
+                        choices = int_temps,
+                        selected = ifelse(input$temps_select_carte %in% int_temps, 
+                                          input$temps_select_carte, int_temps[1]))
     }
   })
   
@@ -158,18 +178,33 @@ server <- function(input, output, session) {
     num_departement <<- input$depart_select_carte
     print(paste0("Changement au niveau du département carte: ", num_departement))
     
-    int_temps <- intervalle_temps(conn, num_departement)
+    int_temps <<- intervalle_temps(conn, num_departement)
+    
+    if (input$temps_select_carte %in% int_temps) {
+      temps_select <- input$temps_select_carte
+    } else {
+      temps_select <- int_temps[1]
+    }
     updateSelectInput(session, "temps_select_carte",
                       choices = int_temps, 
-                      selected = ifelse(input$temps_select_carte %in% int_temps, 
-                                        input$temps_select_carte, int_temps[1]))
-    temps_vec_carte <<- strsplit(int_temps[1], "-")[[1]]
-    maj_chemin(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
+                      selected = temps_select)
     
-    commune <<- nom_code_commune(conn, num_departement, temps_vec_carte[1])
-    updateSelectInput(session, "nom_com_select_carte",
-                      choices = commune,
-                      selected = commune[1])
+    temps_vec_carte <<- strsplit(temps_select, "-")[[1]]
+    
+    if (input$temps_select_carte != temps_select){
+      indic(FALSE) 
+    } else{
+      indic(TRUE)
+      
+      if (indic_double()){
+        maj_chemin(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
+        
+        commune <<- nom_code_commune(conn, num_departement, temps_vec_carte[1])
+        updateSelectInput(session, "nom_com_select_carte",
+                          choices = commune,
+                          selected = commune[1])
+      }
+    }
     
   })
   
@@ -185,12 +220,15 @@ server <- function(input, output, session) {
                       choices = commune, 
                       selected = ifelse(input$nom_com_select_carte %in% commune, 
                                         input$nom_com_select_carte, commune[1]))
+    indic(TRUE)
+    indic_double(TRUE) 
   })
   
   # Rendu dynamique des cartes
   output$dynamicMaps <- renderUI({
     req(input$tabsetPanel == "Carte des comparaisons par commune")
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
+    req(indic())
     
     if (input$nom_com_select_carte %in% commune){
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
@@ -202,10 +240,10 @@ server <- function(input, output, session) {
   output$parcelles_absentes <- renderUI({
     req(input$tabsetPanel == "Carte des comparaisons par commune")
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
+    req(indic())
     
     if (input$nom_com_select_carte %in% commune){
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
-      print(paste0("Affichage des parcelles manquantes pour la commune: ", nom_com))
       
       parc_null <- dbGetQuery(conn, paste0(
         "SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[1], "' AS période 
@@ -221,30 +259,36 @@ server <- function(input, output, session) {
     } 
   })
   
-  indic <- reactiveVal(FALSE)
-  
-  # Lancement au démarage
   observeEvent(input$depart_select_tableau, {
-    
+    req(input$tabsetPanel == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau du département tableau: ", input$depart_select_tableau))
-    int_temps <- intervalle_temps(conn, input$depart_select_tableau)
-
-    if (!input$temps_select_tableau %in% int_temps){
-      indic(FALSE) 
+    int_temps <<- intervalle_temps(conn, input$depart_select_tableau)
+    
+    if (input$temps_select_tableau %in% int_temps) {
+      temps_select <- input$temps_select_tableau
+    } else {
+      temps_select <- int_temps[1]
     }
     
     updateSelectInput(session, "temps_select_tableau",
                       choices = int_temps,
-                      selected = ifelse(input$temps_select_tableau %in% int_temps, 
-                                        input$temps_select_tableau, int_temps[1]))
-
-    temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
+                      selected = temps_select)
     
-    maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+    temps_vec_tableau <<- strsplit(temps_select, "-")[[1]]
+    
+    if (input$temps_select_tableau != temps_select){
+      indic(FALSE) 
+    } else{
+      indic(TRUE)
+      if (indic_double()){
+        maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+      }
+    }
+    
   })
   
   observeEvent(input$temps_select_tableau, {
-    req(input$temps_select_tableau) # Evite que cela se lance avant la 1ere initialisation
+    req(input$tabsetPanel == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau de la période de temps tableau: ", input$temps_select_tableau))
     temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
     
@@ -261,6 +305,7 @@ server <- function(input, output, session) {
     maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
     
     indic(FALSE) 
+    indic_double(TRUE) 
   })
   
   observeEvent(input$var_tableau, {
@@ -282,7 +327,6 @@ server <- function(input, output, session) {
     req(input$tabsetPanel == "Tableau des changments par commune")
     req(indic())
     
-    print(paste0("Affichage du tableau des fusion/défusions au niveau du département: ", input$depart_select_tableau))
     chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_commune;")
     tableau_si_donnee(chgt_com)
   })
