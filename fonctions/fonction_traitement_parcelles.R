@@ -1,4 +1,4 @@
-traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant) {
+traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant, nb_parcelles_seuil=5e05) {
   dbExecute(conn, paste0(
     "DROP SCHEMA IF EXISTS traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_", params$num_departement, " CASCADE;"))
   source(file = "database/table_traitement_db.R")
@@ -50,7 +50,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       SELECT 1
       FROM parc_", params$num_departement, "_", params$temps_avant, " avant
       WHERE apres.idu = avant.idu
-      AND ST_Equals(
+      AND safe_st_equals(
           ST_SnapToGrid(apres.geometry, 0.0001), 
           ST_SnapToGrid(avant.geometry, 0.0001)
       )
@@ -66,7 +66,21 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   FROM identique 
   WHERE nom_com_apres != nom_com_avant;"))
   
-  dbExecute(conn, paste0("
+  nb_parcelles <- dbGetQuery(conn, paste0("
+    SELECT 
+      (SELECT COUNT(*) FROM parc_", params$num_departement, "_", params$temps_apres, ") - 
+      (SELECT COUNT(*) FROM identique) AS parcelles_non_identique
+  "))
+  
+  if (nb_parcelles$parcelles_non_identique > nb_parcelles_seuil) {
+    print(paste0("Traitement département ", params$num_departement, 
+                 " pour les années 20", params$temps_apres, " - 20", params$temps_avant, 
+                 " partiel. Cause : nombre de parcelles à traiter est trop volumineux : ", 
+                 nb_parcelles$parcelles_non_identique, 
+                 " (contre un seuil de ", nb_parcelles_seuil, "). Fin de la partie traitement pour les parcelles ayant le même identifiant. Lancer le traitement en mode manuel ou changer le seuil sinon !"))
+    
+  } else {
+    dbExecute(conn, paste0("
   INSERT INTO modif_avant
   SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
       avant.contenance, avant.geometry
@@ -81,8 +95,8 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       FROM supp
       WHERE avant.idu = supp.idu
   );"))
-  
-  dbExecute(conn, paste0("
+    
+    dbExecute(conn, paste0("
   INSERT INTO modif_apres
   SELECT apres.idu, apres.nom_com, apres.code_com, apres.com_abs, 
       apres.contenance, apres.geometry
@@ -97,51 +111,59 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       FROM ajout
       WHERE apres.idu = ajout.idu
   );"))
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO modif
   SELECT
       COALESCE(avant.idu, apres.idu) AS idu,
       avant.geometry AS geometry_avant,
       apres.geometry AS geometry_apres,
-      calcul_iou(apres.geometry, avant.geometry) AS iou,
-      calcul_iou_ajust(apres.geometry, avant.geometry) AS iou_ajust
+      calcul_iou(apres.geometry, avant.geometry) AS iou
   FROM
       modif_avant avant
   FULL JOIN
       modif_apres apres ON avant.idu = apres.idu;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   DELETE FROM modif
   WHERE iou > 0.99 OR iou IS NULL;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
+  INSERT INTO modif_iou_ajust
+  SELECT
+      idu, iou,
+      calcul_iou_ajust(geometry_apres, geometry_avant) AS iou_ajust
+  FROM
+      modif;
+")
+    
+    dbExecute(conn, "
   INSERT INTO modif_avant_iou
   SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
-      avant.contenance, modif.iou, modif.iou_ajust, avant.geometry
-  FROM modif
-  LEFT JOIN modif_avant avant ON modif.idu = avant.idu;
+      avant.contenance, ajust.iou, ajust.iou_ajust, avant.geometry
+  FROM modif_iou_ajust ajust
+  LEFT JOIN modif_avant avant ON ajust.idu = avant.idu;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO modif_apres_iou
   SELECT apres.idu, apres.nom_com, apres.code_com, apres.com_abs, 
-      apres.contenance, modif.iou, modif.iou_ajust, apres.geometry
-  FROM modif
-  LEFT JOIN modif_apres apres ON modif.idu = apres.idu;
+      apres.contenance, ajust.iou, ajust.iou_ajust, apres.geometry
+  FROM modif_iou_ajust ajust
+  LEFT JOIN modif_apres apres ON ajust.idu = apres.idu;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO translation
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu AS idu_translate, geometry
   FROM modif_apres_iou
   WHERE iou_ajust > 0.99;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO contour
   SELECT idu, nom_com, code_com, com_abs, contenance,
          iou AS iou_multi,
@@ -151,40 +173,60 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   FROM modif_avant_iou
   WHERE iou > 0.95 AND iou_ajust < 0.99;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO contour_translation
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu AS idu_translate, geometry
   FROM modif_apres_iou
   WHERE iou < 0.95 AND iou_ajust > 0.95 AND iou_ajust < 0.99;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   DELETE FROM modif_avant_iou
-  WHERE idu IN (SELECT idu FROM translation)
-    OR idu IN (SELECT idu FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
+  WHERE EXISTS (
+      SELECT 1
+      FROM translation
+      WHERE modif_avant_iou.idu = translation.idu
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour
+      WHERE modif_avant_iou.idu = contour.idu
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour_translation
+      WHERE modif_avant_iou.idu = contour_translation.idu
+  );
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   DELETE FROM modif_apres_iou
-  WHERE idu IN (SELECT idu FROM translation)
-    OR idu IN (SELECT idu FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
+  WHERE EXISTS (
+      SELECT 1
+      FROM translation
+      WHERE modif_apres_iou.idu = translation.idu
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour
+      WHERE modif_apres_iou.idu = contour.idu
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour_translation
+      WHERE modif_apres_iou.idu = contour_translation.idu
+  );
 ")
-  
-  dbExecute(conn, "TRUNCATE TABLE multi_calcul_cache;")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "TRUNCATE TABLE multi_calcul_cache;")
+    
+    dbExecute(conn, "
   INSERT INTO modif_avant_iou_multi
   SELECT idu, nom_com, code_com, com_abs, contenance, iou, iou_ajust,
     (calcul_iou_multi(idu, geometry, 'modif_avant_iou', 'modif_apres_iou')).*,
     geometry
   FROM modif_avant_iou;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO contour
   SELECT idu, nom_com, code_com, com_abs, contenance,
          iou_multi, participants_avant, participants_apres, geometry
@@ -192,8 +234,8 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   WHERE (iou_multi > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres))
      OR (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou > iou_ajust);
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO contour_translation
   SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
       avant.contenance, avant.iou_ajust, avant.idu, apres.geometry
@@ -201,29 +243,29 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   LEFT JOIN modif_apres apres ON avant.idu = apres.idu
   WHERE iou_multi IS NULL;
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   DELETE FROM modif_avant_iou_multi
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
-")
-  
-  dbExecute(conn, "
-  DELETE FROM modif_apres_iou
   WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
-  
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
+  DELETE FROM modif_apres_iou
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
+    OR idu IN (SELECT idu FROM contour_translation);
+")
+    
+    
+    dbExecute(conn, "
   INSERT INTO contour
   SELECT idu, nom_com, code_com, com_abs, contenance,
          iou_multi, participants_avant, participants_apres, geometry
   FROM modif_avant_iou_multi
   WHERE iou_ajust < (iou + 0.1);
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   INSERT INTO contour_translation
   SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
          avant.contenance, avant.iou_ajust,
@@ -232,18 +274,22 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   LEFT JOIN modif_apres apres ON avant.idu = apres.idu
   WHERE iou_ajust > (iou + 0.1);
 ")
-  
-  dbExecute(conn, "
+    
+    dbExecute(conn, "
   DELETE FROM modif_avant_iou_multi
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
-")
-  
-  dbExecute(conn, "
-  DELETE FROM modif_apres_iou
   WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
+    
+    dbExecute(conn, "
+  DELETE FROM modif_apres_iou
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
+    OR idu IN (SELECT idu FROM contour_translation);
+")
+  }
+  
+  
+  
   
   dbExecute(conn, "
   INSERT INTO defusion_com
@@ -460,20 +506,26 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, ST_SnapToGrid(geometry, 0.0001) AS geometry
   FROM supp;
 ")
-
+  
   dbExecute(conn, "
   DELETE FROM ajout
-  WHERE idu IN 
-      (SELECT ajout_simp.idu FROM ajout_simp
-        JOIN supp_simp ON ST_Equals(ajout_simp.geometry, supp_simp.geometry));
-")
+  WHERE EXISTS (
+      SELECT 1
+      FROM ajout_simp
+        JOIN supp_simp ON ST_Equals(ajout_simp.geometry, supp_simp.geometry)
+      WHERE ajout.idu = ajout_simp.idu
+       AND ST_IsValid(ajout_simp.geometry) and ST_IsValid(supp_simp.geometry)
+);")
   
   dbExecute(conn, "
   DELETE FROM supp
-  WHERE idu IN 
-      (SELECT supp_simp.idu FROM supp_simp
-        JOIN ajout_simp ON ST_Equals(supp_simp.geometry, ajout_simp.geometry));
-")
+  WHERE EXISTS (
+      SELECT 1
+      FROM supp_simp
+        JOIN ajout_simp ON ST_Equals(ajout_simp.geometry, supp_simp.geometry)
+      WHERE supp.idu = supp_simp.idu
+       AND ST_IsValid(ajout_simp.geometry) and ST_IsValid(supp_simp.geometry)
+);")
   
   dbExecute(conn, "
   INSERT INTO supp_iou
@@ -528,6 +580,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
         FROM ajout_iou WHERE iou > 0.99);
 ")
   
+  
   dbExecute(conn, "
   DELETE FROM ajout_iou
   WHERE iou > 0.99;
@@ -561,14 +614,28 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   
   dbExecute(conn, "
   DELETE FROM ajout_iou_translate
-  WHERE idu IN (SELECT idu FROM translation)
-    OR idu IN (SELECT idu FROM contour_translation);
+  WHERE EXISTS (
+      SELECT 1
+      FROM translation
+      WHERE ajout_iou_translate.idu = translation.idu
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour_translation
+      WHERE ajout_iou_translate.idu = contour_translation.idu
+  );
 ")
   
   dbExecute(conn, "
   DELETE FROM supp_iou
-  WHERE idu IN (SELECT idu_translate FROM translation)
-    OR idu IN (SELECT idu_translate FROM contour_translation);
+  WHERE EXISTS (
+      SELECT 1
+      FROM translation
+      WHERE supp_iou.idu = translation.idu
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour_translation
+      WHERE supp_iou.idu = contour_translation.idu
+  );
 ")
   
   dbExecute(conn, "TRUNCATE TABLE multi_calcul_cache;")
@@ -777,7 +844,6 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour_transfo);
 ")
-
   dbExecute(conn, "
   INSERT INTO supp_iou_restant
   SELECT
@@ -816,12 +882,20 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   
   dbExecute(conn, "
   DELETE FROM ajout_iou_restant
-  WHERE idu IN (SELECT idu FROM vrai_ajout);
+  WHERE EXISTS (
+      SELECT 1
+      FROM vrai_ajout
+      WHERE ajout_iou_restant.idu = vrai_ajout.idu
+  );
 ")
   
   dbExecute(conn, "
   DELETE FROM supp_iou_restant
-  WHERE idu IN (SELECT idu FROM vrai_supp);
+  WHERE EXISTS (
+      SELECT 1
+      FROM vrai_ajout
+      WHERE supp_iou_restant.idu = vrai_ajout.idu
+  );
 ")
   
   dbExecute(conn, "

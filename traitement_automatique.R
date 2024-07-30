@@ -44,10 +44,6 @@ params_list <- list(
 )
 
 params_list <- list(
-  list(num_departement = "90", temps_apres = 21, temps_avant = 20)
-)
-
-params_list <- list(
   list(num_departement = "95", temps_apres = 24, temps_avant = 23),
   list(num_departement = "94", temps_apres = 24, temps_avant = 23),
   list(num_departement = "93", temps_apres = 24, temps_avant = 23),
@@ -80,6 +76,9 @@ params_list <- list(
   list(num_departement = "90", temps_apres = 20, temps_avant = 19)
 )
 
+params_list <- list(
+  list(num_departement = "1", temps_apres = 24, temps_avant = 23)
+)
 # Boucle pour exécuter les blocs de code avec différents paramètres
 for (params in params_list) {
   traitement_parcelles(conn, params$num_departement, 

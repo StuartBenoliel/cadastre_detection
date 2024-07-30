@@ -4,7 +4,6 @@ dbExecute(conn, "
   DECLARE
       intersection geometry;
       aire_intersection numeric;
-      polygon_union geometry;
       aire_union numeric;
       iou numeric;
   BEGIN
@@ -18,8 +17,7 @@ dbExecute(conn, "
           END IF;
         
           aire_intersection := ST_Area(intersection);
-          polygon_union := ST_Union(polygon_1, polygon_2);
-          aire_union := ST_Area(polygon_union);
+          aire_union := ST_Area(ST_Union(polygon_1, polygon_2));
         
           -- Calculer l'IoU
           iou := aire_intersection / aire_union;
@@ -28,7 +26,7 @@ dbExecute(conn, "
           RETURN NULL;
       END IF;
   END;
-  $$ LANGUAGE plpgsql;
+  $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
 ")
 
 dbExecute(conn, "
@@ -60,7 +58,7 @@ dbExecute(conn, "
           RETURN NULL;
       END IF;
   END;
-  $$ LANGUAGE plpgsql;
+  $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
 ")
 
 dbExecute(conn, "
@@ -111,7 +109,7 @@ dbExecute(conn, "
       -- Calculer l'IoU avec l'union des parcelles et le polygon
       RETURN QUERY SELECT calcul_iou(polygon_union, polygon), nom_participants;
   END;
-  $$ LANGUAGE plpgsql;
+  $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
 ")
 
 # Non symétrique
@@ -442,6 +440,17 @@ dbExecute(conn, "
   $$ LANGUAGE plpgsql;
 ") 
 
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION safe_st_equals(geom1 geometry, geom2 geometry)
+  RETURNS BOOLEAN AS $$
+  BEGIN
+    RETURN ST_Equals(geom1, geom2);
+  EXCEPTION
+    WHEN others THEN
+      RETURN FALSE;
+  END;
+  $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
+")
 
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_multi_translate_rapide(polygon_avant geometry, nom_table_avant text, nom_table_apres text)

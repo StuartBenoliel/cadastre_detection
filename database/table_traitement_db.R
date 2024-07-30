@@ -105,12 +105,20 @@ dbExecute(conn, paste0("
       idu text PRIMARY KEY,
       geometry_avant geometry(multipolygon, ", code_sys_projection(params$num_departement),"),
       geometry_apres geometry(multipolygon, ", code_sys_projection(params$num_departement),"),
-      iou numeric,
-      iou_ajust numeric
+      iou numeric
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_geometry_avant ON modif USING GIST(geometry_avant);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_geometry_apres ON modif USING GIST(geometry_apres);")
+
+dbExecute(conn, paste0("
+  CREATE TABLE modif_iou_ajust (
+      idu text PRIMARY KEY,
+      iou numeric,
+      iou_ajust numeric
+  );
+"))
+
 
 dbExecute(conn, paste0("
   CREATE TABLE modif_avant_iou (

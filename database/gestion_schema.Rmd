@@ -19,11 +19,15 @@ library(sf)
 library(DBI)
 source(file = "connexion_db.R")
 conn <- connecter()
+```
+
+```{r}
 nom_com <- "Marseille 3eme"
 dbExecute(conn, paste0(
   "SET search_path TO traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_" , params$num_departement,
   ", cadastre_", params$num_departement, ", public"))
 ```
+
 
 ```{r voir les schémas contenant les tables nécessaires}
 dbGetQuery(conn, paste0(" 
@@ -85,4 +89,22 @@ lapply(drop_commands, function(cmd) {
 })
 ```
 
+```{r se sortir des requetes bloquées}
+transactions <- dbGetQuery(conn, "
+  SELECT
+    pid,
+    state,
+    query,
+    age(clock_timestamp(), query_start) AS age,
+    usename,
+    datname
+  FROM pg_stat_activity
+  WHERE state != 'idle'
+  ORDER BY query_start;
+")
+
+for (pid in transactions$pid) {
+  dbExecute(conn, paste("SELECT pg_terminate_backend(", pid, ");"))
+}
+```
 
