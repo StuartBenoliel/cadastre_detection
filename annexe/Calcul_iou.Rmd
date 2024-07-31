@@ -441,4 +441,57 @@ plot <- grid.arrange(plot1, plot2, plot3, plot4, plot5, plot6, ncol = 2)
 ggsave("Forme_iou_translation.png", plot = plot, width = 14, height = 8, dpi = 300)
 ```
 
+```{r buffer négatif seuil}
+centers_1 <- list(
+  circle_center = c(0, 0),
+  square_center = c(3, 0),
+  rectangle_center = c(6, 0),
+  diamond_center = c(9, 0),
+  L_b_center = c(12, 0),
+  L_h_center = c(13, 1.5)
+)
+
+# Créer les formes avec les centres espacés
+circle_1 <- create_circle(centers_1$circle_center, radius = 1)
+square_1 <- create_square(centers_1$square_center, side_length = 2)
+rectangle_1 <- create_rectangle(centers_1$rectangle_center, width = 2, height = 4)
+diamond_1 <- create_diamond(centers_1$diamond_center, width = 2, height = 4)
+L_b <- create_rectangle(centers_1$L_b_center, width = 1, height = 3)
+L_h <- create_rectangle(centers_1$L_h_center, width = 3, height = 0.5)
+
+L_1 <- st_union(L_b, L_h)
+
+geometries <- st_sfc(circle_1, square_1, rectangle_1, diamond_1, L_1, crs = 4326)
+geometries_sf <- st_sf(geometry = geometries)
+
+# Créer des buffers négatifs pour les seuils donnés
+thresholds <- c(0, 0.01, 0.1, 0.5, 0.7)
+buffer_list <- list()
+
+# Appliquer les buffers et ajouter à la liste
+for (threshold in thresholds) {
+  
+  buffered_geometries <- st_sfc(st_buffer(circle_1, dist = -threshold), 
+                       st_buffer(square_1, dist = -threshold), 
+                       st_buffer(rectangle_1, dist = -threshold), 
+                       st_buffer(diamond_1, dist = -threshold), 
+                       st_buffer(L_1, dist = -threshold), crs = 4326)
+  buffer_sf <- st_sf(geometry = buffered_geometries, threshold = threshold)
+  buffer_list[[as.character(threshold)]] <- buffer_sf
+}
+
+all_buffers <- do.call(rbind, buffer_list)
+
+
+# Visualiser les buffers négatifs avec ggplot2
+plot1 <- ggplot() +
+  geom_sf(data = all_buffers, aes(fill = as.factor(threshold)), color = 'black') +
+  scale_fill_manual(values = c("black","lightblue", "lightgreen", "lightcoral", "lightgoldenrod"), 
+                    name = "Buffer Threshold") +
+  theme_minimal() +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+# Afficher le graphique
+plot1
+```
 

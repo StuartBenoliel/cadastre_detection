@@ -127,7 +127,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
     
     dbExecute(conn, "
   DELETE FROM modif
-  WHERE iou > 0.99 OR iou IS NULL;
+  WHERE iou >= 0.99 OR iou IS NULL;
 ")
     
     dbExecute(conn, "
@@ -160,7 +160,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu AS idu_translate, geometry
   FROM modif_apres_iou
-  WHERE iou_ajust > 0.99;
+  WHERE iou_ajust >= 0.99;
 ")
     
     dbExecute(conn, "
@@ -171,7 +171,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
          idu AS participants_apres,
          geometry
   FROM modif_avant_iou
-  WHERE iou > 0.95 AND iou_ajust < 0.99;
+  WHERE iou >= 0.95 AND iou_ajust < 0.99;
 ")
     
     dbExecute(conn, "
@@ -179,7 +179,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu AS idu_translate, geometry
   FROM modif_apres_iou
-  WHERE iou < 0.95 AND iou_ajust > 0.95 AND iou_ajust < 0.99;
+  WHERE iou < 0.95 AND iou_ajust >= 0.95 AND iou_ajust < 0.99;
 ")
     
     dbExecute(conn, "
@@ -231,7 +231,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance,
          iou_multi, participants_avant, participants_apres, geometry
   FROM modif_avant_iou_multi
-  WHERE (iou_multi > 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres))
+  WHERE (iou_multi >= 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres))
      OR (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou > iou_ajust);
 ")
     
@@ -272,7 +272,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
          avant.idu AS idu_translate, apres.geometry
   FROM modif_avant_iou_multi AS avant
   LEFT JOIN modif_apres apres ON avant.idu = apres.idu
-  WHERE iou_ajust > (iou + 0.1);
+  WHERE iou_ajust >= (iou + 0.1);
 ")
     
     dbExecute(conn, "
@@ -541,19 +541,19 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   INSERT INTO subdiv
   SELECT *
   FROM supp_iou
-  WHERE iou > 0.99 AND LENGTH(participants) != 14;
+  WHERE iou >= 0.99 AND LENGTH(participants) != 14;
 ")
   
   dbExecute(conn, "
   DELETE FROM ajout
   WHERE idu IN 
       (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-        FROM supp_iou WHERE iou > 0.99);
+        FROM supp_iou WHERE iou >= 0.99);
 ")
   
   dbExecute(conn, "
   DELETE FROM supp_iou
-  WHERE iou > 0.99;
+  WHERE iou >= 0.99;
 ")
   
   dbExecute(conn, "
@@ -570,20 +570,20 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   INSERT INTO fusion
   SELECT *
   FROM ajout_iou
-  WHERE iou > 0.99 AND LENGTH(participants) != 14;
+  WHERE iou >= 0.99 AND LENGTH(participants) != 14;
 ")
   
   dbExecute(conn, "
   DELETE FROM supp_iou
   WHERE idu IN 
       (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-        FROM ajout_iou WHERE iou > 0.99);
+        FROM ajout_iou WHERE iou >= 0.99);
 ")
   
   
   dbExecute(conn, "
   DELETE FROM ajout_iou
-  WHERE iou > 0.99;
+  WHERE iou >= 0.99;
 ")
   
   dbExecute(conn, "
@@ -601,7 +601,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu_translate, geometry
   FROM ajout_iou_translate
-  WHERE iou_ajust > 0.99;
+  WHERE iou_ajust >= 0.99;
 ")
   
   dbExecute(conn, "
@@ -609,7 +609,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
       idu_translate, geometry
   FROM ajout_iou_translate
-  WHERE (iou_ajust > 0.95 AND iou_ajust < 0.99);
+  WHERE (iou_ajust >= 0.95 AND iou_ajust < 0.99);
 ")
   
   dbExecute(conn, "
@@ -630,11 +630,11 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   WHERE EXISTS (
       SELECT 1
       FROM translation
-      WHERE supp_iou.idu = translation.idu
+      WHERE supp_iou.idu = translation.idu_translate
   ) OR EXISTS (
       SELECT 1
       FROM contour_translation
-      WHERE supp_iou.idu = contour_translation.idu
+      WHERE supp_iou.idu = contour_translation.idu_translate
   );
 ")
   
@@ -655,7 +655,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_multi, 
       participants_avant, participants_apres, geometry
   FROM supp_iou_multi
-  WHERE iou_multi > 0.99 AND LENGTH(participants_apres) != LENGTH(participants_avant);
+  WHERE iou_multi >= 0.99 AND LENGTH(participants_apres) != LENGTH(participants_avant);
 ")
   
   dbExecute(conn, "
@@ -663,7 +663,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_multi, 
       participants_avant, participants_apres, geometry
   FROM supp_iou_multi
-  WHERE iou_multi > 0.95 AND LENGTH(participants_apres) = LENGTH(participants_avant);
+  WHERE iou_multi >= 0.95 AND LENGTH(participants_apres) = LENGTH(participants_avant);
 ")
   
   dbExecute(conn, "
@@ -671,7 +671,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_multi, 
       participants_avant, participants_apres, geometry
   FROM supp_iou_multi
-  WHERE (iou_multi > 0.95 AND LENGTH(participants_apres) != LENGTH(participants_avant)
+  WHERE (iou_multi >= 0.95 AND LENGTH(participants_apres) != LENGTH(participants_avant)
    AND iou_multi < 0.99);
 ")
   
@@ -706,7 +706,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   FROM (
       SELECT unnest(regexp_split_to_array(participants_avant_translate, ',\\s*')) AS idu, iou_multi_translate
       FROM supp_iou_multi_translate_rapide
-      WHERE iou_multi_translate > 0.95
+      WHERE iou_multi_translate >= 0.95
   ) subquery
   GROUP BY idu;
 ")
@@ -719,7 +719,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       SELECT unnest(regexp_split_to_array(participants_avant_translate, ',\\s*')) AS idu, 
           iou_multi_translate, participants_avant_translate, participants_apres_translate
       FROM supp_iou_multi_translate_rapide
-      WHERE iou_multi_translate > 0.95
+      WHERE iou_multi_translate >= 0.95
   ) sub
   JOIN max_iou mi
   ON sub.idu = mi.idu AND sub.iou_multi_translate = mi.max_iou
@@ -769,7 +769,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_multi_translate, 
       participants_avant_translate, participants_apres_translate, geometry
   FROM supp_iou_multi_translate
-  WHERE iou_multi_translate > 0.95;
+  WHERE iou_multi_translate >= 0.95;
 ")
   
   dbExecute(conn, "
@@ -800,7 +800,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       participants_avant
   FROM
       calc_results
-  WHERE iou_multi > 0.95;
+  WHERE iou_multi >= 0.95;
 ")
   
   dbExecute(conn, "
@@ -809,7 +809,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       ma.iou_multi, ma.participants_avant, ma.participants_apres, simt.geometry
   FROM supp_iou_multi_translate simt
   LEFT JOIN multi_ajout ma ON ma.idu = simt.idu
-  WHERE ma.iou_multi > 0.99 AND LENGTH(ma.participants_apres) != LENGTH(ma.participants_avant);
+  WHERE ma.iou_multi >= 0.99 AND LENGTH(ma.participants_apres) != LENGTH(ma.participants_avant);
 ")
   
   dbExecute(conn, "
@@ -818,7 +818,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       ma.iou_multi, ma.participants_avant, ma.participants_apres, simt.geometry
   FROM supp_iou_multi_translate simt
   LEFT JOIN multi_ajout ma ON ma.idu = simt.idu
-  WHERE ma.iou_multi > 0.95 AND LENGTH(ma.participants_apres) = LENGTH(ma.participants_avant);
+  WHERE ma.iou_multi >= 0.95 AND LENGTH(ma.participants_apres) = LENGTH(ma.participants_avant);
 ")
   
   dbExecute(conn, "
@@ -827,7 +827,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       ma.iou_multi, ma.participants_avant, ma.participants_apres, simt.geometry
   FROM supp_iou_multi_translate simt
   LEFT JOIN multi_ajout ma ON ma.idu = simt.idu
-  WHERE (ma.iou_multi > 0.95 AND LENGTH(ma.participants_apres) != LENGTH(ma.participants_avant)
+  WHERE (ma.iou_multi >= 0.95 AND LENGTH(ma.participants_apres) != LENGTH(ma.participants_avant)
    AND ma.iou_multi < 0.99);
 ")
   

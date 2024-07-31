@@ -374,8 +374,9 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
       mapview(parc_avant %>%
                 filter(idu %in% translation$idu_translate), 
               col.regions = "#069F9C",
-              layer.name = "Parcelles translatées (état 2023)", 
+              layer.name = paste0("Parcelles translatées (état 20",temps_avant,")"), 
               alpha.regions = 0.5, homebutton = F)
+
   }
   if (nrow(fusion) > 0) {
     

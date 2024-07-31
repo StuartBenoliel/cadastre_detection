@@ -175,10 +175,9 @@ server <- function(input, output, session) {
   
   # Lancement au démarage
   observeEvent(input$depart_select_carte, {
-    num_departement <<- input$depart_select_carte
-    print(paste0("Changement au niveau du département carte: ", num_departement))
+    print(paste0("Changement au niveau du département carte: ", input$depart_select_carte))
     
-    int_temps <<- intervalle_temps(conn, num_departement)
+    int_temps <<- intervalle_temps(conn, input$depart_select_carte)
     
     if (input$temps_select_carte %in% int_temps) {
       temps_select <- input$temps_select_carte
@@ -197,9 +196,9 @@ server <- function(input, output, session) {
       indic(TRUE)
       
       if (indic_double()){
-        maj_chemin(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
+        maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
         
-        commune <<- nom_code_commune(conn, num_departement, temps_vec_carte[1])
+        commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
         updateSelectInput(session, "nom_com_select_carte",
                           choices = commune,
                           selected = commune[1])
@@ -213,9 +212,9 @@ server <- function(input, output, session) {
     print(paste0("Changement au niveau de la période de temps carte: ", input$temps_select_carte))
     
     temps_vec_carte <<- strsplit(input$temps_select_carte, "-")[[1]]
-    maj_chemin(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2])
+    maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
     
-    commune <<- nom_code_commune(conn, num_departement, temps_vec_carte[1])
+    commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
     updateSelectInput(session, "nom_com_select_carte",
                       choices = commune, 
                       selected = ifelse(input$nom_com_select_carte %in% commune, 
@@ -233,7 +232,7 @@ server <- function(input, output, session) {
     if (input$nom_com_select_carte %in% commune){
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
       print(paste0("Affichage des cartes pour la commune: ", nom_com))
-      cartes_dynamiques(conn, num_departement, temps_vec_carte[1], temps_vec_carte[2], nom_com)
+      cartes_dynamiques(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2], nom_com)
     } 
   })
   
@@ -247,11 +246,11 @@ server <- function(input, output, session) {
       
       parc_null <- dbGetQuery(conn, paste0(
         "SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[1], "' AS période 
-            FROM parc_", num_departement, "_", temps_vec_carte[1], " 
+            FROM parc_", input$depart_select_carte, "_", temps_vec_carte[1], " 
             WHERE ST_IsEmpty(geometry) AND nom_com = '", nom_com, "'
         UNION ALL
         SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[2], "' AS période 
-            FROM parc_", num_departement, "_", temps_vec_carte[2], " 
+            FROM parc_", input$depart_select_carte, "_", temps_vec_carte[2], " 
             WHERE ST_IsEmpty(geometry) AND nom_com = '", nom_com, "';"
       ))
       
