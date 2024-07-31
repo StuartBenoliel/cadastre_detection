@@ -3,7 +3,7 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "978"
+  num_departement: "13"
   temps_apres: 24
   temps_avant: 23
 ---
@@ -363,7 +363,9 @@ dbExecute(conn, "
   SELECT idu, nom_com, code_com, com_abs, contenance,
          iou_multi, participants_avant, participants_apres, geometry
   FROM modif_avant_iou_multi
-  WHERE iou_ajust < (iou + 0.1);
+  WHERE idu IN 
+    (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
+      FROM modif_avant_iou_multi WHERE iou_ajust < (iou + 0.1) AND LENGTH(participants_avant) = LENGTH(participants_apres));
 ")
 
 dbExecute(conn, "
@@ -373,12 +375,12 @@ dbExecute(conn, "
          avant.idu AS idu_translate, apres.geometry
   FROM modif_avant_iou_multi AS avant
   LEFT JOIN modif_apres apres ON avant.idu = apres.idu
-  WHERE iou_ajust >= (iou + 0.1);
+  WHERE iou_ajust >= (iou + 0.1) AND avant.idu NOT IN (SELECT idu FROM contour);
 ")
 
 dbExecute(conn, "
   DELETE FROM modif_avant_iou_multi
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
     OR idu IN (SELECT idu FROM contour_translation);
 ")
 
@@ -461,7 +463,7 @@ if (nrow(modif_avant) > 0) {
                        alpha.regions = 0.5, homebutton = F)
 }
 
-mapshot(map, url = paste0("www/parcelles_modifiés_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
+mapshot(map, url = paste0("parcelles_modifiés_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
 ```
 
 # Focus des parcelles ayant changé de communes
@@ -833,23 +835,11 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  INSERT INTO contour_translation
-  SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
-      idu_translate, geometry
-  FROM ajout_iou_translate
-  WHERE (iou < 0.95 AND iou_ajust >= 0.95 AND iou_ajust < 0.99);
-")
-
-dbExecute(conn, "
   DELETE FROM ajout_iou_translate
   WHERE EXISTS (
       SELECT 1
       FROM translation
       WHERE ajout_iou_translate.idu = translation.idu
-  ) OR EXISTS (
-      SELECT 1
-      FROM contour_translation
-      WHERE ajout_iou_translate.idu = contour_translation.idu
   );
 ")
 
@@ -859,10 +849,6 @@ dbExecute(conn, "
       SELECT 1
       FROM translation
       WHERE supp_iou.idu = translation.idu_translate
-  ) OR EXISTS (
-      SELECT 1
-      FROM contour_translation
-      WHERE supp_iou.idu = contour_translation.idu_translate
   );
 ")
 ```
@@ -913,6 +899,7 @@ dbExecute(conn, "
   WHERE (iou_multi >= 0.95 AND LENGTH(participants_apres) != LENGTH(participants_avant)
    AND iou_multi < 0.99);
 ")
+
 
 dbExecute(conn, "
   DELETE FROM ajout_iou_translate
@@ -1009,6 +996,57 @@ dbExecute(conn, "
 ```{r contour_transfo_translation_rapide, eval=FALSE}
 contour_transfo_translation <- st_read(conn, query = "SELECT * FROM contour_transfo_translation;")
 ```
+
+```{r}
+dbExecute(conn, "
+  WITH updated_values AS (
+    SELECT idu,
+           (calcul_iou_intersec_best_translate(geometry, 'supp_iou_multi_translate_rapide')).*
+    FROM ajout_iou_translate
+  )
+  UPDATE ajout_iou_translate
+  SET iou_ajust = updated_values.iou_ajust,
+      idu_translate = updated_values.idu_translate
+  FROM updated_values
+  WHERE ajout_iou_translate.idu = updated_values.idu
+")
+
+dbExecute(conn, "
+  INSERT INTO contour_translation
+  SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
+      idu_translate, geometry
+  FROM ajout_iou_translate
+  WHERE (iou < 0.95 AND iou_ajust >= 0.95 AND iou_ajust < 0.99);
+")
+
+dbExecute(conn, "
+  DELETE FROM ajout_iou_translate
+  WHERE EXISTS (
+      SELECT 1
+      FROM translation
+      WHERE ajout_iou_translate.idu = translation.idu
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour_translation
+      WHERE ajout_iou_translate.idu = contour_translation.idu
+  );
+")
+
+dbExecute(conn, "
+  DELETE FROM supp_iou_multi_translate_rapide
+  WHERE EXISTS (
+      SELECT 1
+      FROM translation
+      WHERE supp_iou_multi_translate_rapide.idu = translation.idu_translate
+  ) OR EXISTS (
+      SELECT 1
+      FROM contour_translation
+      WHERE supp_iou_multi_translate_rapide.idu = contour_translation.idu_translate
+  );
+")
+
+```
+
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
 
@@ -1122,68 +1160,71 @@ dbExecute(conn, "
 ## Recalcul de l'IoU pour détecter les parcelles maintenant isolées -> Véritable ajout ou suppression
 
 ```{r le reste}
-dbExecute(conn, "TRUNCATE TABLE supp_iou_restant, ajout_iou_restant, 
-          vrai_ajout, vrai_supp;")
+dbExecute(conn, "TRUNCATE TABLE vrai_ajout, vrai_supp;")
 
 dbExecute(conn, "
-  INSERT INTO supp_iou_restant
-  SELECT
-      idu, nom_com, code_com, com_abs, contenance,
-      (calcul_iou_intersec(geometry, 'ajout_iou_translate')).*,
-      iou_multi, participants_avant, participants_apres, 
-      iou_multi_translate, participants_avant_translate, participants_apres_translate,
-      geometry
-  FROM
-      supp_iou_multi_translate;
+  WITH updated_values AS (
+    SELECT idu,
+           (calcul_iou_intersec(geometry, 'ajout_iou_translate')).*
+    FROM supp_iou_multi_translate
+  )
+  UPDATE supp_iou_multi_translate
+  SET iou = updated_values.iou,
+      participants = updated_values.participants
+  FROM updated_values
+  WHERE supp_iou_multi_translate.idu = updated_values.idu
 ")
 
 dbExecute(conn, "
-  INSERT INTO ajout_iou_restant
-  SELECT
-      idu, nom_com, code_com, com_abs, contenance,
-      (calcul_iou_intersec(geometry, 'supp_iou_multi_translate')).*, 
-      iou_ajust, idu_translate, geometry
-  FROM
-      ajout_iou_translate;
+  WITH updated_values AS (
+    SELECT idu,
+           (calcul_iou_intersec(geometry, 'supp_iou_multi_translate')).*
+    FROM ajout_iou_translate
+  )
+  UPDATE ajout_iou_translate
+  SET iou = updated_values.iou,
+      participants = updated_values.participants
+  FROM updated_values
+  WHERE ajout_iou_translate.idu = updated_values.idu
 ")
 
 dbExecute(conn, "
   INSERT INTO vrai_ajout
   SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, geometry
-  FROM ajout_iou_restant
+  FROM ajout_iou_translate
   WHERE iou IS NULL;
 ")
 
 dbExecute(conn, "
   INSERT INTO vrai_supp
   SELECT idu, nom_com, code_com, com_abs, contenance, iou, participants, geometry
-  FROM supp_iou_restant
+  FROM supp_iou_multi_translate
   WHERE iou IS NULL;
 ")
 
 dbExecute(conn, "
-  DELETE FROM ajout_iou_restant
+  DELETE FROM ajout_iou_translate
   WHERE EXISTS (
       SELECT 1
       FROM vrai_ajout
-      WHERE ajout_iou_restant.idu = vrai_ajout.idu
+      WHERE ajout_iou_translate.idu = vrai_ajout.idu
   );
 ")
 
 dbExecute(conn, "
-  DELETE FROM supp_iou_restant
+  DELETE FROM supp_iou_multi_translate
   WHERE EXISTS (
       SELECT 1
-      FROM vrai_ajout
-      WHERE supp_iou_restant.idu = vrai_ajout.idu
+      FROM vrai_supp
+      WHERE supp_iou_multi_translate.idu = vrai_supp.idu
   );
 ")
 ```
 
 
 ```{r le reste, eval=FALSE}
-ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
-supp <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_translate;")
+supp <- st_read(conn, query = "SELECT * FROM supp_iou_multi_translate;")
 
 vrai_ajout <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
 vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
@@ -1194,8 +1235,8 @@ vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
 
 ```{r carte reste, eval=FALSE}
-ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
-supp <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_translate;")
+supp <- st_read(conn, query = "SELECT * FROM supp_iou_multi_translate;")
 modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
 modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 
@@ -1224,7 +1265,7 @@ if (nrow(modif_avant) > 0) {
                        layer.name = paste0("Parcelles modifiées restantes (état 20",params$temps_avant,")"), 
                        alpha.regions = 0.5, homebutton = F)
 }
-mapshot(map, url = paste0("www/parcelles_restantes_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
+mapshot(map, url = paste0("parcelles_restantes_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
 ```
 
 
@@ -1232,9 +1273,9 @@ mapshot(map, url = paste0("www/parcelles_restantes_",params$num_departement,"_",
 dbExecute(conn, "
   DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout, supp, 
   modif_avant, modif_apres, modif, modif_avant_iou, supp_iou, ajout_iou, 
-  ajout_iou_translate, supp_iou_multi, ajout_simp, supp_simp,
+  supp_iou_multi, ajout_simp, supp_simp,
   supp_iou_multi_translate_rapide, max_iou, cas_disparition_commune,
-  multi_translate_rapide, supp_iou_multi_translate, multi_ajout CASCADE
+  multi_translate_rapide, multi_ajout CASCADE
 ;")
 dbListTables(conn)
 ```
@@ -1260,8 +1301,8 @@ fusion <- st_read(conn, query = "SELECT * FROM fusion;")
 vrai_ajout <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
 vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
-ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_restant;")
-supp <- st_read(conn, query = "SELECT * FROM supp_iou_restant;")
+ajout <- st_read(conn, query = "SELECT * FROM ajout_iou_translate;")
+supp <- st_read(conn, query = "SELECT * FROM supp_iou_multi_translate;")
 modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
 modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
 
@@ -1405,5 +1446,5 @@ if (nrow(modif_avant) > 0) {
                        layer.name = paste0("Parcelles modifiées restantes (état 20",params$temps_avant,")"), 
                        alpha.regions = 0.5, homebutton = F)
 }
-mapshot(map, url = paste0("www/parcelles_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
+mapshot(map, url = paste0("parcelles_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
 ```

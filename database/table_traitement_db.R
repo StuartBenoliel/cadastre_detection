@@ -226,6 +226,7 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_translate_geometry ON ajout_iou_translate USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_translate_nom_com ON ajout_iou_translate (nom_com);")
 
 dbExecute(conn, paste0("
   CREATE TABLE supp_iou_multi (
@@ -299,6 +300,7 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_translate_geometry ON supp_iou_multi_translate USING GIST(geometry);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_multi_translate_nom_com ON supp_iou_multi_translate (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE multi_ajout (
@@ -309,41 +311,6 @@ dbExecute(conn, "
   );
 ")
 
-dbExecute(conn, paste0("
-  CREATE TABLE supp_iou_restant (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou numeric,
-      participants text,
-      iou_multi numeric,
-      participants_avant text,
-      participants_apres text,
-      iou_multi_translate numeric,
-      participants_avant_translate text,
-      participants_apres_translate text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_iou_restant_nom_com ON supp_iou_restant (nom_com);")
-
-dbExecute(conn, paste0("
-  CREATE TABLE ajout_iou_restant (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou numeric,
-      participants text,
-      iou_ajust numeric,
-      idu_translate text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_iou_restant_nom_com ON ajout_iou_restant (nom_com);")
 
 # Tables de typologie
 

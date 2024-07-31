@@ -67,9 +67,9 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   modif_apres <- st_read(conn, query =  paste0(
     "SELECT * FROM modif_apres_iou WHERE nom_com = '",nom_com, "';"))
   ajout <- st_read(conn, query =  paste0(
-    "SELECT * FROM ajout_iou_restant WHERE nom_com = '",nom_com, "';"))
+    "SELECT * FROM ajout_iou_translate WHERE nom_com = '",nom_com, "';"))
   supp <- st_read(conn, query =  paste0(
-    "SELECT * FROM supp_iou_restant WHERE nom_com = '",nom_com, "';"))
+    "SELECT * FROM supp_iou_multi_translate WHERE nom_com = '",nom_com, "';"))
   
   translation <- st_read(conn, query = paste0(
     "SELECT * FROM translation WHERE nom_com = '",nom_com, "';"))
@@ -125,7 +125,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     supp <- st_read(conn, query =  paste0(
-      "SELECT * FROM supp_iou_restant WHERE nom_com = '", nom_com, "'
+      "SELECT * FROM supp_iou_multi_translate WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
@@ -270,7 +270,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
            AND pa.nom_com = '", nom_com, "';"))
     
     supp <- st_read(conn, query =  paste0(
-      "SELECT * FROM supp_iou_restant WHERE nom_com = '",nom_com, "'
+      "SELECT * FROM supp_iou_multi_translate WHERE nom_com = '",nom_com, "'
            OR nom_com = 
               (SELECT nom_com FROM chgt_commune 
                 WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
@@ -507,6 +507,25 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   sync(map_1, map_compa@map, ncol = 1)
 }
 
+check_refonte_pc <- function(conn, nom_com, seuil=50) {
+  nb_parcelles_rest <- dbGetQuery(conn, paste0("
+  SELECT 
+    (SELECT COUNT(*) 
+     FROM modif_avant_iou_multi 
+     WHERE nom_com = '", nom_com, "') AS nb_modif_restant_avant,
+    (SELECT COUNT(*) 
+     FROM supp_iou_multi_translate 
+     WHERE nom_com = '", nom_com, "') AS nb_supp_restant,
+    (SELECT COUNT(*) 
+     FROM modif_avant_iou_multi 
+     WHERE nom_com = '", nom_com, "') +
+    (SELECT COUNT(*) 
+     FROM supp_iou_multi_translate 
+     WHERE nom_com = '", nom_com, "') AS total_count
+"))
+  ifelse(nb_parcelles_rest >50, return(T), return(F))
+}
+  
 tableau_si_donnee <- function(table) {
   tagList(
     if (nrow(table) > 0) {
@@ -540,7 +559,7 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       ),
       supp_restant AS (
         SELECT nom_com, COUNT(*) AS nb_supp_restant
-        FROM supp_iou_restant
+        FROM supp_iou_multi_translate
         GROUP BY nom_com
       ),
       modif_restant_apres AS (
@@ -550,7 +569,7 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       ),
       ajout_restant AS (
         SELECT nom_com, COUNT(*) AS nb_ajout_restant
-        FROM ajout_iou_restant
+        FROM ajout_iou_translate
         GROUP BY nom_com
       ),
       vrai_ajout AS (

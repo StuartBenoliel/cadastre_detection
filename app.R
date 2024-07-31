@@ -55,6 +55,9 @@ ui <- fluidPage(
                           )
                       )
                ),
+               column(3,
+                      uiOutput("warning_message")
+               ),
              ),
              wellPanel(class = "well-panel",
                        uiOutput("dynamicMaps")),
@@ -232,6 +235,19 @@ server <- function(input, output, session) {
     if (input$nom_com_select_carte %in% commune){
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
       print(paste0("Affichage des cartes pour la commune: ", nom_com))
+      
+      output$warning_message <- renderUI({
+        nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
+        indic_refonte <- check_refonte_pc(conn, nom_com)
+        if (indic_refonte) {
+          div(class = "alert alert-warning", "Refonte partielle ou totale du plan cadastral de la commune probable.
+              Classification non fiable.")
+        } else {
+          # Aucun message à afficher
+          NULL
+        }
+      })
+      
       cartes_dynamiques(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2], nom_com)
     } 
   })
@@ -257,6 +273,7 @@ server <- function(input, output, session) {
       tableau_si_donnee(parc_null)
     } 
   })
+  
   
   observeEvent(input$depart_select_tableau, {
     req(input$tabsetPanel == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
