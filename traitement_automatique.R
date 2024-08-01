@@ -77,7 +77,8 @@ params_list <- list(
 )
 
 params_list <- list(
-  list(num_departement = "13", temps_apres = 24, temps_avant = 23)
+  list(num_departement = "78", temps_apres = 21, temps_avant = 20),
+  list(num_departement = "78", temps_apres = 20, temps_avant = 19)
 )
 # Boucle pour exécuter les blocs de code avec différents paramètres
 for (params in params_list) {

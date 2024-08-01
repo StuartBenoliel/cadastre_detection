@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "13"
-  temps_apres: 24
-  temps_avant: 23
+  num_departement: "78"
+  temps_apres: 22
+  temps_avant: 21
 ---
 
 ```{r setup, include=FALSE}
@@ -402,9 +402,9 @@ mapshot(map, url = paste0("parcelles_modifiés_",params$num_departement,"_",para
 
 # Focus des parcelles ayant changé de communes
 
-## Cas des parcelles dans le cas d'une défusion de communes
+## Cas des parcelles dans le cas d'une  de communes
 
-```{r ajout/supp -> focus défusion commune}
+```{r ajout/supp -> focus  commune}
 dbExecute(conn, "TRUNCATE TABLE scission_com, chgt_com;")
 
 dbExecute(conn, "
@@ -500,9 +500,9 @@ dbExecute(conn, paste0("
       df.code_com_avant,
       CASE 
           WHEN c.nom_com IS NOT NULL THEN 
-              'Défusion partielle'
+              'Scission partielle'
           ELSE 
-              'Défusion totale'
+              'Scission totale'
       END AS changement,
       df.participants,
       df.participants_code_com
@@ -766,7 +766,6 @@ dbExecute(conn, "
 ```{r fusion/subdivision, eval=FALSE}
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
-
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation, modification de contour avec translation
@@ -862,6 +861,12 @@ dbExecute(conn, "
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour);
 ")
 ```
+```{r multisubdiv sql, eval=FALSE}
+supp <- st_read(conn, query = "SELECT * FROM supp;")
+redecoupage <- st_read(conn, query = "SELECT * FROM redecoupage;")
+contour_redecoupage <- st_read(conn, query = "SELECT * FROM contour_redecoupage;")
+contour <- st_read(conn, query = "SELECT * FROM contour;")
+```
 
 ```{r ajout/supp iou_multi -> multi-subdivision et contours}
 dbExecute(conn, "TRUNCATE TABLE multi_calcul_cache, contour_redecoupage;")
@@ -932,20 +937,28 @@ contour <- st_read(conn, query = "SELECT * FROM contour;")
 
 ```{r}
 dbExecute(conn, "
+  WITH ids_to_exclude AS (
+      SELECT idu_translate
+      FROM ajout
+      WHERE iou_ajust >= 0.95
+      GROUP BY idu_translate
+      HAVING COUNT(*) > 1
+  )
   INSERT INTO contour
   SELECT supp.idu, supp.nom_com, supp.code_com, supp.com_abs, supp.contenance, ajout.iou_ajust, 
       supp.idu, ajout.idu, supp.geometry
   FROM supp 
   INNER JOIN ajout ON ajout.idu_translate = supp.idu
-  WHERE ajout.iou_ajust >= 0.95;
+  WHERE ajout.iou_ajust >= 0.95 AND ajout.idu_translate NOT IN (SELECT idu_translate FROM ids_to_exclude);
 ")
+# DOUBLON ! Key (idu)=(783210000A3069) 78 pour les années 2022 - 2021
 
 dbExecute(conn, "
   DELETE FROM ajout
   WHERE EXISTS (
       SELECT 1
       FROM contour
-      WHERE ajout.idu = contour.idu
+      WHERE ajout.idu = contour.participants_apres
   );
 ")
 
@@ -954,7 +967,7 @@ dbExecute(conn, "
   WHERE EXISTS (
       SELECT 1
       FROM contour
-      WHERE supp.idu = contour.participants_apres
+      WHERE supp.idu = contour.idu
   );
 ")
 
@@ -1207,8 +1220,9 @@ dbExecute(conn, "
       WHERE supp.idu = vrai_supp.idu
   );
 ")
-```
 
+
+```
 
 ```{r le reste, eval=FALSE}
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
@@ -1219,6 +1233,15 @@ vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
 # 132078330A0082 cas d'une parcelle disparu en 2024 mais pas affiché comme vrai supp -> multipolygon empty
 # 13041000AM0018 parcelle participant a une multi subdiv mais qui a l'air iou parfait
+```
+
+```{r nettoyage table inutile}
+dbExecute(conn, "
+  DROP TABLE IF EXISTS multi_calcul_cache, identique, modif, ajout_simp, 
+  supp_simp, fusion_ajout, max_iou, disparition_com, multi_translate_rapide, 
+  multi_ajout CASCADE
+;")
+dbListTables(conn)
 ```
 
 
@@ -1256,16 +1279,6 @@ if (nrow(modif_avant) > 0) {
 mapshot(map, url = paste0("parcelles_restantes_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
 ```
 
-
-```{r nettoyage table inutile}
-dbExecute(conn, "
-  DROP TABLE IF EXISTS multi_calcul_cache, identique, modif, ajout_simp, 
-  supp_simp, fusion_ajout, max_iou, disparition_com, multi_translate_rapide, 
-  multi_ajout CASCADE
-;")
-dbListTables(conn)
-```
-
 # Visualisation finale sur une carte du département
 
 ```{r mapview typologie parcelles, eval=FALSE}
@@ -1278,10 +1291,11 @@ contour <- st_read(conn, query = "SELECT * FROM contour;")
 translation <- st_read(conn, query = "SELECT * FROM translation;")
 redecoupage <- st_read(conn, query = "SELECT * FROM redecoupage;")
 contour_redecoupage <- st_read(conn, query = "SELECT * FROM contour_redecoupage;")
-scission_com <- st_read(conn, query = "SELECT * FROM scission_com;")
-fusion_com <- st_read(conn, query = "SELECT * FROM fusion_com;")
 vrai_ajout <- st_read(conn, query = "SELECT * FROM vrai_ajout;")
 vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
+
+scission_com <- st_read(conn, query = "SELECT * FROM scission_com;")
+fusion_com <- st_read(conn, query = "SELECT * FROM fusion_com;")
 
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
@@ -1317,11 +1331,11 @@ if (nrow(contour) > 0) {
 if (nrow(redecoupage) > 0) {
   map <- map + mapview(parc_apres %>%
                          filter(idu %in% unlist(str_split(redecoupage$participants_apres, ",\\s*"))),
-                       layer.name = paste0("Parcelles redécoupage (état 20",params$temps_apres,")"),
+                       layer.name = paste0("Parcelles redécoupées (état 20",params$temps_apres,")"),
                        col.regions = "#AE48C0",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(redecoupage,  
-            layer.name = paste0("Parcelles redécoupage (état 20",params$temps_avant,")"), 
+            layer.name = paste0("Parcelles redécoupées (état 20",params$temps_avant,")"), 
             col.regions = "#AE48C0", alpha.regions = 0.5, homebutton = F)
   
 }
@@ -1337,13 +1351,13 @@ if (nrow(contour_redecoupage) > 0) {
 }
 if (nrow(scission_com) > 0) {
   map <- map + mapview(scission_com,  
-                       layer.name = paste0("Parcelles défusion de communes (état 20",params$temps_apres,")"), 
-                       col.regions = "lightgrey",
+                       layer.name = paste0("Parcelles scission de communes (état 20",params$temps_apres,")"), 
+                       col.regions = "white",
                        alpha.regions = 0.5, homebutton = F) +
     mapview(parc_avant %>%
               filter(idu %in% scission_com$idu_avant),  
-            layer.name = paste0("Parcelles défusion de communes (état 20",params$temps_avant,")"), 
-            col.regions = "lightgrey", alpha.regions = 0.5, homebutton = F)
+            layer.name = paste0("Parcelles scission de communes (état 20",params$temps_avant,")"), 
+            col.regions = "white", alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(fusion_com) > 0) {
   map <- map + mapview(fusion_com,  

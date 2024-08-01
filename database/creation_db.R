@@ -20,7 +20,7 @@ conn <- connecter()
 # 1:5, 13, 21, 2a, 2b, 60, 85:95, 971:974, 976:978 
 
 # 1:19, 2a, 2b, 21:95, 971:974, 976:978
-num_departements <- c(90:95)
+num_departements <- c(78)
 num_annee <- 19
 indic_parc <- T
 

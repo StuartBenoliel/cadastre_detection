@@ -10,7 +10,7 @@ library(DBI)
 library(DT)
 rm(list=ls())
 source(file = "database/connexion_db.R")
-source(file = "fonctions/fonction_shiny.R")
+source(file = "fonctions/fonction_shiny_bis.R")
 conn <- connecter()
 
 departements <- departement_traite(conn)
@@ -45,8 +45,9 @@ ui <- fluidPage(
                column(3,
                       div(class = "input-group",
                           selectInput("nom_com_select_carte", 
-                                      label = "Choisir un nom de commune:",
-                                      choices = NULL),
+                                      label = "Choisir un / plusieurs noms de communes:",
+                                      choices = NULL,
+                                      multiple = TRUE),
                           # Ajouter un icône avec une info-bulle à droite du selectInput
                           tags$span(
                             title = "Les communes proposées sont les communes existantes à l'année la plus tardive de la période de temps choisie.",
@@ -197,7 +198,7 @@ server <- function(input, output, session) {
       indic(FALSE) 
     } else{
       indic(TRUE)
-      
+      print()
       if (indic_double()){
         maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
         
@@ -215,12 +216,16 @@ server <- function(input, output, session) {
     
     temps_vec_carte <<- strsplit(input$temps_select_carte, "-")[[1]]
     maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
-    
     commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
     updateSelectInput(session, "nom_com_select_carte",
                       choices = commune, 
-                      selected = ifelse(input$nom_com_select_carte %in% commune, 
-                                        input$nom_com_select_carte, commune[1]))
+                      selected =  {
+                        if (!is.null(input$nom_com_select_carte) && all(input$nom_com_select_carte %in% commune)) {
+                          input$nom_com_select_carte
+                        } else {
+                          commune[1]
+                        }
+                      })
     indic(TRUE)
     indic_double(TRUE) 
   })
@@ -230,13 +235,14 @@ server <- function(input, output, session) {
     req(input$tabsetPanel == "Carte des comparaisons par commune")
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
     req(indic())
-    
-    if (input$nom_com_select_carte %in% commune){
+    if (all(input$nom_com_select_carte %in% commune) & !is.null(input$nom_com_select_carte)){
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
+      nom_com <- paste0("'", paste(nom_com, collapse = "', '"), "'")
       print(paste0("Affichage des cartes pour la commune: ", nom_com))
       
       output$warning_message <- renderUI({
         nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
+        nom_com <- paste0("'", paste(nom_com, collapse = "', '"), "'")
         indic_refonte <- check_refonte_pc(conn, nom_com)
         if (indic_refonte) {
           div(class = "alert alert-warning", "Refonte partielle ou totale du plan cadastral de la commune probable.
@@ -256,17 +262,19 @@ server <- function(input, output, session) {
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
     req(indic())
     
-    if (input$nom_com_select_carte %in% commune){
+    if (all(input$nom_com_select_carte %in% commune) & !is.null(input$nom_com_select_carte)){
+      
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
+      nom_com <- paste0("'", paste(nom_com, collapse = "', '"), "'")
       
       parc_null <- dbGetQuery(conn, paste0(
         "SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[1], "' AS période 
             FROM parc_", input$depart_select_carte, "_", temps_vec_carte[1], " 
-            WHERE ST_IsEmpty(geometry) AND nom_com = '", nom_com, "'
+            WHERE ST_IsEmpty(geometry) AND  nom_com IN (", nom_com, ")
         UNION ALL
         SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[2], "' AS période 
             FROM parc_", input$depart_select_carte, "_", temps_vec_carte[2], " 
-            WHERE ST_IsEmpty(geometry) AND nom_com = '", nom_com, "';"
+            WHERE ST_IsEmpty(geometry) AND  nom_com IN (", nom_com, ");"
       ))
       
       tableau_si_donnee(parc_null)

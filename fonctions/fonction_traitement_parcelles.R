@@ -57,7 +57,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   );"))
   
   dbExecute(conn, paste0(" 
-  INSERT INTO cas_disparition_com
+  INSERT INTO disparition_com
   SELECT DISTINCT
       nom_com_apres,
       code_com,
@@ -266,7 +266,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
 ")
   
   dbExecute(conn, paste0("
-  INSERT INTO cas_disparition_com
+  INSERT INTO disparition_com
   SELECT scission_com.nom_com, scission_com.code_com, 
         scission_com.nom_com_avant, scission_com.code_com_avant  
         FROM scission_com
@@ -314,7 +314,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       avant
   JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
   WHERE avant.nom_com IN (SELECT DISTINCT nom_com FROM parc_", params$num_departement, "_", params$temps_apres,") OR
-  avant.nom_com IN (SELECT nom_com_avant FROM cas_disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com) > 1);"))
+  avant.nom_com IN (SELECT nom_com_avant FROM disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com) > 1);"))
   
   dbExecute(conn, paste0(" 
   INSERT INTO chgt_com
@@ -390,7 +390,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       avant
   JOIN ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
   WHERE avant.nom_com NOT IN (SELECT DISTINCT nom_com FROM parc_", params$num_departement, "_", params$temps_apres,") AND
-  avant.nom_com IN (SELECT nom_com_avant FROM cas_disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com) = 1);"))
+  avant.nom_com IN (SELECT nom_com_avant FROM disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com) = 1);"))
   
   
   dbExecute(conn, paste0(" 
@@ -439,16 +439,16 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   dbExecute(conn, paste0(" 
   UPDATE chgt_com
   SET 
-      participants = cas_disparition_com.nom_com_avant || ', ' || chgt_com.participants,
-      participants_code_com = cas_disparition_com.code_com_avant || ', ' || chgt_com.participants_code_com
-  FROM cas_disparition_com
-  WHERE chgt_com.nom_com = cas_disparition_com.nom_com;
+      participants = disparition_com.nom_com_avant || ', ' || chgt_com.participants,
+      participants_code_com = disparition_com.code_com_avant || ', ' || chgt_com.participants_code_com
+  FROM disparition_com
+  WHERE chgt_com.nom_com = disparition_com.nom_com;
 "))
   
   dbExecute(conn, paste0(" 
   INSERT INTO chgt_com
   SELECT nom_com, code_com, 'Changement de nom', nom_com_avant, code_com_avant
-  FROM cas_disparition_com
+  FROM disparition_com
   WHERE nom_com NOT IN (SELECT nom_com FROM chgt_com);
 ;"))
   
@@ -705,12 +705,19 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
 ")
   
   dbExecute(conn, "
+  WITH ids_to_exclude AS (
+      SELECT idu_translate
+      FROM ajout
+      WHERE iou_ajust >= 0.95
+      GROUP BY idu_translate
+      HAVING COUNT(*) > 1
+  )
   INSERT INTO contour
   SELECT supp.idu, supp.nom_com, supp.code_com, supp.com_abs, supp.contenance, ajout.iou_ajust, 
       supp.idu, ajout.idu, supp.geometry
   FROM supp 
   INNER JOIN ajout ON ajout.idu_translate = supp.idu
-  WHERE ajout.iou_ajust >= 0.95;
+  WHERE ajout.iou_ajust >= 0.95 AND ajout.idu_translate NOT IN (SELECT idu_translate FROM ids_to_exclude);
 ")
   
   dbExecute(conn, "
@@ -718,7 +725,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   WHERE EXISTS (
       SELECT 1
       FROM contour
-      WHERE ajout.idu = contour.idu
+      WHERE ajout.idu = contour.participants_apres
   );
 ")
   
@@ -727,7 +734,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   WHERE EXISTS (
       SELECT 1
       FROM contour
-      WHERE supp.idu = contour.participants_apres
+      WHERE supp.idu = contour.idu
   );
 ")
   
