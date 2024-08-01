@@ -138,6 +138,8 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_geometry_apres ON modif US
 dbExecute(conn, paste0("
   CREATE TABLE ajout_simp (
       idu text PRIMARY KEY,
+      nom_com text,
+      code_com text,
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
   );
 "))
@@ -146,10 +148,23 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_simp_geometry ON ajout_sim
 dbExecute(conn, paste0("
   CREATE TABLE supp_simp (
       idu text PRIMARY KEY,
+      nom_com text,
+      code_com text,
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_simp_geometry ON supp_simp USING GIST(geometry);")
+
+dbExecute(conn, paste0("
+  CREATE TABLE identique_bis (
+      idu_avant text PRIMARY KEY,
+      nom_com_avant text,
+      code_com_avant text,
+      idu_apres text,
+      nom_com_apres text,
+      code_com_apres text
+  );
+"))
 
 dbExecute(conn, "
   CREATE TABLE fusion_ajout (
