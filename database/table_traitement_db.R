@@ -8,8 +8,8 @@ code_sys_projection <- function(num_departement) {
     "977" = 5490,
     "978" = 5490
   )
-  if (num_departement %in% names(syst_proj)) {
-    return(syst_proj[[num_departement]])
+  if (as.character(num_departement) %in% names(syst_proj)) {
+    return(syst_proj[[as.character(num_departement)]])
   } else {
     return(2154)
   }
@@ -152,6 +152,15 @@ dbExecute(conn, paste0("
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_simp_geometry ON supp_simp USING GIST(geometry);")
 
 dbExecute(conn, "
+  CREATE TABLE fusion_ajout (
+      idu text PRIMARY KEY,
+      iou numeric,
+      participants_avant text,
+      participants_apres text
+  );
+")
+
+dbExecute(conn, "
   CREATE TABLE max_iou (
       idu text PRIMARY KEY,
       max_iou numeric
@@ -211,23 +220,9 @@ dbExecute(conn, paste0("
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_nom_com ON contour (nom_com);")
 
-# Avant
-dbExecute(conn, paste0("
-  CREATE TABLE contour_translation (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou_ajust numeric,
-      idu_translate text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_translation_nom_com ON contour_translation (nom_com);")
 
 dbExecute(conn, "
-  CREATE TABLE cas_disparition_commune (
+  CREATE TABLE disparition_com (
       nom_com text PRIMARY KEY,
       code_com text,
       nom_com_avant text,
@@ -236,7 +231,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE TABLE chgt_commune (
+  CREATE TABLE chgt_com (
       nom_com text PRIMARY KEY,
       code_com text,
       changement text,
@@ -263,7 +258,7 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fusion_com_nom_com ON fusion_com
 
 # Apres
 dbExecute(conn, paste0("
-  CREATE TABLE defusion_com (
+  CREATE TABLE scission_com (
       idu text PRIMARY KEY,
       nom_com text,
       code_com text,
@@ -275,37 +270,7 @@ dbExecute(conn, paste0("
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
   );
 "))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_defusion_com_nom_com ON defusion_com (nom_com);")
-
-# Avant
-dbExecute(conn, paste0("
-  CREATE TABLE subdiv (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou numeric,
-      participants text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_subdiv_nom_com ON subdiv (nom_com);")
-
-# Apres
-dbExecute(conn, paste0("
-  CREATE TABLE fusion (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou numeric,
-      participants text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fusion_nom_com ON fusion (nom_com);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_scission_com_nom_com ON scission_com (nom_com);")
 
 # Avant
 dbExecute(conn, paste0("
@@ -338,22 +303,6 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_redecoupage_nom_com ON contour_redecoupage (nom_com);")
-
-# Avant
-dbExecute(conn, paste0("
-  CREATE TABLE contour_redecoupage_translation (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou_multi_translate numeric,
-      participants_avant_translate text,
-      participants_apres_translate text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_redecoupage_translation_nom_com ON contour_redecoupage_translation (nom_com);")
 
 # Avant
 dbExecute(conn, paste0("

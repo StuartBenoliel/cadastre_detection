@@ -311,8 +311,7 @@ server <- function(input, output, session) {
     col_tableau <- c('nom_com', 'code_com', paste0('parcelles_20',temps_vec_tableau[1]), 
                      paste0('parcelles_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
                      paste0('restantes_20',temps_vec_tableau[2]), 'ajout', 'suppression', 
-                     'translation', 'contour', 'contour_translation', 'subdivision', 
-                     'fusion', 'redecoupage', 'contour_redecoupage','contour_redecoupage_translation')
+                     'translation', 'contour', 'redecoupage', 'contour_redecoupage')
     
     updateCheckboxGroupInput(session, "var_tableau",
                              choices = col_tableau,
@@ -343,10 +342,10 @@ server <- function(input, output, session) {
     req(input$tabsetPanel == "Tableau des changments par commune")
     req(indic())
     
-    chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_commune;")
+    chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_com;")
     tableau_si_donnee(chgt_com)
   })
 }
 
-# defusion fusion
+
 shinyApp(ui, server)
