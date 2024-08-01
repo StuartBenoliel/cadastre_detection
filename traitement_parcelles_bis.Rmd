@@ -33,7 +33,7 @@ source(file = "fonctions/fonction_sql.R")
 ```{r remise à zero des tables de traitements}
 dbExecute(conn, paste0(
   "DROP SCHEMA IF EXISTS traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_", params$num_departement, " CASCADE;"))
-source(file = "database/table_traitement_db.R")
+source(file = "database/table_traitement_bis_db.R")
 dbExecute(conn, "SET client_min_messages TO NOTICE;")
 ```
 
@@ -213,8 +213,8 @@ modif <- st_read(conn, query = "SELECT * FROM modif;")
 
 ## Reconnaissances des cas de translation, modification de contour et les deux à la fois
 
-```{r translation, contour_apres, contour_translation}
-dbExecute(conn, "TRUNCATE TABLE translation, contour, contour_translation;")
+```{r translation, contour_apres}
+dbExecute(conn, "TRUNCATE TABLE translation, contour;")
 
 dbExecute(conn, "
   UPDATE modif_avant
@@ -260,16 +260,9 @@ dbExecute(conn, "
          idu AS participants_apres,
          geometry
   FROM modif_avant
-  WHERE iou >= 0.95 AND iou_ajust < 0.99;
+  WHERE (iou >= 0.95 OR iou_ajust >= 0.95) AND iou_ajust < 0.99;
 ")
 
-dbExecute(conn, "
-  INSERT INTO contour_translation
-  SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
-      idu AS idu_translate, geometry
-  FROM modif_apres
-  WHERE iou < 0.95 AND iou_ajust >= 0.95 AND iou_ajust < 0.99;
-")
 
 dbExecute(conn, "
   DELETE FROM modif_avant
@@ -281,10 +274,6 @@ dbExecute(conn, "
       SELECT 1
       FROM contour
       WHERE modif_avant.idu = contour.idu
-  ) OR EXISTS (
-      SELECT 1
-      FROM contour_translation
-      WHERE modif_avant.idu = contour_translation.idu
   );
 ")
 
@@ -298,10 +287,6 @@ dbExecute(conn, "
       SELECT 1
       FROM contour
       WHERE modif_apres.idu = contour.idu
-  ) OR EXISTS (
-      SELECT 1
-      FROM contour_translation
-      WHERE modif_apres.idu = contour_translation.idu
   );
 ")
 ```
@@ -309,7 +294,6 @@ dbExecute(conn, "
 ```{r modif iou_ajust -> translation, eval=FALSE}
 translation <- st_read(conn, query = "SELECT * FROM translation;")
 contour <- st_read(conn, query = "SELECT * FROM contour;")
-contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
 
 modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
 modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
@@ -339,86 +323,30 @@ dbExecute(conn, "
   INSERT INTO contour
   SELECT idu, nom_com, code_com, com_abs, contenance,
          iou_multi, participants_avant, participants_apres, geometry
-  FROM modif_avant
-  WHERE (iou_multi >= 0.95 AND LENGTH(participants_avant) = LENGTH(participants_apres))
-     OR (LENGTH(participants_avant) = 14 AND LENGTH(participants_apres) = 14 AND iou > iou_ajust);
+  FROM modif_avant;
 ")
 
-dbExecute(conn, "
-  INSERT INTO contour_translation
-  SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
-      avant.contenance, avant.iou_ajust, avant.idu, apres.geometry
-  FROM modif_avant AS avant
-  LEFT JOIN modif_apres apres ON avant.idu = apres.idu
-  WHERE iou_multi IS NULL;
-")
 
 dbExecute(conn, "
   DELETE FROM modif_avant
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour);
 ")
 
 dbExecute(conn, "
   DELETE FROM modif_apres
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM contour);
 ")
 ```
 
 ```{r modif iou_multi -> translation, modification de contour et les deux à la fois bis, eval=FALSE}
 contour <- st_read(conn, query = "SELECT * FROM contour;")
-contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
 modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
 modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
 ```
-
-```{r présomption}
-# NE PAS RELANCER
-dbExecute(conn, "
-  INSERT INTO contour
-  SELECT idu, nom_com, code_com, com_abs, contenance,
-         iou_multi, participants_avant, participants_apres, geometry
-  FROM modif_avant
-  WHERE idu IN 
-    (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
-      FROM modif_avant WHERE iou_ajust < (iou + 0.1) AND LENGTH(participants_avant) = LENGTH(participants_apres));
-")
-
-dbExecute(conn, "
-  INSERT INTO contour_translation
-  SELECT avant.idu, avant.nom_com, avant.code_com, avant.com_abs, 
-         avant.contenance, avant.iou_ajust,
-         avant.idu AS idu_translate, apres.geometry
-  FROM modif_avant AS avant
-  LEFT JOIN modif_apres apres ON avant.idu = apres.idu
-  WHERE avant.iou_ajust >= (avant.iou + 0.1) AND avant.idu NOT IN (SELECT idu FROM contour);
-")
-
-dbExecute(conn, "
-  DELETE FROM modif_avant
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
-")
-
-dbExecute(conn, "
-  DELETE FROM modif_apres
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
-    OR idu IN (SELECT idu FROM contour_translation);
-")
-```
-
-```{r presomption sql, eval=FALSE}
-contour <- st_read(conn, query = "SELECT * FROM contour;")
-contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
-
-modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
-modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
-```
-
 
 ```{r mapview typologie parcelles modifiées, eval=FALSE}
 bordure <- st_read(conn, query = "SELECT * FROM bordure;")
+
 parc_avant <- st_read(conn, query = paste0(
   "SELECT * FROM parc_", params$num_departement, "_", params$temps_avant, ";"))
 
@@ -427,7 +355,6 @@ parc_apres <- st_read(conn, query = paste0(
 
 contour <- st_read(conn, query = "SELECT * FROM contour;")
 translation <- st_read(conn, query = "SELECT * FROM translation;")
-contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
 
 modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
 modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
@@ -455,15 +382,6 @@ if (nrow(contour) > 0) {
     mapview(contour,  
             layer.name = paste0("Parcelles contours (état 20",params$temps_avant,")"),
             col.regions = "#D79700",
-            alpha.regions = 0.5, homebutton = F)
-}
-if (nrow(contour_translation) > 0) {
-  map <- map + mapview(contour_translation,  
-                       layer.name = paste0("Parcelles translatées + contours (état 20",params$temps_apres,")"), 
-                       alpha.regions = 0.5, homebutton = F) +
-    mapview(parc_avant %>%
-              filter(idu %in% contour_translation$idu_translate),
-            layer.name = paste0("Parcelles translatées + contours (état 20",params$temps_avant,")"), 
             alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(modif_apres) > 0) {
@@ -716,7 +634,6 @@ dbExecute(conn, paste0("
 chgt_commune <- st_read(conn, query = "SELECT * FROM chgt_commune;")
 fusion_com <- st_read(conn, query = "SELECT * FROM fusion_com;")
 ```
-
 
 # Focus parcelles avec changement "majeur" lié à un changement impactant l'identifiant des parcelles
 
@@ -977,7 +894,6 @@ dbExecute(conn, "
   WHERE iou_multi >= 0.95 AND LENGTH(participants_apres) = LENGTH(participants_avant);
 ")
 
-
 dbExecute(conn, "
   DELETE FROM ajout
   WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) FROM redecoupage)
@@ -1004,36 +920,20 @@ contour <- st_read(conn, query = "SELECT * FROM contour;")
 
 ```{r}
 dbExecute(conn, "
-  WITH updated_values AS (
-    SELECT idu,
-           (calcul_iou_intersec_best_translate(geometry, 'supp')).*
-    FROM ajout
-  )
-  UPDATE ajout
-  SET iou_ajust = updated_values.iou_ajust,
-      idu_translate = updated_values.idu_translate
-  FROM updated_values
-  WHERE ajout.idu = updated_values.idu
-")
-
-dbExecute(conn, "
-  INSERT INTO contour_translation
-  SELECT idu, nom_com, code_com, com_abs, contenance, iou_ajust, 
-      idu_translate, geometry
-  FROM ajout
-  WHERE (iou < 0.95 AND iou_ajust >= 0.95 AND iou_ajust < 0.99);
+  INSERT INTO contour
+  SELECT sup.idu, sup.nom_com, sup.code_com, sup.com_abs, sup.contenance, sup.iou_ajust, 
+      sup.idu, ajout.idu, sup.geometry
+  FROM supp_iou_multi sup
+  INNER JOIN ajout ajout ON ajout.idu_translate = sup.idu
+  WHERE ajout.iou_ajust >= 0.95;
 ")
 
 dbExecute(conn, "
   DELETE FROM ajout
   WHERE EXISTS (
       SELECT 1
-      FROM translation
-      WHERE ajout.idu = translation.idu
-  ) OR EXISTS (
-      SELECT 1
-      FROM contour_translation
-      WHERE ajout.idu = contour_translation.idu
+      FROM contour
+      WHERE ajout_iou_translate.idu = contour.idu
   );
 ")
 
@@ -1041,22 +941,17 @@ dbExecute(conn, "
   DELETE FROM supp
   WHERE EXISTS (
       SELECT 1
-      FROM translation
-      WHERE supp.idu = translation.idu_translate
-  ) OR EXISTS (
-      SELECT 1
-      FROM contour_translation
-      WHERE supp.idu = contour_translation.idu_translate
+      FROM contour
+      WHERE supp_iou_multi.idu = contour.idu_translate
   );
 ")
 
 ```
 
-## Cas rapide translation transformation
+## Cas rapide translation redecoupagermation
 
 ```{r rapide}
-dbExecute(conn, "TRUNCATE TABLE max_iou, 
-          multi_translate_rapide, contour_redecoupage_translation;")
+dbExecute(conn, "TRUNCATE TABLE max_iou, multi_translate_rapide;")
 
 dbExecute(conn, "
   WITH updated_values AS (
@@ -1099,7 +994,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  INSERT INTO contour_redecoupage_translation
+  INSERT INTO contour_redecoupage
   SELECT supp.idu, supp.nom_com, supp.code_com, supp.com_abs, 
       supp.contenance, mtr.iou_multi_translate, 
       mtr.participants_avant_translate, mtr.participants_apres_translate, 
@@ -1123,8 +1018,8 @@ dbExecute(conn, "
 ")
 ```
 
-```{r contour_redecoupage_translation_rapide, eval=FALSE}
-contour_redecoupage_translation <- st_read(conn, query = "SELECT * FROM contour_redecoupage_translation;")
+```{r contour_redecoupage_rapide, eval=FALSE}
+contour_redecoupage <- st_read(conn, query = "SELECT * FROM contour_redecoupage;")
 ```
 
 ## (Cas particulier du remaniement du PC d'une commune) Reconnaissances des cas de translation avec modification de contour et avec fusion
@@ -1147,7 +1042,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  INSERT INTO contour_redecoupage_translation
+  INSERT INTO contour_redecoupage
   SELECT idu, nom_com, code_com, com_abs, contenance, iou_multi_translate, 
       participants_avant_translate, participants_apres_translate, geometry
   FROM supp
@@ -1156,17 +1051,17 @@ dbExecute(conn, "
 
 dbExecute(conn, "
   DELETE FROM ajout
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres_translate, ',\\s*')) FROM contour_redecoupage_translation);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_apres_translate, ',\\s*')) FROM contour_redecoupage);
 ")
 
 dbExecute(conn, "
   DELETE FROM supp
-  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant_translate, ',\\s*')) FROM contour_redecoupage_translation);
+  WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant_translate, ',\\s*')) FROM contour_redecoupage);
 ")
 ```
 
 ```{r contour_fusion_translation, eval=FALSE}
-contour_redecoupage_translation <- st_read(conn, query = "SELECT * FROM contour_redecoupage_translation;")
+contour_redecoupage <- st_read(conn, query = "SELECT * FROM contour_redecoupage;")
 ```
 
 # Ajout d'un iou_multi pour ajout
@@ -1318,8 +1213,8 @@ vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 ```{r carte reste, eval=FALSE}
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
-modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
-modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
+modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
 
 map <- mapview()
 
@@ -1369,8 +1264,6 @@ parc_apres <- st_read(conn, query = paste0("SELECT * FROM parc_", params$num_dep
 
 contour <- st_read(conn, query = "SELECT * FROM contour;")
 translation <- st_read(conn, query = "SELECT * FROM translation;")
-contour_translation <- st_read(conn, query = "SELECT * FROM contour_translation;")
-contour_redecoupage_translation <- st_read(conn, query = "SELECT * FROM contour_redecoupage_translation;")
 redecoupage <- st_read(conn, query = "SELECT * FROM redecoupage;")
 contour_redecoupage <- st_read(conn, query = "SELECT * FROM contour_redecoupage;")
 defusion_com <- st_read(conn, query = "SELECT * FROM defusion_com;")
@@ -1382,8 +1275,8 @@ vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
-modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant_iou_multi;")
-modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres_iou;")
+modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
+modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
 
 map <- mapview(bordure, 
                layer.name = "Bordures étendues", col.regions = "#F2F2F2", 
@@ -1451,25 +1344,6 @@ if (nrow(contour_redecoupage) > 0) {
     mapview(contour_redecoupage,
             layer.name = paste0("Parcelles redecoupage + contours (état 20",params$temps_avant,")"), 
             col.regions = "#FFB9BB", alpha.regions = 0.5, homebutton = F)
-}
-if (nrow(contour_translation) > 0) {
-  map <- map + mapview(contour_translation,  
-                       layer.name = paste0("Parcelles translatées + contours (état 20",params$temps_apres,")"), 
-                       alpha.regions = 0.5, homebutton = F) +
-    mapview(parc_avant %>%
-              filter(idu %in% contour_translation$idu_translate),
-            layer.name = paste0("Parcelles translatées + contours (état 20",params$temps_avant,")"), 
-            alpha.regions = 0.5, homebutton = F)
-}
-if (nrow(contour_redecoupage_translation) > 0) {
-  map <- map + mapview(parc_apres %>%
-                         filter(idu %in% unlist(str_split(contour_redecoupage_translation$participants_apres_translate, ",\\s*"))),
-                       layer.name = paste0("Parcelles redecoupage + translatées + contours (état 20",params$temps_apres,")"), 
-                       col.regions = "#B5E1FF", alpha.regions = 0.5, homebutton = F) +
-    mapview(contour_redecoupage_translation,  
-            layer.name = paste0("Parcelles redecoupage + translatées + contours (état 20",params$temps_avant,")"), 
-            col.regions = "#B5E1FF",
-            alpha.regions = 0.5, homebutton = F)
 }
 if (nrow(defusion_com) > 0) {
   map <- map + mapview(defusion_com,  

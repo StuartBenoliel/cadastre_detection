@@ -312,7 +312,7 @@ server <- function(input, output, session) {
                      paste0('parcelles_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
                      paste0('restantes_20',temps_vec_tableau[2]), 'ajout', 'suppression', 
                      'translation', 'contour', 'contour_translation', 'subdivision', 
-                     'fusion', 'redecoupage', 'contour_transfo','contour_transfo_translation')
+                     'fusion', 'redecoupage', 'contour_redecoupage','contour_redecoupage_translation')
     
     updateCheckboxGroupInput(session, "var_tableau",
                              choices = col_tableau,

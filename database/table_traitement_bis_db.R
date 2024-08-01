@@ -167,7 +167,6 @@ dbExecute(conn, "
   );
 ")
 
-
 dbExecute(conn, "
   CREATE TABLE multi_ajout (
       idu text PRIMARY KEY,
@@ -210,21 +209,6 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_nom_com ON contour (nom_com);")
-
-# Avant
-dbExecute(conn, paste0("
-  CREATE TABLE contour_translation (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou_ajust numeric,
-      idu_translate text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_translation_nom_com ON contour_translation (nom_com);")
 
 dbExecute(conn, "
   CREATE TABLE cas_disparition_commune (
@@ -338,22 +322,6 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_redecoupage_nom_com ON contour_redecoupage (nom_com);")
-
-# Avant
-dbExecute(conn, paste0("
-  CREATE TABLE contour_redecoupage_translation (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou_multi_translate numeric,
-      participants_avant_translate text,
-      participants_apres_translate text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_redecoupage_translation_nom_com ON contour_redecoupage_translation (nom_com);")
 
 # Avant
 dbExecute(conn, paste0("

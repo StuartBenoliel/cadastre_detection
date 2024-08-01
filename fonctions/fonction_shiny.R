@@ -65,11 +65,11 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     "SELECT * FROM parc_", num_departement, "_", temps_apres, " WHERE nom_com = '", nom_com, "';"))
   
   modif_apres <- st_read(conn, query =  paste0(
-    "SELECT * FROM modif_apres_iou WHERE nom_com = '",nom_com, "';"))
+    "SELECT * FROM modif_apres WHERE nom_com = '",nom_com, "';"))
   ajout <- st_read(conn, query =  paste0(
-    "SELECT * FROM ajout_iou_translate WHERE nom_com = '",nom_com, "';"))
+    "SELECT * FROM ajout WHERE nom_com = '",nom_com, "';"))
   supp <- st_read(conn, query =  paste0(
-    "SELECT * FROM supp_iou_multi_translate WHERE nom_com = '",nom_com, "';"))
+    "SELECT * FROM supp WHERE nom_com = '",nom_com, "';"))
   
   translation <- st_read(conn, query = paste0(
     "SELECT * FROM translation WHERE nom_com = '",nom_com, "';"))
@@ -119,13 +119,13 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     modif_avant <- st_read(conn, query =  paste0(
-      "SELECT * FROM modif_avant_iou_multi WHERE nom_com = '", nom_com, "'
+      "SELECT * FROM modif_avant WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
     supp <- st_read(conn, query =  paste0(
-      "SELECT * FROM supp_iou_multi_translate WHERE nom_com = '", nom_com, "'
+      "SELECT * FROM supp WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
@@ -160,14 +160,14 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
-    contour_transfo <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo WHERE nom_com = '", nom_com, "'
+    contour_redecoupage <- st_read(conn, query = paste0(
+      "SELECT * FROM contour_redecoupage WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
     
-    contour_transfo_translation <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo_translation WHERE nom_com = '", nom_com, "'
+    contour_redecoupage_translation <- st_read(conn, query = paste0(
+      "SELECT * FROM contour_redecoupage_translation WHERE nom_com = '", nom_com, "'
            OR nom_com IN 
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_commune WHERE nom_com = '", nom_com, "');"))
@@ -190,9 +190,9 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
       " WHERE idu IN (SELECT idu_avant FROM defusion_com WHERE nom_com_avant = '", nom_com, "');"))
     
     modif_avant <- st_read(conn, query = paste0(
-      "SELECT mav.* 
-         FROM modif_avant_iou_multi mav
-         JOIN parc_", num_departement, "_", temps_apres, " pa ON mav.idu = pa.idu
+      "SELECT ma.* 
+         FROM modif_avant ma
+         JOIN parc_", num_departement, "_", temps_apres, " pa ON ma.idu = pa.idu
          WHERE pa.nom_com = '", nom_com, "';"))
     
     contour <- st_read(conn, query = paste0(
@@ -222,16 +222,16 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
            pa.idu = ANY (string_to_array(red.participants_apres, ','))
          WHERE pa.nom_com = '", nom_com, "';"))
     
-    contour_transfo <- st_read(conn, query = paste0(
+    contour_redecoupage <- st_read(conn, query = paste0(
       "SELECT cot.* 
-         FROM contour_transfo cot
+         FROM contour_redecoupage cot
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(cot.participants_apres, ','))
          WHERE pa.nom_com = '", nom_com, "';"))
     
-    contour_transfo_translation <- st_read(conn, query = paste0(
+    contour_redecoupage_translation <- st_read(conn, query = paste0(
       "SELECT cott.* 
-         FROM contour_transfo_translation cott
+         FROM contour_redecoupage_translation cott
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(cott.participants_apres_translate, ','))
          WHERE pa.nom_com = '", nom_com, "';"))
@@ -261,16 +261,16 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
           WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
     
     modif_avant <- st_read(conn, query = paste0(
-      "SELECT mav.* 
-         FROM modif_avant_iou_multi mav
-         JOIN parc_", num_departement, "_", temps_apres, " pa ON mav.idu = pa.idu
-         WHERE mav.nom_com = 
+      "SELECT ma.* 
+         FROM modif_avant ma
+         JOIN parc_", num_departement, "_", temps_apres, " pa ON ma.idu = pa.idu
+         WHERE ma.nom_com = 
               (SELECT nom_com FROM chgt_commune 
                 WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
            AND pa.nom_com = '", nom_com, "';"))
     
     supp <- st_read(conn, query =  paste0(
-      "SELECT * FROM supp_iou_multi_translate WHERE nom_com = '",nom_com, "'
+      "SELECT * FROM supp WHERE nom_com = '",nom_com, "'
            OR nom_com = 
               (SELECT nom_com FROM chgt_commune 
                 WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')));"))
@@ -320,9 +320,9 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
                 WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
            AND pa.nom_com = '", nom_com, "';"))
     
-    contour_transfo <- st_read(conn, query = paste0(
+    contour_redecoupage <- st_read(conn, query = paste0(
       "SELECT cot.* 
-         FROM contour_transfo cot
+         FROM contour_redecoupage cot
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(cot.participants_apres, ','))
          WHERE cot.nom_com = 
@@ -330,9 +330,9 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
                 WHERE '", nom_com, "' = ANY(regexp_split_to_array(participants, ',\\s*')))
            AND pa.nom_com = '", nom_com, "';"))
     
-    contour_transfo_translation <- st_read(conn, query = paste0(
+    contour_redecoupage_translation <- st_read(conn, query = paste0(
       "SELECT cott.* 
-         FROM contour_transfo_translation cott
+         FROM contour_redecoupage_translation cott
          JOIN parc_", num_departement, "_", temps_apres, " pa ON
            pa.idu = ANY (string_to_array(cott.participants_apres_translate, ','))
          WHERE cott.nom_com = 
@@ -350,7 +350,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     
   } else {
     modif_avant <- st_read(conn, query =  paste0(
-      "SELECT * FROM modif_avant_iou_multi WHERE nom_com = '", nom_com, "';"))
+      "SELECT * FROM modif_avant WHERE nom_com = '", nom_com, "';"))
     contour <- st_read(conn, query = paste0(
       "SELECT * FROM contour WHERE nom_com = '",nom_com, "';"))
     contour_translation <- st_read(conn, query = paste0(
@@ -359,10 +359,10 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
       "SELECT * FROM subdiv WHERE nom_com = '", nom_com, "';"))
     redecoupage <- st_read(conn, query = paste0(
       "SELECT * FROM redecoupage WHERE nom_com = '", nom_com, "';"))
-    contour_transfo <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo WHERE nom_com = '", nom_com, "';"))
-    contour_transfo_translation <- st_read(conn, query = paste0(
-      "SELECT * FROM contour_transfo_translation WHERE nom_com = '", nom_com, "';"))
+    contour_redecoupage <- st_read(conn, query = paste0(
+      "SELECT * FROM contour_redecoupage WHERE nom_com = '", nom_com, "';"))
+    contour_redecoupage_translation <- st_read(conn, query = paste0(
+      "SELECT * FROM contour_redecoupage_translation WHERE nom_com = '", nom_com, "';"))
   }
   
   if (nrow(translation) > 0) {
@@ -422,15 +422,15 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
               col.regions = "#D79700",
               alpha.regions = 0.5, homebutton = F)
   }
-  if (nrow(contour_transfo) > 0) {
+  if (nrow(contour_redecoupage) > 0) {
     
     map_1 <- map_1 + mapview(parc_apres %>%
-                               filter(idu %in% unlist(str_split(contour_transfo$participants_apres, ",\\s*"))),  
-                             layer.name = paste0("Parcelles transfo + contours (état 20",temps_apres,")"),
+                               filter(idu %in% unlist(str_split(contour_redecoupage$participants_apres, ",\\s*"))),  
+                             layer.name = paste0("Parcelles redecoupage + contours (état 20",temps_apres,")"),
                              col.regions = "#FFB9BB",
                              alpha.regions = 0.5, homebutton = F) +
-      mapview(contour_transfo,
-              layer.name = paste0("Parcelles transfo + contours (état 20",temps_avant,")"), 
+      mapview(contour_redecoupage,
+              layer.name = paste0("Parcelles redecoupage + contours (état 20",temps_avant,")"), 
               col.regions = "#FFB9BB", alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(contour_translation) > 0) {
@@ -444,14 +444,14 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
               alpha.regions = 0.5, homebutton = F)
     
   }
-  if (nrow(contour_transfo_translation) > 0) {
+  if (nrow(contour_redecoupage_translation) > 0) {
     
     map_1 <- map_1 + mapview(parc_apres %>%
-                               filter(idu %in% unlist(str_split(contour_transfo_translation$participants_apres_translate, ",\\s*"))),
-                             layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_apres,")"), 
+                               filter(idu %in% unlist(str_split(contour_redecoupage_translation$participants_apres_translate, ",\\s*"))),
+                             layer.name = paste0("Parcelles redecoupage + translatées + contours (état 20",temps_apres,")"), 
                              col.regions = "#B5E1FF", alpha.regions = 0.5, homebutton = F) +
-      mapview(contour_transfo_translation,  
-              layer.name = paste0("Parcelles transfo + translatées + contours (état 20",temps_avant,")"), 
+      mapview(contour_redecoupage_translation,  
+              layer.name = paste0("Parcelles redecoupage + translatées + contours (état 20",temps_avant,")"), 
               col.regions = "#B5E1FF",
               alpha.regions = 0.5, homebutton = F)
   }
@@ -511,16 +511,16 @@ check_refonte_pc <- function(conn, nom_com, seuil=50) {
   nb_parcelles_rest <- dbGetQuery(conn, paste0("
   SELECT 
     (SELECT COUNT(*) 
-     FROM modif_avant_iou_multi 
+     FROM modif_avant
      WHERE nom_com = '", nom_com, "') AS nb_modif_restant_avant,
     (SELECT COUNT(*) 
-     FROM supp_iou_multi_translate 
+     FROM supp
      WHERE nom_com = '", nom_com, "') AS nb_supp_restant,
     (SELECT COUNT(*) 
-     FROM modif_avant_iou_multi 
+     FROM modif_avant
      WHERE nom_com = '", nom_com, "') +
     (SELECT COUNT(*) 
-     FROM supp_iou_multi_translate 
+     FROM supp
      WHERE nom_com = '", nom_com, "') AS total_count
 "))
   ifelse(nb_parcelles_rest >50, return(T), return(F))
@@ -554,22 +554,22 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       ),
       modif_restant_avant AS (
         SELECT nom_com, COUNT(*) AS nb_modif_restant_avant
-        FROM modif_avant_iou_multi
+        FROM modif_avant
         GROUP BY nom_com
       ),
       supp_restant AS (
         SELECT nom_com, COUNT(*) AS nb_supp_restant
-        FROM supp_iou_multi_translate
+        FROM supp
         GROUP BY nom_com
       ),
       modif_restant_apres AS (
         SELECT nom_com, COUNT(*) AS nb_modif_restant_apres
-        FROM modif_apres_iou 
+        FROM modif_apres
         GROUP BY nom_com
       ),
       ajout_restant AS (
         SELECT nom_com, COUNT(*) AS nb_ajout_restant
-        FROM ajout_iou_translate
+        FROM ajout
         GROUP BY nom_com
       ),
       vrai_ajout AS (
@@ -612,14 +612,14 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         FROM redecoupage
         GROUP BY nom_com
       ),
-      contour_transfo AS (
-        SELECT nom_com, COUNT(DISTINCT participants_avant) AS nb_contour_transfo
-        FROM contour_transfo
+      contour_redecoupage AS (
+        SELECT nom_com, COUNT(DISTINCT participants_avant) AS nb_contour_redecoupage
+        FROM contour_redecoupage
         GROUP BY nom_com
       ),
-      contour_transfo_translation AS (
-        SELECT nom_com, COUNT(DISTINCT participants_avant_translate) AS nb_contour_transfo_translation
-        FROM contour_transfo_translation
+      contour_redecoupage_translation AS (
+        SELECT nom_com, COUNT(DISTINCT participants_avant_translate) AS nb_contour_redecoupage_translation
+        FROM contour_redecoupage_translation
         GROUP BY nom_com
       ),
       base AS (
@@ -646,8 +646,8 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         COALESCE(nb_subdiv, 0) AS subdivision,
         COALESCE(nb_fusion, 0) AS fusion,
         COALESCE(nb_redecoupage, 0) AS redecoupage,
-        COALESCE(nb_contour_transfo, 0) AS contour_transfo,
-        COALESCE(nb_contour_transfo_translation, 0) AS contour_transfo_translation
+        COALESCE(nb_contour_redecoupage, 0) AS contour_redecoupage,
+        COALESCE(nb_contour_redecoupage_translation, 0) AS contour_redecoupage_translation
       FROM base
       FULL OUTER JOIN modif_restant_avant ON base.nom_com = modif_restant_avant.nom_com
       FULL OUTER JOIN supp_restant ON base.nom_com = supp_restant.nom_com
@@ -661,8 +661,8 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       FULL OUTER JOIN subdiv ON base.nom_com = subdiv.nom_com
       FULL OUTER JOIN fusion ON base.nom_com = fusion.nom_com
       FULL OUTER JOIN redecoupage ON base.nom_com = redecoupage.nom_com
-      FULL OUTER JOIN contour_transfo ON base.nom_com = contour_transfo.nom_com
-      FULL OUTER JOIN contour_transfo_translation ON base.nom_com = contour_transfo_translation.nom_com;"))
+      FULL OUTER JOIN contour_redecoupage ON base.nom_com = contour_redecoupage.nom_com
+      FULL OUTER JOIN contour_redecoupage_translation ON base.nom_com = contour_redecoupage_translation.nom_com;"))
   
   final_df <- final_df %>%
     mutate(across(where(bit64::is.integer64), as.integer))
