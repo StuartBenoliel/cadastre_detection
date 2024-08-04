@@ -749,7 +749,7 @@ dbExecute(conn, "
 ## Reconnaissances des cas de fusion (peu fréquent) ou subdivision (plus courant)
 
 ```{r ajout/supp iou -> fusion/subdivision}
-dbExecute(conn, "TRUNCATE TABLE redecoupage;")
+dbExecute(conn, "TRUNCATE TABLE redecoupage, fusion_ajout;")
 
 dbExecute(conn, "
   WITH updated_values AS (
@@ -802,7 +802,7 @@ dbExecute(conn, "
       idu
   FROM
       ajout
-  WHERE iou >= 0.95;")
+  WHERE iou >= 0.99;")
 
 dbExecute(conn, "
   INSERT INTO redecoupage
@@ -1015,49 +1015,6 @@ contour <- st_read(conn, query = "SELECT * FROM contour;")
 ```
 
 ## Reconnaissances des cas de modification de contours plus compliquée
-
-```{r}
-dbExecute(conn, "
-  WITH ids_to_exclude AS (
-      SELECT idu_translate
-      FROM ajout
-      WHERE iou_ajust >= 0.95
-      GROUP BY idu_translate
-      HAVING COUNT(*) > 1
-  )
-  INSERT INTO contour
-  SELECT supp.idu, supp.nom_com, supp.code_com, supp.com_abs, supp.contenance, 
-      ajout.iou_ajust, supp.idu, ajout.idu, supp.geometry
-  FROM supp 
-  INNER JOIN ajout ON ajout.idu_translate = supp.idu
-  WHERE ajout.iou_ajust >= 0.95 
-      AND ajout.idu_translate NOT IN (
-          SELECT idu_translate FROM ids_to_exclude
-  );")
-# DOUBLON ! Key (idu)=(783210000A3069) 78 pour les années 2022 - 2021
-
-dbExecute(conn, "
-  DELETE FROM ajout
-  WHERE EXISTS (
-      SELECT 1
-      FROM contour
-      WHERE ajout.idu = contour.participants_apres
-  );")
-
-dbExecute(conn, "
-  DELETE FROM supp
-  WHERE EXISTS (
-      SELECT 1
-      FROM contour
-      WHERE supp.idu = contour.idu
-  );")
-```
-
-
-```{r multisubdiv sql, eval=FALSE}
-supp <- st_read(conn, query = "SELECT * FROM supp;")
-contour <- st_read(conn, query = "SELECT * FROM contour;")
-```
 
 ## Cas rapide translation transformation
 
@@ -1338,7 +1295,42 @@ vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 
 
 ```{r echanges parcelles}
+translation <- st_read(conn, query = "SELECT * FROM translation;")
+X <- dbGetQuery(conn, "
+SELECT *
+FROM translation
+WHERE SUBSTRING(idu_translate FROM 3 FOR 3) <> code_com
+")
 
+X <- dbGetQuery(conn, "
+  WITH RECURSIVE split_strings AS (
+    SELECT
+      idu,
+      nom_com,
+      code_com,
+      unnest(string_to_array(participants_apres, ', ')) AS sub_string
+    FROM
+      redecoupage
+  ),
+  filtered AS (
+    SELECT
+      *, SUBSTRING(sub_string FROM 3 FOR 3) AS code_com_apres
+    FROM
+      split_strings
+    WHERE
+      SUBSTRING(sub_string FROM 3 FOR 3) <> code_com
+  )
+  SELECT DISTINCT idu, nom_com, code_com, sub_string, code_com_apres
+  FROM filtered")
+
+X <- dbGetQuery(conn,"
+  SELECT DISTINCT (echange_parcelles('participants_apres', 'contour_redecoupage')).*") 
+
+contour <- st_read(conn, query = "SELECT * FROM contour;")
+redecoupage <- st_read(conn, query = "SELECT * FROM redecoupage;")
+contour_redecoupage <- st_read(conn, query = "SELECT * FROM contour_redecoupage;")
+ajout <- st_read(conn, query = "SELECT * FROM ajout;")
+supp <- st_read(conn, query = "SELECT * FROM supp;")
 ```
 
 

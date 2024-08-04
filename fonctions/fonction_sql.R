@@ -62,7 +62,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_intersec(polygon geometry, table_name text, seuil numeric DEFAULT 0.1)
+  CREATE OR REPLACE FUNCTION calcul_iou_intersec(polygon geometry, table_name text, seuil numeric DEFAULT 1)
   RETURNS TABLE (iou numeric, participants text) AS $$
   DECLARE
       parcelles_intersectant RECORD;
@@ -261,7 +261,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(polygon geometry, table_name text, seuil numeric default 0.1)
+  CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(polygon geometry, table_name text, seuil numeric default 1)
   RETURNS TABLE (iou_ajust numeric, participants text) AS $$
   DECLARE
       parcelles_intersectant RECORD;
@@ -312,7 +312,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_intersec_best_translate(polygon geometry, table_name text, seuil numeric default 0.1)
+  CREATE OR REPLACE FUNCTION calcul_iou_intersec_best_translate(polygon geometry, table_name text, seuil numeric default 1)
   RETURNS TABLE (iou_ajust numeric, idu_translate text) AS $$
   DECLARE
       parcelles_intersectant RECORD;
@@ -481,6 +481,46 @@ dbExecute(conn, "
   
       -- Retourner les résultats
       RETURN QUERY SELECT iou_intersect.iou_ajust AS iou, participants_avant_translate AS participants_avant, iou_intersect.participants AS participants_apres;
+  END;
+  $$ LANGUAGE plpgsql;
+")
+
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION echange_parcelles(idu_participants text, nom_table text)
+  RETURNS TABLE (idu_avant text, nom_com_avant text, code_com_avant text,
+      idu_apres text, code_com_apres text) AS $$
+  DECLARE
+      sql_query text;
+  BEGIN
+      -- Construction de la requête SQL dynamique
+      sql_query := '
+      WITH RECURSIVE split_strings AS (
+        SELECT
+          idu,
+          nom_com,
+          code_com,
+          unnest(string_to_array(' || quote_ident(idu_participants) || ', '', '')) AS sub_string
+        FROM ' || quote_ident(nom_table) || '
+      ),
+      filtered AS (
+        SELECT
+          idu,
+          nom_com,
+          code_com,
+          sub_string,
+          SUBSTRING(sub_string FROM 3 FOR 3) AS code_com_apres
+        FROM
+          split_strings
+        WHERE
+          SUBSTRING(sub_string FROM 3 FOR 3) <> code_com
+      )
+      SELECT idu AS idu_avant, nom_com AS nom_com_avant, code_com AS code_com_avant,
+                 sub_string AS idu_apres, code_com_apres
+      FROM
+        filtered';
+      
+      -- Exécution de la requête dynamique
+      RETURN QUERY EXECUTE sql_query;
   END;
   $$ LANGUAGE plpgsql;
 ")

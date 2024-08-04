@@ -348,3 +348,28 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vrai_ajout_nom_com ON vrai_ajout (nom_com);")
+
+# Apres
+dbExecute(conn, paste0("
+  CREATE TABLE echange_parc (
+      idu_avant text PRIMARY KEY,
+      nom_com_avant text,
+      code_com_avant text,
+      idu_apres text,
+      nom_com_apres text,
+      code_com_apres text
+  );
+"))
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_echange_parc_nom_com_avant ON echange_parc (nom_com_avant);")
+
+dbExecute(conn, paste0("
+  CREATE TABLE echange_parc_probable (
+      idu_avant text PRIMARY KEY,
+      nom_com_avant text,
+      code_com_avant text,
+      idu_apres text,
+      nom_com_apres text,
+      code_com_apres text
+  );
+"))
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_echange_parc_probable_nom_com_avant ON echange_parc_probable (nom_com_avant);")

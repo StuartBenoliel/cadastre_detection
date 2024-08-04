@@ -10,15 +10,7 @@ conn <- connecter()
 source(file = "fonctions/fonction_traitement_parcelles.R")
 
 # Liste des paramètres à utiliser
-params_list <- list(
-  list(num_departement = "85", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "85", temps_apres = 23, temps_avant = 22),
-  list(num_departement = "60", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "2b", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "2a", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "21", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "13", temps_apres = 24, temps_avant = 23)
-)
+
 #  85:95, 971:974, 976:978 
 params_list <- list(
   list(num_departement = "89", temps_apres = 24, temps_avant = 23),
@@ -31,7 +23,6 @@ params_list <- list(
   list(num_departement = "2", temps_apres = 24, temps_avant = 23),
   list(num_departement = "1", temps_apres = 24, temps_avant = 23)
 )
-#Probleme 1 
 
 params_list <- list(
   list(num_departement = "978", temps_apres = 24, temps_avant = 23),
@@ -77,9 +68,18 @@ params_list <- list(
 )
 
 params_list <- list(
+  list(num_departement = "60", temps_apres = 24, temps_avant = 23),
+  list(num_departement = "2b", temps_apres = 24, temps_avant = 23),
+  list(num_departement = "2a", temps_apres = 24, temps_avant = 23),
+  list(num_departement = "21", temps_apres = 24, temps_avant = 23),
+  list(num_departement = "13", temps_apres = 24, temps_avant = 23),
+  list(num_departement = "78", temps_apres = 24, temps_avant = 23),
+  list(num_departement = "78", temps_apres = 23, temps_avant = 22),
+  list(num_departement = "78", temps_apres = 22, temps_avant = 21),
   list(num_departement = "78", temps_apres = 21, temps_avant = 20),
   list(num_departement = "78", temps_apres = 20, temps_avant = 19)
 )
+
 # Boucle pour exécuter les blocs de code avec différents paramètres
 for (params in params_list) {
   traitement_parcelles(conn, params$num_departement, 

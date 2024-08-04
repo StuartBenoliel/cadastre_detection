@@ -542,7 +542,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       idu
   FROM
       ajout
-  WHERE iou >= 0.95;
+  WHERE iou >= 0.99;
 ")
   
   dbExecute(conn, "
@@ -702,40 +702,6 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   WHERE idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM redecoupage)
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour)
     OR idu IN (SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) FROM contour_redecoupage);
-")
-  
-  dbExecute(conn, "
-  WITH ids_to_exclude AS (
-      SELECT idu_translate
-      FROM ajout
-      WHERE iou_ajust >= 0.95
-      GROUP BY idu_translate
-      HAVING COUNT(*) > 1
-  )
-  INSERT INTO contour
-  SELECT supp.idu, supp.nom_com, supp.code_com, supp.com_abs, supp.contenance, ajout.iou_ajust, 
-      supp.idu, ajout.idu, supp.geometry
-  FROM supp 
-  INNER JOIN ajout ON ajout.idu_translate = supp.idu
-  WHERE ajout.iou_ajust >= 0.95 AND ajout.idu_translate NOT IN (SELECT idu_translate FROM ids_to_exclude);
-")
-  
-  dbExecute(conn, "
-  DELETE FROM ajout
-  WHERE EXISTS (
-      SELECT 1
-      FROM contour
-      WHERE ajout.idu = contour.participants_apres
-  );
-")
-  
-  dbExecute(conn, "
-  DELETE FROM supp
-  WHERE EXISTS (
-      SELECT 1
-      FROM contour
-      WHERE supp.idu = contour.idu
-  );
 ")
   
   dbExecute(conn, "
