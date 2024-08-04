@@ -1229,7 +1229,7 @@ dbExecute(conn, "TRUNCATE TABLE vrai_ajout, vrai_supp;")
 dbExecute(conn, "
   WITH updated_values AS (
     SELECT idu,
-           (calcul_iou_intersec(geometry, 'ajout')).*
+           (calcul_iou_intersec(geometry, 'ajout', 0)).*
     FROM supp
   )
   UPDATE supp
@@ -1241,7 +1241,7 @@ dbExecute(conn, "
 dbExecute(conn, "
   WITH updated_values AS (
     SELECT idu,
-           (calcul_iou_intersec(geometry, 'supp')).*
+           (calcul_iou_intersec(geometry, 'supp', 0)).*
     FROM ajout
   )
   UPDATE ajout
@@ -1294,7 +1294,7 @@ vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 ```
 
 
-```{r echanges parcelles}
+```{r echanges parcelles, eval=FALSE}
 translation <- st_read(conn, query = "SELECT * FROM translation;")
 X <- dbGetQuery(conn, "
 SELECT *
