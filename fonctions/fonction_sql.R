@@ -277,7 +277,7 @@ dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(
       polygon geometry, 
       table_name text, 
-      seuil_qualite numeric DEFAULT 0.1
+      seuil_qualite numeric DEFAULT 0.9
   )
   RETURNS TABLE (iou_ajust numeric, participants text) AS $$
   DECLARE
@@ -339,7 +339,7 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_intersec_best_translate(polygon geometry, table_name text, seuil numeric default 1)
+  CREATE OR REPLACE FUNCTION calcul_iou_intersec_best_translate(polygon geometry, table_name text, seuil_qualite numeric DEFAULT 0.1)
   RETURNS TABLE (iou_ajust numeric, idu_translate text) AS $$
   DECLARE
       parcelles_intersectant RECORD;
@@ -351,10 +351,10 @@ dbExecute(conn, "
       query_sql := '
           SELECT idu, geometry
           FROM ' || quote_ident(table_name) || '
-          WHERE geometry&&$1 AND ST_Intersects(geometry, ST_Buffer($1, -$2))
+          WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
       ';
       
-      FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil
+      FOR parcelles_intersectant IN EXECUTE query_sql USING polygon
       LOOP
           -- Calculer l'IoU entre la parcelle courante et polygon
           BEGIN

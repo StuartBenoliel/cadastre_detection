@@ -198,7 +198,6 @@ server <- function(input, output, session) {
       indic(FALSE) 
     } else{
       indic(TRUE)
-      print(indic_double())
       if (indic_double()){
         maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
         commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
