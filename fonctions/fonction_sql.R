@@ -126,9 +126,102 @@ dbExecute(conn, "
   $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
 ")
 
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_safe(
+      idu text, 
+      polygon_avant geometry, 
+      nom_table_avant text, 
+      nom_table_apres text
+  )
+  RETURNS TABLE (iou_multi numeric, participants_avant text, participants_apres text) AS $$
+  DECLARE
+      nb_polygon integer := 0;
+      nb_polygon_union integer := 0;
+      polygon_union geometry := polygon_avant;
+      polygon_union_apres geometry;
+      query_sql text;
+  BEGIN
+      -- Vérifier si les résultats sont déjà pour cet idu dans le cache
+      BEGIN
+        SELECT mcc.iou_multi, mcc.participants_avant, mcc.participants_apres
+        INTO iou_multi, participants_avant, participants_apres
+        FROM multi_calcul_cache mcc
+        WHERE EXISTS (
+            SELECT 1
+            FROM unnest(regexp_split_to_array(mcc.participants_avant, ',\\s*')) AS participant
+            WHERE participant = idu
+        );
+      END;
+      
+      -- Si les résultats ne sont pas trouvés dans le cache, exécuter le calcul
+      IF NOT FOUND THEN
+          -- Boucle pour trouver les intersections dans nom_table_avant
+          LOOP
+              -- Mettre à jour polygon_union avec l'union des géométries de nom_table_avant
+              EXECUTE '
+                  SELECT ST_Union(geometry) 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
+              ' INTO polygon_union USING polygon_union;
+  
+              -- Sortir de la boucle si le nombre de parcelles reste le même
+              query_sql := '
+                  SELECT COUNT(*) 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
+              
+              EXECUTE query_sql INTO nb_polygon_union USING polygon_union;
+              
+              EXIT WHEN nb_polygon = nb_polygon_union;
+  
+              -- Mettre à jour le nombre de polygon
+              nb_polygon := nb_polygon_union;
+          END LOOP;
+  
+          -- Sélectionner les noms des participants avant
+          query_sql := '
+              SELECT string_agg(idu::text, '', '') 
+              FROM ' || quote_ident(nom_table_avant) || ' 
+              WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
+          
+          EXECUTE query_sql INTO participants_avant USING polygon_union;
+          
+          query_sql := '
+              SELECT ST_Union(geometry)  
+              FROM ' || quote_ident(nom_table_apres) || ' 
+              WHERE idu IN (
+                  SELECT idu 
+                  FROM  ' || quote_ident(nom_table_avant) || ' 
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
+              )';
+          
+          EXECUTE query_sql INTO polygon_union_apres USING polygon_union;
+  
+          -- Insérer les résultats dans le cache seulement si participants_avant n'est pas NULL
+          IF participants_avant IS NOT NULL THEN
+              INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
+              VALUES (participants_avant, participants_avant, calcul_iou(polygon_union, polygon_union_apres), md5(participants_avant::text));
+          END IF;
+          
+          -- Récupérer les résultats pour la sortie
+          RETURN QUERY SELECT calcul_iou(polygon_union, polygon_union_apres), participants_avant, participants_avant;
+      ELSE 
+          -- Retourner les résultats trouvés dans le cache
+          RETURN QUERY SELECT iou_multi, participants_avant, participants_apres;
+      END IF;
+  END;
+  $$ LANGUAGE plpgsql;
+") 
+
 # Non symétrique
 dbExecute(conn, "
-  CREATE OR REPLACE FUNCTION calcul_iou_multi(idu text, polygon_avant geometry, nom_table_avant text, nom_table_apres text)
+  CREATE OR REPLACE FUNCTION calcul_iou_multi(
+      idu text, 
+      polygon_avant geometry, 
+      nom_table_avant text, 
+      nom_table_apres text,
+      seuil_qualite numeric DEFAULT 0.9
+  )
   RETURNS TABLE (iou_multi numeric, participants_avant text, participants_apres text) AS $$
   DECLARE
       nb_polygon integer := 0;
@@ -184,7 +277,7 @@ dbExecute(conn, "
   
           -- Calculer l'IoU intersection avec nom_table_apres
           SELECT * INTO iou_intersect
-          FROM calcul_iou_intersec(polygon_union, nom_table_apres);
+          FROM calcul_iou_intersec(polygon_union, nom_table_apres, seuil_qualite);
   
           -- Insérer les résultats dans le cache seulement si participants_avant n'est pas NULL
           IF participants_avant IS NOT NULL THEN
@@ -224,7 +317,7 @@ dbExecute(conn, "
           FROM ' || quote_ident(nom_table_avant) || ' 
           WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
       
-      EXECUTE query_sql INTO participants_avant USING polygon_union;
+      EXECUTE query_sql INTO participants_avant USING polygon_avant;
 
       -- Calculer l'IoU intersection avec nom_table_apres
       SELECT * INTO iou_intersect
@@ -277,7 +370,7 @@ dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(
       polygon geometry, 
       table_name text, 
-      seuil_qualite numeric DEFAULT 0.9
+      seuil_qualite numeric DEFAULT 0
   )
   RETURNS TABLE (iou_ajust numeric, participants text) AS $$
   DECLARE
@@ -515,8 +608,7 @@ dbExecute(conn, "
 
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION echange_parcelles(idu_participants text, nom_table text)
-  RETURNS TABLE (idu_avant text, nom_com_avant text, code_com_avant text,
-      idu_apres text, code_com_apres text) AS $$
+  RETURNS TABLE (idu_avant text, nom_com_avant text, code_com_avant text, code_com_apres text) AS $$
   DECLARE
       sql_query text;
   BEGIN
@@ -535,15 +627,14 @@ dbExecute(conn, "
           idu,
           nom_com,
           code_com,
-          sub_string,
           SUBSTRING(sub_string FROM 3 FOR 3) AS code_com_apres
         FROM
           split_strings
         WHERE
           SUBSTRING(sub_string FROM 3 FOR 3) <> code_com
       )
-      SELECT idu AS idu_avant, nom_com AS nom_com_avant, code_com AS code_com_avant,
-                 sub_string AS idu_apres, code_com_apres
+      SELECT idu AS idu_avant, nom_com AS nom_com_avant, 
+          code_com AS code_com_avant, code_com_apres
       FROM
         filtered';
       

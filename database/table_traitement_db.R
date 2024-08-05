@@ -183,11 +183,11 @@ dbExecute(conn, "
 ")
 
 dbExecute(conn, "
-  CREATE TABLE multi_translate_rapide (
+  CREATE TABLE multi_rapide (
       idu text PRIMARY KEY,
-      iou_multi_translate numeric,
-      participants_avant_translate text,
-      participants_apres_translate text
+      iou_multi numeric,
+      participants_avant text,
+      participants_apres text
   );
 ")
 
@@ -359,7 +359,7 @@ dbExecute(conn, paste0("
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_echange_parc_nom_com_avant ON echange_parc (nom_com_avant);")
 
 dbExecute(conn, paste0("
-  CREATE TABLE echange_parc_probable (
+  CREATE TABLE echange_parc_possible (
       idu_avant text PRIMARY KEY,
       nom_com_avant text,
       code_com_avant text,
@@ -368,4 +368,4 @@ dbExecute(conn, paste0("
       code_com_apres text
   );
 "))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_echange_parc_probable_nom_com_avant ON echange_parc_probable (nom_com_avant);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_echange_parc_possible_nom_com_avant ON echange_parc_possible (nom_com_avant);")
