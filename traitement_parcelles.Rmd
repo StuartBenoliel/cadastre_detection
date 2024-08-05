@@ -1227,42 +1227,20 @@ ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 dbExecute(conn, "TRUNCATE TABLE vrai_ajout, vrai_supp;")
 
 dbExecute(conn, "
-  WITH updated_values AS (
-    SELECT idu,
-           (calcul_iou_intersec(geometry, 'ajout', 0)).*
-    FROM supp
-  )
-  UPDATE supp
-  SET iou = updated_values.iou,
-      participants = updated_values.participants
-  FROM updated_values
-  WHERE supp.idu = updated_values.idu")
-
-dbExecute(conn, "
-  WITH updated_values AS (
-    SELECT idu,
-           (calcul_iou_intersec(geometry, 'supp', 0)).*
-    FROM ajout
-  )
-  UPDATE ajout
-  SET iou = updated_values.iou,
-      participants = updated_values.participants
-  FROM updated_values
-  WHERE ajout.idu = updated_values.idu")
-
-dbExecute(conn, "
   INSERT INTO vrai_ajout
-  SELECT idu, nom_com, code_com, com_abs, contenance, 
-      iou, participants, geometry
+  SELECT idu, nom_com, code_com, com_abs, contenance, geometry
   FROM ajout
-  WHERE iou IS NULL;")
+  WHERE NOT EXISTS (
+      SELECT 1 FROM supp WHERE ST_DWithin(ajout.geometry, supp.geometry, 50) 
+  );")
 
 dbExecute(conn, "
   INSERT INTO vrai_supp
-  SELECT idu, nom_com, code_com, com_abs, contenance,
-      iou, participants, geometry
+  SELECT idu, nom_com, code_com, com_abs, contenance, geometry
   FROM supp
-  WHERE iou IS NULL;")
+  WHERE NOT EXISTS (
+      SELECT 1 FROM ajout WHERE ST_DWithin(ajout.geometry, supp.geometry, 50) 
+  );")
 
 dbExecute(conn, "
   DELETE FROM ajout

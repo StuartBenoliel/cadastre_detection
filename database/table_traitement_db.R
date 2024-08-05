@@ -327,8 +327,6 @@ dbExecute(conn, paste0("
       code_com text,
       com_abs text,
       contenance numeric,
-      iou numeric,
-      participants text,
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
   );
 "))
@@ -342,8 +340,6 @@ dbExecute(conn, paste0("
       code_com text,
       com_abs text,
       contenance numeric,
-      iou numeric,
-      participants text,
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
   );
 "))

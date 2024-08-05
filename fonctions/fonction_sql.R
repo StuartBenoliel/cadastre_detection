@@ -65,8 +65,7 @@ dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_intersec( 
     polygon geometry, 
     table_name text, 
-    seuil_qualite numeric DEFAULT 0.9,
-    seuil_intersection numeric DEFAULT 1
+    seuil_qualite numeric DEFAULT 0.9
   )
   RETURNS TABLE (iou numeric, participants text) AS $$
   DECLARE
@@ -83,10 +82,10 @@ dbExecute(conn, "
       query_sql := '
           SELECT idu, ST_Area(ST_Intersection($1, geometry)) AS intersect_area, ST_Area(geometry) AS polygon_area
           FROM ' || quote_ident(table_name) || '
-          WHERE geometry && $1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
+          WHERE geometry && $1 AND ST_Intersects($1, geometry)
       ';
       
-      FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil_intersection
+      FOR parcelles_intersectant IN EXECUTE query_sql USING polygon
       LOOP
           intersect_area := parcelles_intersectant.intersect_area;
           polygon_area := parcelles_intersectant.polygon_area;
@@ -115,11 +114,11 @@ dbExecute(conn, "
           WHERE idu IN (
               SELECT idu
               FROM ' || quote_ident(table_name) || '
-              WHERE geometry && $1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
-              AND ST_Area(ST_Intersection($1, geometry)) / ST_Area(geometry) >= $3
+              WHERE geometry && $1 AND ST_Intersects($1, geometry)
+              AND ST_Area(ST_Intersection($1, geometry)) / ST_Area(geometry) >= $2
           )
       ';
-      EXECUTE query_sql INTO polygon_union USING polygon, seuil_intersection, seuil_qualite;
+      EXECUTE query_sql INTO polygon_union USING polygon, seuil_qualite;
       
       -- Calculer l'IoU avec l'union des parcelles et le polygon
       RETURN QUERY SELECT calcul_iou(polygon_union, polygon), nom_participants;
@@ -278,8 +277,7 @@ dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_intersec_translate(
       polygon geometry, 
       table_name text, 
-      seuil_qualite numeric DEFAULT 0.1,
-      seuil_intersection numeric DEFAULT 1
+      seuil_qualite numeric DEFAULT 0.1
   )
   RETURNS TABLE (iou_ajust numeric, participants text) AS $$
   DECLARE
@@ -296,10 +294,10 @@ dbExecute(conn, "
       query_sql := '
           SELECT idu, ST_Area(ST_Intersection($1, geometry)) AS intersect_area, ST_Area(geometry) AS polygon_area
           FROM ' || quote_ident(table_name) || '
-          WHERE geometry && $1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
+          WHERE geometry && $1 AND ST_Intersects($1, geometry)
       ';
       
-      FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil_intersection
+      FOR parcelles_intersectant IN EXECUTE query_sql USING polygon
       LOOP
           intersect_area := parcelles_intersectant.intersect_area;
           polygon_area := parcelles_intersectant.polygon_area;
@@ -328,11 +326,11 @@ dbExecute(conn, "
           WHERE idu IN (
               SELECT idu
               FROM ' || quote_ident(table_name) || '
-              WHERE geometry && $1 AND ST_Intersects(ST_Buffer($1, -$2), geometry)
-              AND ST_Area(ST_Intersection($1, geometry)) / ST_Area(geometry) >= $3
+              WHERE geometry && $1 AND ST_Intersects($1, geometry)
+              AND ST_Area(ST_Intersection($1, geometry)) / ST_Area(geometry) >= $2
           )
       ';
-      EXECUTE query_sql INTO polygon_union USING polygon, seuil_intersection, seuil_qualite;
+      EXECUTE query_sql INTO polygon_union USING polygon, seuil_qualite;
       
       -- Calculer l'IoU avec l'union des parcelles et le polygon
       RETURN QUERY SELECT calcul_iou_ajust(polygon_union, polygon), nom_participants;
