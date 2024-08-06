@@ -3,7 +3,7 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "85"
+  num_departement: "60"
   temps_apres: 24
   temps_avant: 23
 ---

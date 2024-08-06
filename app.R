@@ -1,4 +1,8 @@
 library(shiny)
+library(bslib)
+
+
+library(shiny)
 library(shinythemes)
 library(sf)
 library(mapview)
@@ -16,103 +20,101 @@ conn <- connecter()
 departements <- departement_traite(conn)
 
 # Define UI
-ui <- fluidPage(
-  theme = shinytheme("spacelab"),
-  titlePanel(
-    div(
-      img(src = "Insee_logo.png", height = "60px", align = "right"),
-      h1("Cadastat : détection des évolutions des parcelles cadastrales")
-    )
-  ),
-  br(),
+ui <- page_navbar(
+  id = "main_navbar",
+  title = "Cadastat : détection des évolutions des parcelles cadastrales",
+  nav_spacer(), # push nav items to the right
   # Navigation panel
-  tabsetPanel(
-    id = "tabsetPanel",  # Give an ID to the tabsetPanel
-    type = "tabs",
-    tabPanel("Carte des comparaisons par commune",
-             br(),
-             fluidRow(
-               column(3,
-                      selectInput("depart_select_carte", "Choisir un département:",
-                                  choices = departements,
-                                  selected = departements[length(departements)])
-               ),
-               column(3,
-                      selectInput("temps_select_carte", "Choisir une période de temps:",
-                                  choices = NULL,
-                                  selected = NULL)
-               ),
-               column(3,
-                      div(class = "input-group",
-                          selectInput("nom_com_select_carte", 
-                                      label = "Choisir un / plusieurs noms de communes:",
-                                      choices = NULL,
-                                      multiple = TRUE),
-                          # Ajouter un icône avec une info-bulle à droite du selectInput
-                          tags$span(
-                            title = "Les communes proposées sont les communes existantes à l'année la plus tardive de la période de temps choisie.",
-                            class = "info-icon",
-                            icon("info-circle")
-                          )
-                      )
-               ),
-               column(3,
-                      uiOutput("warning_message")
-               ),
-             ),
-             wellPanel(class = "well-panel",
-                       uiOutput("dynamicMaps")),
-             br(),
-             h3("Cas de parcelles avec géomètrie absente:"),
-             wellPanel(class = "well-pane-small",
-                       uiOutput("parcelles_absentes"))
-             
-    ),
-    tabPanel("Tableau des changments par commune",
-             br(),
-             fluidRow(
-               column(3,
-                      selectInput("depart_select_tableau", "Choisir un département:",
-                                  choices = departements,
-                                  selected = departements[length(departements)])
-               ),
-               column(3,
-                      selectInput("temps_select_tableau", "Choisir une période de temps:",
-                                  choices = NULL,
-                                  selected = NULL)
-               ),
-               column(6,
-                      checkboxGroupInput("var_tableau", "Variables à afficher:",
-                                         NULL, selected = NULL, inline = T)
-               ),
-             ),
-             wellPanel(class = "well-panel",
-                       DTOutput("table")),
-             br(),
-             h3("Fusion / scission de communes / changement de nom:"),
-             wellPanel(class = "well-pane-small",
-                       uiOutput("changement_communes"))
-    ),
+  nav_panel("Carte des comparaisons par commune",
+            fluidRow(
+              column(3,
+                     selectInput("depart_select_carte", "Choisir un département:",
+                                 choices = departements,
+                                 selected = departements[length(departements)])
+              ),
+              column(3,
+                     selectInput("temps_select_carte", "Choisir une période de temps:",
+                                 choices = NULL,
+                                 selected = NULL)
+              ),
+              column(6,
+                     div(class = "input-group",
+                         selectizeInput("nom_com_select_carte", 
+                                        label = "Choisir une / plusieurs communes:",
+                                        choices = NULL,
+                                        multiple = TRUE,
+                                        options = list(plugins = "remove_button"),
+                                        width = "60%"),
+                         # Ajouter un icône avec une info-bulle à droite du selectInput
+                         tags$span(
+                           title = "Les communes proposées sont les communes existantes à l'année la plus tardive de la période de temps choisie.",
+                           class = "info-icon",
+                           icon("info-circle"),
+                           style = "margin-left: 10px; margin-bottom: 60px; display: flex; align-items: center;"
+                         )
+                     )
+              ),
+            ),
+            wellPanel(class = "well-panel",
+                      uiOutput("dynamicMaps")),
+            h3("Cas de parcelles avec géomètrie absente:"),
+            wellPanel(class = "well-pane-small",
+                      uiOutput("parcelles_absentes")),
+            br()
+            
   ),
-  
-  tags$style(HTML("
+  nav_panel("Tableau des changments par commune",
+            fluidRow(
+              column(3,
+                     selectInput("depart_select_tableau", "Choisir un département:",
+                                 choices = departements,
+                                 selected = departements[length(departements)])
+              ),
+              column(3,
+                     selectInput("temps_select_tableau", "Choisir une période de temps:",
+                                 choices = NULL,
+                                 selected = NULL)
+              ),
+              column(3,
+                     div(style = "margin-left: 10px; margin-top: 15px; display: flex; align-items: center;",
+                         span(style = "margin-right: 10px;","Filtrage des colonnes:"),
+                         popover(
+                           bsicons::bs_icon("gear", class = "icon-large", title = "Settings"),
+                           checkboxGroupInput("var_tableau", "Variables à afficher:",
+                                              NULL, selected = NULL, inline = TRUE)
+                         )
+                     )
+              ),
+            ),
+            wellPanel(class = "well-panel",
+                      DTOutput("table")),
+            h3("Fusion / scission de communes / changement de nom:"),
+            wellPanel(class = "well-pane-small",
+                      uiOutput("changement_communes")),
+            br()
+  ),
+  nav_item(img(src = "insee-logo.jpg", height = "50px", align = "right")),
+  header = tags$style(HTML("
     .input-group {
-        display: flex;
-        align-items: center;
-      }
-      .info-icon {
-        color: black;
-        font-size: 18px;
-        cursor: pointer;
-        margin-left: 10px;
-      }
-      .info-icon:hover {
-        color: #0056b3;
-      }
+      display: flex;
+      align-items: bottom;
+    }
+    .info-icon {
+      color: black;
+      font-size: 18px;
+      cursor: pointer;
+      margin-left: 30px;
+    }
+    .info-icon:hover {
+      color: #0056b3;
+    }
+    .icon-large {
+      font-size: 40px; /* Ajustez la taille de l'icône selon vos besoins */
+    }
     .well-panel {
       background-color: #fff;
       border-color: #2c3e50;
-      height: 850px; /* Ensure the height is set */
+      height: 840px; /* Ensure the height is set */
       overflow-y: auto; /* Add vertical scrolling if content overflows */
       margin-bottom: 15px; /* Space between panels */
     }
@@ -123,9 +125,6 @@ ui <- fluidPage(
       max-height: 300px; /* Maximum height for small panels */
       overflow-y: auto;
       margin-bottom: 15px;
-    }
-    .dataTables_wrapper {
-      overflow-x: auto;
     }
     .dataTables_scroll {
       overflow: hidden;
@@ -173,9 +172,9 @@ server <- function(input, output, session) {
       if (indic_double()){
         maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
         commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
-        updateSelectInput(session, "nom_com_select_carte",
-                          choices = commune, 
-                          selected = commune[1])
+        updateSelectizeInput(session, "nom_com_select_carte",
+                             choices = commune, 
+                             selected = commune[1])
       }
     }
     
@@ -188,22 +187,22 @@ server <- function(input, output, session) {
     temps_vec_carte <<- strsplit(input$temps_select_carte, "-")[[1]]
     maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
     commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
-    updateSelectInput(session, "nom_com_select_carte",
-                      choices = commune, 
-                      selected =  {
-                        if (!is.null(input$nom_com_select_carte) && all(input$nom_com_select_carte %in% commune)) {
-                          input$nom_com_select_carte
-                        } else {
-                          commune[1]
-                        }
-                      })
+    updateSelectizeInput(session, "nom_com_select_carte",
+                         choices = commune, 
+                         selected =  {
+                           if (!is.null(input$nom_com_select_carte) && all(input$nom_com_select_carte %in% commune)) {
+                             input$nom_com_select_carte
+                           } else {
+                             commune[1]
+                           }
+                         })
     indic(TRUE)
     indic_double(TRUE) 
   })
   
   # Rendu dynamique des cartes
   output$dynamicMaps <- renderUI({
-    req(input$tabsetPanel == "Carte des comparaisons par commune")
+    req(input$main_navbar == "Carte des comparaisons par commune")
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
     req(indic())
     if (all(input$nom_com_select_carte %in% commune) & !is.null(input$nom_com_select_carte)){
@@ -211,25 +210,17 @@ server <- function(input, output, session) {
       nom_com <- paste0("'", paste(nom_com, collapse = "', '"), "'")
       print(paste0("Affichage des cartes pour la commune: ", nom_com))
       
-      output$warning_message <- renderUI({
-        nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
-        nom_com <- paste0("'", paste(nom_com, collapse = "', '"), "'")
-        indic_refonte <- check_refonte_pc(conn, nom_com)
-        if (indic_refonte) {
-          div(class = "alert alert-warning", "Refonte partielle ou totale du plan cadastral de la commune probable.
-              Classification non fiable.")
-        } else {
-          # Aucun message à afficher
-          NULL
-        }
-      })
-      
+      indic_refonte <- check_refonte_pc(conn, nom_com)
+      if (indic_refonte) {
+        showNotification("Refonte du plan cadastral de la commune probable. Classification non fiable.",
+                         type = "warning", duration = NULL)
+      }
       cartes_dynamiques(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2], nom_com)
     } 
   })
   
   output$parcelles_absentes <- renderUI({
-    req(input$tabsetPanel == "Carte des comparaisons par commune")
+    req(input$main_navbar == "Carte des comparaisons par commune")
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
     req(indic())
     
@@ -254,7 +245,7 @@ server <- function(input, output, session) {
   
   
   observeEvent(input$depart_select_tableau, {
-    req(input$tabsetPanel == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
+    req(input$main_navbar == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau du département tableau: ", input$depart_select_tableau))
     int_temps <<- intervalle_temps(conn, input$depart_select_tableau)
     
@@ -282,7 +273,7 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$temps_select_tableau, {
-    req(input$tabsetPanel == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
+    req(input$main_navbar == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau de la période de temps tableau: ", input$temps_select_tableau))
     temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
     
@@ -308,7 +299,7 @@ server <- function(input, output, session) {
   
   # Erreur lorsque changement de temps et ou déparement du au reset des noms_colonnes
   output$table <- renderDT({
-    req(input$tabsetPanel == "Tableau des changments par commune")
+    req(input$main_navbar == "Tableau des changments par commune")
     req(indic())
     
     print(paste0("Affichage du tableau des changements au niveau du département: ", input$depart_select_tableau))
@@ -318,7 +309,7 @@ server <- function(input, output, session) {
   })
   
   output$changement_communes <- renderUI({
-    req(input$tabsetPanel == "Tableau des changments par commune")
+    req(input$main_navbar == "Tableau des changments par commune")
     req(indic())
     req(input$depart_select_tableau)
     
@@ -326,10 +317,10 @@ server <- function(input, output, session) {
     tableau_si_donnee(chgt_com)
   })
   
-  observeEvent(input$tabsetPanel, {
+  observeEvent(input$main_navbar, {
     req(input$temps_select_carte) # Evite que cela se lance au démarage
     print("Changement d'onglet")
-    if (input$tabsetPanel == "Carte des comparaisons par commune") {
+    if (input$main_navbar == "Carte des comparaisons par commune") {
       
       ifelse(input$depart_select_carte == input$depart_select_tableau & 
                input$temps_select_carte == input$temps_select_tableau, indic(TRUE), indic(FALSE))

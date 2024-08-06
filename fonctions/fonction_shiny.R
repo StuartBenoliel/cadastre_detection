@@ -60,7 +60,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   bordure <- st_read(conn, query = paste0(
     "SELECT * FROM bordure WHERE nom_com IN (", nom_com, ");"))
   contour_commune <- st_read(conn, query = paste0(
-    "SELECT nom_com, code_com, ST_Boundary(geometry) AS geometry FROM com_", num_departement, " WHERE nom_com IN (", nom_com, ");"))
+    "SELECT nom_com, code_insee, ST_Boundary(geometry) AS geometry FROM com_", num_departement, " WHERE nom_com IN (", nom_com, ");"))
   parc_avant <- st_read(conn, query = paste0(
     "SELECT * FROM parc_", num_departement, "_", temps_avant, " WHERE nom_com IN (", nom_com, ");"))
   parc_apres <- st_read(conn, query = paste0(
@@ -86,13 +86,13 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   echange_parc_possible <- dbGetQuery(conn, paste0(
     "SELECT * FROM echange_parc_possible WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ");"))
   
-  is_fusion_or_nom__com <- dbGetQuery(conn, paste0(
+  is_fusion_or_nom_com <- dbGetQuery(conn, paste0(
     "SELECT * FROM chgt_com WHERE nom_com IN (", nom_com, ") AND (changement = 'Fusion' OR changement = 'Changement de nom');"))
   
-  is_scission_part_com  <- dbGetQuery(conn, paste0(
+  is_scission_part_com <- dbGetQuery(conn, paste0(
     "SELECT * FROM chgt_com WHERE nom_com IN (", nom_com, ") AND changement = 'Scission partielle' ;"))
   
-  is_scission_com  <- dbGetQuery(conn, paste0(
+  is_scission_com <- dbGetQuery(conn, paste0(
     "SELECT * FROM chgt_com WHERE ", 
     "regexp_split_to_array(participants, ',\\s*') && ARRAY[", 
     nom_com, 
@@ -122,8 +122,9 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   
   map_1 <- map_base
   
-  if (nrow(is_fusion_or_nom__com) > 0) {
-    
+  if (nrow(is_fusion_or_nom_com) > 0) {
+    print(st_read(conn, query = paste0(
+      "SELECT * FROM fusion_com;")))
     fusion_com <- st_read(conn, query = paste0(
       "SELECT * FROM fusion_com WHERE nom_com IN (", nom_com, ");"))
     
@@ -175,13 +176,16 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
         (SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
           FROM chgt_com WHERE nom_com IN (", nom_com, "));"))
     
-    map_1 <- map_1 + mapview(fusion_com,  
-                             layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
-                             col.regions = "white",
-                             alpha.regions = 0.5, homebutton = F) +
-      mapview(fusion_com_avant,  
-              layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
-              col.regions = "white", alpha.regions = 0.5, homebutton = F)
+    if (nrow(fusion_com) > 0) {
+      map_1 <- map_1 + mapview(fusion_com,  
+                               layer.name = paste0("Parcelles fusion de communes (état 20",temps_apres,")"), 
+                               col.regions = "white",
+                               alpha.regions = 0.5, homebutton = F) +
+        mapview(fusion_com_avant,  
+                layer.name = paste0("Parcelles fusion de communes (état 20",temps_avant,")"), 
+                col.regions = "white", alpha.regions = 0.5, homebutton = F)
+      
+    }
     
   } else if (nrow(is_scission_part_com) > 0) {
     
