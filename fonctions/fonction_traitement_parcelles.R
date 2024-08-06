@@ -469,6 +469,19 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       WHERE ST_IsValid(ajout.geometry) 
           AND ST_IsValid(supp.geometry);")
   
+  dbExecute(conn, paste0("
+  INSERT INTO echange_parc
+  WITH decomposed_participants AS (
+      SELECT 
+          unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+      FROM chgt_com
+      WHERE changement != 'Changement de nom'
+  )
+  SELECT * FROM identique_bis 
+  WHERE nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND nom_com_apres NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND (nom_com_avant != nom_com_apres OR code_com_avant != code_com_apres);"))
+  
   # Parcelles ajoutées n'ayant pas été modifiées
   dbExecute(conn, "
   DELETE FROM ajout
@@ -506,6 +519,24 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       idu, participants, geometry
   FROM supp
   WHERE iou >= 0.99 AND LENGTH(participants) != 14;")
+  
+  dbExecute(conn, paste0("
+  INSERT INTO echange_parc
+  WITH decomposed_participants AS (
+    SELECT 
+        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+    FROM chgt_com
+    WHERE changement != 'Changement de nom'
+  )
+  SELECT supp.idu, supp.nom_com, supp.code_com, participants, 
+      apres.nom_com, SUBSTRING(participants FROM 3 FOR 3) 
+  FROM supp
+  JOIN parc_", params$num_departement, "_", params$temps_avant, " apres
+  ON apres.idu = supp.participants
+  WHERE iou >= 0.99 AND LENGTH(participants) = 14
+  AND SUBSTRING(participants FROM 3 FOR 3) <> supp.code_com
+  AND supp.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);"))
   
   dbExecute(conn, "
   DELETE FROM ajout
@@ -548,6 +579,23 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   FROM supp
   LEFT JOIN fusion_ajout fa ON fa.idu = supp.idu
   WHERE fa.iou >= 0.99 AND LENGTH(fa.participants_avant) != 14;")
+  
+  dbExecute(conn, paste0("
+  INSERT INTO echange_parc
+  WITH decomposed_participants AS (
+    SELECT 
+        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+    FROM chgt_com
+    WHERE changement != 'Changement de nom'
+  )
+  SELECT fa.idu, supp.nom_com, supp.code_com, fa.participants_apres, 
+      fa.nom_com_apres, fa.code_com_apres
+  FROM supp
+  JOIN fusion_ajout fa ON fa.idu = supp.idu
+  WHERE LENGTH(fa.participants_avant) = 14
+  AND SUBSTRING(fa.participants_avant FROM 3 FOR 3) <> fa.code_com_apres
+  AND supp.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND fa.nom_com_apres NOT IN (SELECT participant_idu FROM decomposed_participants);"))
   
   dbExecute(conn, "
   DELETE FROM supp
@@ -633,6 +681,32 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   JOIN max_iou mi
   ON sub.idu = mi.idu AND sub.iou_multi = mi.max_iou
   ORDER BY sub.idu, sub.iou_multi DESC;")
+  
+  dbExecute(conn, "
+  WITH decomposed AS (
+      SELECT
+          idu,
+          unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS participant_id
+      FROM multi_rapide
+  ),
+  participant_groups AS (
+      SELECT
+          idu,
+          array_agg(DISTINCT participant_id ORDER BY participant_id) AS participants_list
+      FROM decomposed
+      GROUP BY idu
+  ),
+  conflicting AS (
+      SELECT DISTINCT t2.idu
+      FROM participant_groups t1
+      JOIN participant_groups t2
+      ON t1.idu <> t2.idu
+      AND t1.idu = ANY(t2.participants_list)
+      WHERE t1.participants_list <> t2.participants_list
+  )
+  DELETE FROM multi_rapide
+  WHERE idu  IN (SELECT idu FROM conflicting);
+")
   
   
   dbExecute(conn, "
@@ -771,6 +845,32 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   JOIN max_iou mi
   ON sub.idu = mi.idu AND sub.iou_multi_translate = mi.max_iou
   ORDER BY sub.idu, sub.iou_multi_translate DESC;")
+  
+  dbExecute(conn, "
+  WITH decomposed AS (
+      SELECT
+          idu,
+          unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS participant_id
+      FROM multi_rapide
+  ),
+  participant_groups AS (
+      SELECT
+          idu,
+          array_agg(DISTINCT participant_id ORDER BY participant_id) AS participants_list
+      FROM decomposed
+      GROUP BY idu
+  ),
+  conflicting AS (
+      SELECT DISTINCT t2.idu
+      FROM participant_groups t1
+      JOIN participant_groups t2
+      ON t1.idu <> t2.idu
+      AND t1.idu = ANY(t2.participants_list)
+      WHERE t1.participants_list <> t2.participants_list
+  )
+  DELETE FROM multi_rapide
+  WHERE idu  IN (SELECT idu FROM conflicting);
+")
   
   dbExecute(conn, "
   INSERT INTO contour_redecoupage
@@ -941,17 +1041,20 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   
   dbExecute(conn, paste0("
   INSERT INTO echange_parc
+  WITH decomposed_participants AS (
+    SELECT 
+        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+    FROM chgt_com
+    WHERE changement != 'Changement de nom'
+  )
   SELECT idu_translate, avant.nom_com, SUBSTRING(idu_translate FROM 3 FOR 3), 
       tr.idu, tr.nom_com, tr.code_com
   FROM translation tr
   JOIN parc_", params$num_departement, "_", params$temps_avant, " avant
   ON avant.idu = tr.idu_translate
   WHERE SUBSTRING(idu_translate FROM 3 FOR 3) <> tr.code_com
-  AND avant.nom_com NOT IN (
-      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-      FROM chgt_com
-      WHERE changement != 'Changement de nom'
-  );"))
+  AND avant.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND tr.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);"))
   
   dbExecute(conn, "
   DELETE FROM translation
@@ -961,24 +1064,26 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       WHERE translation.idu = echange_parc.idu_apres
   );")
   
-  
   dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH echange AS (
+  WITH decomposed_participants AS (
+    SELECT 
+        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+    FROM chgt_com
+    WHERE changement != 'Changement de nom'
+  ),
+  echange AS (
       SELECT DISTINCT 
           (echange_parcelles('participants_apres', 'redecoupage')).*
   )
-  SELECT DISTINCT red.participants_avant, ech.nom_com_avant, ech.code_com_avant, 
+  SELECT DISTINCT ON (red.participants_avant) red.participants_avant, ech.nom_com_avant, ech.code_com_avant, 
       red.participants_apres, apres.nom_com, ech.code_com_apres
   FROM echange ech
   JOIN redecoupage red ON red.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
   ON apres.code_com = ech.code_com_apres
-  WHERE ech.nom_com_avant NOT IN (
-      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-      FROM chgt_com
-      WHERE changement != 'Changement de nom'
-  );")) 
+  WHERE ech.nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);")) 
   
   dbExecute(conn, "
   DELETE FROM redecoupage
@@ -989,21 +1094,24 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   
   dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH echange AS (
+  WITH decomposed_participants AS (
+    SELECT 
+        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+    FROM chgt_com
+    WHERE changement != 'Changement de nom'
+  ),
+  echange AS (
       SELECT DISTINCT 
           (echange_parcelles('participants_apres', 'contour_redecoupage')).*
   )
-  SELECT DISTINCT con.participants_avant, ech.nom_com_avant, ech.code_com_avant, 
+  SELECT DISTINCT ON (con.participants_avant) con.participants_avant, ech.nom_com_avant, ech.code_com_avant, 
       con.participants_apres, apres.nom_com, ech.code_com_apres
   FROM echange ech
   JOIN contour_redecoupage con ON con.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
   ON apres.code_com = ech.code_com_apres
-  WHERE ech.nom_com_avant NOT IN (
-      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-      FROM chgt_com
-      WHERE changement != 'Changement de nom'
-  );"))
+  WHERE ech.nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);"))
   
   dbExecute(conn, "
   DELETE FROM contour_redecoupage
@@ -1027,21 +1135,24 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   
   dbExecute(conn, paste0("
   INSERT INTO echange_parc_possible
-  WITH echange AS (
+  WITH decomposed_participants AS (
+    SELECT 
+        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+    FROM chgt_com
+    WHERE changement != 'Changement de nom'
+  ),
+  echange AS (
       SELECT DISTINCT 
           (echange_parcelles('participants_apres', 'supp')).*
   )
-  SELECT DISTINCT supp.participants_avant, ech.nom_com_avant, ech.code_com_avant, 
+  SELECT DISTINCT ON (supp.participants_avant) supp.participants_avant, ech.nom_com_avant, ech.code_com_avant, 
       supp.participants_apres, apres.nom_com, ech.code_com_apres
   FROM echange ech
   JOIN supp ON supp.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
   ON apres.code_com = ech.code_com_apres
-  WHERE ech.nom_com_avant NOT IN (
-      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
-      FROM chgt_com
-      WHERE changement != 'Changement de nom'
-  );")) 
+  WHERE ech.nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
+  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);")) 
   
   dbExecute(conn, "
   DELETE FROM ajout

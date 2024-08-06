@@ -171,7 +171,9 @@ dbExecute(conn, "
       idu text PRIMARY KEY,
       iou numeric,
       participants_avant text,
-      participants_apres text
+      participants_apres text,
+      nom_com_apres text,
+      code_com_apres text
   );
 ")
 

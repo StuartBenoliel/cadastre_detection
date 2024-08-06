@@ -112,7 +112,7 @@ ui <- fluidPage(
     .well-panel {
       background-color: #fff;
       border-color: #2c3e50;
-      height: 720px; /* Ensure the height is set */
+      height: 850px; /* Ensure the height is set */
       overflow-y: auto; /* Add vertical scrolling if content overflows */
       margin-bottom: 15px; /* Space between panels */
     }
