@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "78"
-  temps_apres: 23
-  temps_avant: 22
+  num_departement: "60"
+  temps_apres: 24
+  temps_avant: 23
 ---
 
 ```{r setup, include=FALSE}
@@ -920,6 +920,22 @@ dbExecute(conn, "
   ON sub.idu = mi.idu AND sub.iou_multi = mi.max_iou
   ORDER BY sub.idu, sub.iou_multi DESC;")
 
+dbExecute(conn, "
+  WITH temp_participants AS (
+    SELECT idu, 
+        unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS participant
+    FROM multi_rapide
+  ),
+  to_delete AS (
+    SELECT DISTINCT t1.idu
+    FROM temp_participants t1
+    JOIN temp_participants t2
+    ON t1.participant = t2.idu AND t1.idu <> t2.idu
+  )
+  DELETE FROM multi_rapide
+  WHERE idu IN (SELECT idu FROM to_delete);
+")
+
 
 dbExecute(conn, "
   INSERT INTO redecoupage
@@ -954,6 +970,7 @@ dbExecute(conn, "
 
 
 ```{r multisubdiv sql, eval=FALSE}
+multi_rapide <-  dbGetQuery(conn, "SELECT * FROM multi_rapide;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
 redecoupage <- st_read(conn, query = "SELECT * FROM redecoupage;")
 contour <- st_read(conn, query = "SELECT * FROM contour;")
@@ -1295,7 +1312,7 @@ vrai_supp <- st_read(conn, query = "SELECT * FROM vrai_supp;")
 ```
 
 
-```{r echanges parcelles, eval=FALSE}
+```{r echanges parcelles}
 dbExecute(conn, "TRUNCATE TABLE multi_calcul_cache, echange_parc, echange_parc_possible;")
 
 dbExecute(conn, paste0("
@@ -1305,7 +1322,12 @@ dbExecute(conn, paste0("
   FROM translation tr
   JOIN parc_", params$num_departement, "_", params$temps_avant, " avant
   ON avant.idu = tr.idu_translate
-  WHERE SUBSTRING(idu_translate FROM 3 FOR 3) <> tr.code_com;"))
+  WHERE SUBSTRING(idu_translate FROM 3 FOR 3) <> tr.code_com
+  AND avant.nom_com NOT IN (
+      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
+      FROM chgt_com
+      WHERE changement != 'Changement de nom'
+  );"))
 
 dbExecute(conn, "
   DELETE FROM translation
@@ -1314,6 +1336,7 @@ dbExecute(conn, "
       FROM echange_parc
       WHERE translation.idu = echange_parc.idu_apres
   );")
+
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
@@ -1326,7 +1349,12 @@ dbExecute(conn, paste0("
   FROM echange ech
   JOIN redecoupage red ON red.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
-  ON apres.code_com = ech.code_com_apres;")) 
+  ON apres.code_com = ech.code_com_apres
+  WHERE ech.nom_com_avant NOT IN (
+      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
+      FROM chgt_com
+      WHERE changement != 'Changement de nom'
+  );")) 
 
 dbExecute(conn, "
   DELETE FROM redecoupage
@@ -1346,7 +1374,12 @@ dbExecute(conn, paste0("
   FROM echange ech
   JOIN contour_redecoupage con ON con.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
-  ON apres.code_com = ech.code_com_apres;"))
+  ON apres.code_com = ech.code_com_apres
+  WHERE ech.nom_com_avant NOT IN (
+      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
+      FROM chgt_com
+      WHERE changement != 'Changement de nom'
+  );"))
 
 dbExecute(conn, "
   DELETE FROM contour_redecoupage
@@ -1379,7 +1412,12 @@ dbExecute(conn, paste0("
   FROM echange ech
   JOIN supp ON supp.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
-  ON apres.code_com = ech.code_com_apres;")) 
+  ON apres.code_com = ech.code_com_apres
+  WHERE ech.nom_com_avant NOT IN (
+      SELECT unnest(regexp_split_to_array(participants, ',\\s*')) 
+      FROM chgt_com
+      WHERE changement != 'Changement de nom'
+  );")) 
 
 dbExecute(conn, "
   DELETE FROM ajout
@@ -1396,8 +1434,9 @@ dbExecute(conn, "
   );")
 ```
 
-```{r}
+```{r, eval=FALSE}
 echange_parc <- dbGetQuery(conn, "SELECT * FROM echange_parc;")
+
 echange_parc_possible <- dbGetQuery(conn, "SELECT * FROM echange_parc_possible;")
 ```
 

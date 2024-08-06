@@ -348,14 +348,55 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   }
   if (nrow(echange_parc) > 0) {
     
-    map_1 <- map_1 + mapview(parc_apres %>%
-                               filter(idu %in% unlist(str_split(contour_redecoupage$participants_apres, ",\\s*"))),  
-                             layer.name = paste0("Parcelles redécoupées + contours (état 20",temps_apres,")"),
-                             col.regions = "#268DFF",
+    echange_parc_avant <- st_read(conn, query = paste0(
+      "SELECT * FROM parc_", num_departement, "_", temps_avant, " 
+      WHERE idu IN (
+          SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
+          FROM echange_parc
+          WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
+    );"))
+    
+    echange_parc_apres <- st_read(conn, query = paste0(
+      "SELECT * FROM parc_", num_departement, "_", temps_apres, " 
+      WHERE idu IN (
+          SELECT unnest(regexp_split_to_array(idu_apres, ',\\s*')) 
+          FROM echange_parc
+          WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
+    );"))
+    
+    map_1 <- map_1 + mapview(echange_parc_apres,  
+                             layer.name = paste0("Parcelles échangées (état 20",temps_apres,")"),
+                             col.regions = "#520408",
                              alpha.regions = 0.5, homebutton = F) +
-      mapview(contour_redecoupage,
-              layer.name = paste0("Parcelles redécoupées + contours (état 20",temps_avant,")"), 
-              col.regions = "#268DFF", alpha.regions = 0.5, homebutton = F)
+      mapview(echange_parc_avant,
+              layer.name = paste0("Parcelles échangées (état 20",temps_avant,")"), 
+              col.regions = "#520408", alpha.regions = 0.5, homebutton = F)
+  }
+  if (nrow(echange_parc_possible) > 0) {
+    
+    echange_parc_possible_avant <- st_read(conn, query = paste0(
+      "SELECT * FROM parc_", num_departement, "_", temps_avant, " 
+      WHERE idu IN (
+          SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
+          FROM echange_parc_possible
+          WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
+    );"))
+    
+    echange_parc_possible_apres <- st_read(conn, query = paste0(
+      "SELECT * FROM parc_", num_departement, "_", temps_apres, " 
+      WHERE idu IN (
+          SELECT unnest(regexp_split_to_array(idu_apres, ',\\s*')) 
+          FROM echange_parc_possible
+          WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
+    );"))
+    
+    map_1 <- map_1 + mapview(echange_parc_possible_apres,  
+                             layer.name = paste0("Parcelles possiblement échangées (état 20",temps_apres,")"),
+                             col.regions = "#78080F",
+                             alpha.regions = 0.5, homebutton = F) +
+      mapview(echange_parc_possible_avant,
+              layer.name = paste0("Parcelles possiblement échangées (état 20",temps_avant,")"), 
+              col.regions = "#78080F", alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(vrai_ajout[!st_is_empty(vrai_ajout), ]) > 0) {
     
@@ -504,6 +545,48 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         FROM contour_redecoupage
         GROUP BY nom_com
       ),
+      echange_avant AS (
+          SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
+          FROM echange_parc,
+          LATERAL unnest(regexp_split_to_array(idu_avant, ',\\s*')) AS idu
+          GROUP BY nom_com_avant
+      ),
+      echange_apres AS (
+          SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
+          FROM echange_parc,
+          LATERAL unnest(regexp_split_to_array(idu_apres, ',\\s*')) AS idu
+          GROUP BY nom_com_apres
+      ),
+      echange AS (
+          SELECT nom_com, SUM(nb_echanges) AS nb_echanges
+          FROM (
+            SELECT * FROM echange_avant
+            UNION ALL
+            SELECT * FROM echange_apres
+        ) AS combined
+        GROUP BY nom_com
+      ),
+      echange_poss_avant AS (
+          SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges_poss
+          FROM echange_parc_possible,
+          LATERAL unnest(regexp_split_to_array(idu_avant, ',\\s*')) AS idu
+          GROUP BY nom_com_avant
+      ),
+      echange_poss_apres AS (
+          SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges_poss
+          FROM echange_parc_possible,
+          LATERAL unnest(regexp_split_to_array(idu_apres, ',\\s*')) AS idu
+          GROUP BY nom_com_apres
+      ),
+      echange_poss AS (
+          SELECT nom_com, SUM(nb_echanges_poss) AS nb_echanges_poss
+          FROM (
+            SELECT * FROM echange_poss_avant
+            UNION ALL
+            SELECT * FROM echange_poss_apres
+        ) AS combined
+        GROUP BY nom_com
+      ),
       base AS (
         SELECT 
           COALESCE(parc_avant.nom_com, parc_apres.nom_com) AS nom_com,
@@ -514,10 +597,10 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         FULL OUTER JOIN parc_apres ON parc_avant.nom_com = parc_apres.nom_com
       )
       SELECT 
-        base.nom_com,
-        code_com,
-        parcelles_20", temps_apres,",
-        parcelles_20", temps_avant,",
+        base.nom_com AS nom, 
+        code_com AS code,
+        parcelles_20", temps_apres," AS total_20", temps_apres,",
+        parcelles_20", temps_avant," AS total_20", temps_avant,",
         COALESCE(nb_modif_restant_apres, 0) + COALESCE(nb_ajout_restant, 0) AS restantes_20", temps_apres,",
         COALESCE(nb_modif_restant_avant, 0) + COALESCE(nb_supp_restant, 0) AS restantes_20", temps_avant,",
         COALESCE(nb_ajout, 0) AS ajout,
@@ -525,7 +608,9 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         COALESCE(nb_translation, 0) AS translation,
         COALESCE(nb_contour, 0) AS contour,
         COALESCE(nb_redecoupage, 0) AS redécoupage,
-        COALESCE(nb_contour_redecoupage, 0) AS contour_redécoupage
+        COALESCE(nb_contour_redecoupage, 0) AS contour_redécoupage,
+        COALESCE(nb_echanges, 0) AS échange,
+        COALESCE(nb_echanges_poss, 0) AS échange_possible
       FROM base
       FULL OUTER JOIN modif_restant_avant ON base.nom_com = modif_restant_avant.nom_com
       FULL OUTER JOIN supp_restant ON base.nom_com = supp_restant.nom_com
@@ -536,16 +621,17 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       FULL OUTER JOIN translation ON base.nom_com = translation.nom_com
       FULL OUTER JOIN contour ON base.nom_com = contour.nom_com
       FULL OUTER JOIN redecoupage ON base.nom_com = redecoupage.nom_com
-      FULL OUTER JOIN contour_redecoupage ON base.nom_com = contour_redecoupage.nom_com;"))
+      FULL OUTER JOIN contour_redecoupage ON base.nom_com = contour_redecoupage.nom_com
+      FULL OUTER JOIN echange ON base.nom_com = echange.nom_com
+      FULL OUTER JOIN echange_poss ON base.nom_com = echange_poss.nom_com;"))
   
   final_df <- final_df %>%
     mutate(across(where(bit64::is.integer64), as.integer))
   
   datatable(final_df[, var], 
-            options = list(pageLength = 15, 
-                           autoWidth = TRUE, 
+            options = list(pageLength = 15,
                            ordering = TRUE, 
-                           orderClasses = TRUE, 
+                           orderClasses = TRUE,
                            rowCallback = DT::JS(
                              'function(row, data) {
                   // Bold cells for those >= 1.0 in all numeric columns

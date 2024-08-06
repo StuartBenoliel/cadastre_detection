@@ -89,7 +89,7 @@ ui <- fluidPage(
              wellPanel(class = "well-panel",
                        DTOutput("table")),
              br(),
-             h3("Fusion / défusion de communes ou changement de nom:"),
+             h3("Fusion / scission de communes / changement de nom:"),
              wellPanel(class = "well-pane-small",
                        uiOutput("changement_communes"))
     ),
@@ -148,34 +148,6 @@ server <- function(input, output, session) {
   
   indic <- reactiveVal(FALSE)
   indic_double <- reactiveVal(FALSE)
-  
-  observeEvent(input$tabsetPanel, {
-    req(input$temps_select_carte) # Evite que cela se lance au démarage
-    print("Changement d'onglet")
-    if (input$tabsetPanel == "Carte des comparaisons par commune") {
-      
-      ifelse(input$depart_select_carte == input$depart_select_tableau & 
-               input$temps_select_carte == input$temps_select_tableau, indic(TRUE), indic(FALSE))
-      ifelse(input$depart_select_carte != input$depart_select_tableau & 
-               input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
-      updateSelectInput(session, "depart_select_carte", selected = input$depart_select_tableau)
-      updateSelectInput(session, "temps_select_carte",
-                        choices = int_temps, 
-                        selected = ifelse(input$temps_select_tableau %in% int_temps, 
-                                          input$temps_select_tableau, int_temps[1]))
-    } else {
-      
-      ifelse(input$depart_select_carte == input$depart_select_tableau & 
-               input$temps_select_carte == input$temps_select_tableau, indic(TRUE) , indic(FALSE))
-      ifelse(input$depart_select_carte != input$depart_select_tableau & 
-               input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
-      updateSelectInput(session, "depart_select_tableau", selected = input$depart_select_carte)
-      updateSelectInput(session, "temps_select_tableau",
-                        choices = int_temps,
-                        selected = ifelse(input$temps_select_carte %in% int_temps, 
-                                          input$temps_select_carte, int_temps[1]))
-    }
-  })
   
   # Lancement au démarage
   observeEvent(input$depart_select_carte, {
@@ -314,10 +286,11 @@ server <- function(input, output, session) {
     print(paste0("Changement au niveau de la période de temps tableau: ", input$temps_select_tableau))
     temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
     
-    col_tableau <- c('nom_com', 'code_com', paste0('parcelles_20',temps_vec_tableau[1]), 
-                     paste0('parcelles_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
+    col_tableau <- c('nom', 'code', paste0('total_20',temps_vec_tableau[1]), 
+                     paste0('total_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
                      paste0('restantes_20',temps_vec_tableau[2]), 'ajout', 'suppression', 
-                     'translation', 'contour', 'redécoupage', 'contour_redécoupage')
+                     'translation', 'contour', 'redécoupage', 'contour_redécoupage',
+                     'échange', 'échange_possible')
     
     updateCheckboxGroupInput(session, "var_tableau",
                              choices = col_tableau,
@@ -351,6 +324,34 @@ server <- function(input, output, session) {
     
     chgt_com <- dbGetQuery(conn, "SELECT * FROM chgt_com;")
     tableau_si_donnee(chgt_com)
+  })
+  
+  observeEvent(input$tabsetPanel, {
+    req(input$temps_select_carte) # Evite que cela se lance au démarage
+    print("Changement d'onglet")
+    if (input$tabsetPanel == "Carte des comparaisons par commune") {
+      
+      ifelse(input$depart_select_carte == input$depart_select_tableau & 
+               input$temps_select_carte == input$temps_select_tableau, indic(TRUE), indic(FALSE))
+      ifelse(input$depart_select_carte != input$depart_select_tableau & 
+               input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
+      updateSelectInput(session, "depart_select_carte", selected = input$depart_select_tableau)
+      updateSelectInput(session, "temps_select_carte",
+                        choices = int_temps, 
+                        selected = ifelse(input$temps_select_tableau %in% int_temps, 
+                                          input$temps_select_tableau, int_temps[1]))
+    } else {
+      
+      ifelse(input$depart_select_carte == input$depart_select_tableau & 
+               input$temps_select_carte == input$temps_select_tableau, indic(TRUE) , indic(FALSE))
+      ifelse(input$depart_select_carte != input$depart_select_tableau & 
+               input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
+      updateSelectInput(session, "depart_select_tableau", selected = input$depart_select_carte)
+      updateSelectInput(session, "temps_select_tableau",
+                        choices = int_temps,
+                        selected = ifelse(input$temps_select_carte %in% int_temps, 
+                                          input$temps_select_carte, int_temps[1]))
+    }
   })
 }
 
