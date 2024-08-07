@@ -3,7 +3,7 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "85"
+  num_departement: "21"
   temps_apres: 24
   temps_avant: 23
 ---
@@ -897,7 +897,7 @@ dbExecute(conn, "TRUNCATE TABLE max_iou, multi_rapide;")
 dbExecute(conn, "
   WITH updated_values AS (
     SELECT idu,
-           (calcul_iou_multi_rapide(geometry, 'supp', 'ajout')).*
+           (calcul_iou_multi_rapide(geometry, 'supp', 'ajout', 1)).*
     FROM supp
   )
   UPDATE supp
@@ -906,6 +906,8 @@ dbExecute(conn, "
       participants_apres = updated_values.participants_apres
   FROM updated_values
   WHERE supp.idu = updated_values.idu")
+
+supp <- st_read(conn, query = "SELECT * FROM supp;")
 
 
 dbExecute(conn, "
