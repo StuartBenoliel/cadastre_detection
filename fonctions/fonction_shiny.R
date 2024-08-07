@@ -21,6 +21,26 @@ departement_traite <- function(conn) {
     pull(value)   
 }
 
+reconnect_db <- function() {
+  tryCatch({
+    conn <- connecter()
+    return(conn)
+  }, error = function(e) {
+    message("Erreur de connexion à la base de données : ", e$message)
+    NULL
+  })
+}
+
+keep_alive <- function(conn) {
+  invalidateLater(60000)  # 60000 millisecondes = 1 minute
+  tryCatch({
+    DBI::dbGetQuery(conn, "SELECT 1")
+  }, error = function(e) {
+    message("Erreur de connexion, tentative de reconnexion : ", e$message)
+    conn <<- reconnect_db()  # Tenter de se reconnecter
+  })
+}
+
 # Fonction pour mettre à jour le search path
 maj_chemin <- function(conn, num_departement, temps_apres, temps_avant) {
   dbExecute(conn, paste0(
@@ -105,15 +125,17 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
                         layer.name = "Bordures étendues", col.regions = "#F2F2F2", 
                         alpha.regions = 0.7, homebutton = F,
                         map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery")) +
-      mapview(contour_commune, color = "black", 
+      mapview(contour_commune, color = "black",
+              layer.name = "Contour communal",
               homebutton = F,
               legend = FALSE,
               map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
-      
+    
     
     map_base_2 <- mapview(contour_commune, legend = FALSE, color = "black",
-                        homebutton = F, 
-                        map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
+                          layer.name = "Contour communal",
+                          homebutton = F, 
+                          map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
   } else {
     map_base <- mapview(map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
     
@@ -328,7 +350,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
               col.regions = "#FFDA5A",
               layer.name = paste0("Parcelles translatées (état 20",temps_avant,")"), 
               alpha.regions = 0.5, homebutton = F)
-
+    
   }
   if (nrow(contour) > 0) {
     
@@ -485,12 +507,12 @@ check_refonte_pc <- function(conn, nom_com, seuil=50) {
 "))
   ifelse(nb_parcelles_rest >50, return(T), return(F))
 }
-  
+
 tableau_si_donnee <- function(table) {
   tagList(
     if (nrow(table) > 0) {
       datatable(table, options = list(paging = FALSE, searching = FALSE, 
-                                          autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
+                                      autoWidth = TRUE, ordering = TRUE), rownames = FALSE)
     } else {
       div(
         style = "text-align: center; margin-top: 20px;",  # Centrage du texte et espacement
@@ -618,8 +640,8 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         code_com AS code,
         parcelles_20", temps_apres," AS total_20", temps_apres,",
         parcelles_20", temps_avant," AS total_20", temps_avant,",
-        COALESCE(nb_modif_restant_apres, 0) + COALESCE(nb_ajout_restant, 0) AS restantes_20", temps_apres,",
-        COALESCE(nb_modif_restant_avant, 0) + COALESCE(nb_supp_restant, 0) AS restantes_20", temps_avant,",
+        COALESCE(nb_modif_restant_apres, 0) + COALESCE(nb_ajout_restant, 0) AS taux_classif_20", temps_apres,",
+        COALESCE(nb_modif_restant_avant, 0) + COALESCE(nb_supp_restant, 0) AS taux_classif_20", temps_avant,",
         COALESCE(nb_ajout, 0) AS ajout,
         COALESCE(nb_supp, 0) AS suppression,
         COALESCE(nb_translation, 0) AS translation,
@@ -642,9 +664,16 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       FULL OUTER JOIN echange ON base.nom_com = echange.nom_com
       FULL OUTER JOIN echange_poss ON base.nom_com = echange_poss.nom_com;"))
   
-  final_df <- final_df %>%
-    mutate(across(where(bit64::is.integer64), as.integer))
   
+  final_df <- final_df %>%
+    mutate(across(where(bit64::is.integer64), as.integer)) %>% 
+    mutate(!!paste0("taux_classif_20", temps_apres) := 
+      round((!!sym(paste0("total_20", temps_apres)) - !!sym(paste0("taux_classif_20", temps_apres))) / 
+              !!sym(paste0("total_20", temps_apres)) * 100, 2),
+      !!paste0("taux_classif_20", temps_avant) := 
+        round((!!sym(paste0("total_20", temps_avant)) - !!sym(paste0("taux_classif_20", temps_avant))) / 
+                !!sym(paste0("total_20", temps_avant)) * 100, 2))
+
   datatable(final_df[, var], 
             options = list(pageLength = 20,
                            ordering = TRUE, 

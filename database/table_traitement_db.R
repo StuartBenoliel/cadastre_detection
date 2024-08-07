@@ -240,8 +240,8 @@ dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_nom_com ON contour (nom_
 
 dbExecute(conn, "
   CREATE TABLE disparition_com (
-      nom_com text PRIMARY KEY,
-      code_com text,
+      nom_com_apres text PRIMARY KEY,
+      code_com_apres text,
       nom_com_avant text,
       code_com_avant text
   );
@@ -249,11 +249,11 @@ dbExecute(conn, "
 
 dbExecute(conn, "
   CREATE TABLE chgt_com (
-      nom_com text PRIMARY KEY,
-      code_com text,
+      nom_com_apres text PRIMARY KEY,
+      code_com_apres text,
       changement text,
-      participants text,
-      participants_code_com text
+      nom_com_avant text,
+      code_com_avant text
   );
 ")
 

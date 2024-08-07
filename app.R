@@ -148,6 +148,11 @@ server <- function(input, output, session) {
   indic <- reactiveVal(FALSE)
   indic_double <- reactiveVal(FALSE)
   
+  observe({
+    print("Reconnexion à la base de données")
+    keep_alive(conn)
+  })
+  
   # Lancement au démarage
   observeEvent(input$depart_select_carte, {
     print(paste0("Changement au niveau du département carte: ", input$depart_select_carte))
@@ -278,10 +283,11 @@ server <- function(input, output, session) {
     temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
     
     col_tableau <- c('nom', 'code', paste0('total_20',temps_vec_tableau[1]), 
-                     paste0('total_20',temps_vec_tableau[2]), paste0('restantes_20',temps_vec_tableau[1]),
-                     paste0('restantes_20',temps_vec_tableau[2]), 'ajout', 'suppression', 
-                     'translation', 'contour', 'redécoupage', 'contour_redécoupage',
-                     'échange', 'échange_possible')
+                     paste0('total_20',temps_vec_tableau[2]), 
+                     paste0('taux_classif_20',temps_vec_tableau[1]),
+                     paste0('taux_classif_20',temps_vec_tableau[2]), 
+                     'ajout', 'suppression', 'translation', 'contour', 
+                     'redécoupage', 'contour_redécoupage', 'échange', 'échange_possible')
     
     updateCheckboxGroupInput(session, "var_tableau",
                              choices = col_tableau,

@@ -3,7 +3,7 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "60"
+  num_departement: "85"
   temps_apres: 24
   temps_avant: 23
 ---
@@ -398,66 +398,6 @@ modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
 modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
 ```
 
-
-```{r, eval=FALSE}
-# Carte intéractive pour visualiser uniquement la typologie des parcelles
-# dont l'identifiant a été conservé
-bordure <- st_read(conn, query = "SELECT * FROM bordure;")
-
-parc_avant <- st_read(conn, query = paste0(
-  "SELECT * FROM parc_", params$num_departement, "_", params$temps_avant, ";"))
-
-parc_apres <- st_read(conn, query = paste0(
-  "SELECT * FROM parc_", params$num_departement, "_", params$temps_apres, ";"))
-
-contour <- st_read(conn, query = "SELECT * FROM contour;")
-translation <- st_read(conn, query = "SELECT * FROM translation;")
-
-modif_avant <- st_read(conn, query = "SELECT * FROM modif_avant;")
-modif_apres <- st_read(conn, query = "SELECT * FROM modif_apres;")
-
-map <- mapview(bordure, layer.name = "Bordures étendues", col.regions = "#F2F2F2", 
-               alpha.regions = 0.5, homebutton = F,
-               map.types = c("CartoDB.Positron", "OpenStreetMap", "Esri.WorldImagery"))
-
-if (nrow(translation) > 0) {
-  map <- map + mapview(translation,
-                       layer.name = paste0("Parcelles translatées (état 20",params$temps_apres,")"), 
-                       col.regions = "#069F9C",
-                       alpha.regions = 0.5, homebutton = F) +
-    mapview(parc_avant %>%
-              filter(idu %in% translation$idu_translate),
-            col.regions = "#069F9C",
-            layer.name = paste0("Parcelles translatées (état 20",params$temps_avant,")"), 
-            alpha.regions = 0.5, homebutton = F)
-}
-if (nrow(contour) > 0) {
-  map <- map + mapview(parc_apres %>%
-                         filter(idu %in% contour$idu),  
-                       layer.name = paste0("Parcelles contours (état 20",params$temps_apres,")"), 
-                       col.regions = "#D79700", alpha.regions = 0.5, homebutton = F)  +
-    mapview(contour,  
-            layer.name = paste0("Parcelles contours (état 20",params$temps_avant,")"),
-            col.regions = "#D79700",
-            alpha.regions = 0.5, homebutton = F)
-}
-if (nrow(modif_apres) > 0) {
-  map <- map + mapview(modif_apres, 
-                       z = c("iou_ajust"), 
-                       layer.name = paste0("Parcelles modifiées restantes (état 20",params$temps_apres,")"), 
-                       alpha.regions = 0.5, homebutton = F)
-  
-}
-if (nrow(modif_avant) > 0) {
-  map <- map + mapview(modif_avant, 
-                       z = c("iou_ajust"), 
-                       layer.name = paste0("Parcelles modifiées restantes (état 20",params$temps_avant,")"), 
-                       alpha.regions = 0.5, homebutton = F)
-}
-
-mapshot(map, url = paste0("parcelles_modifiés_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
-```
-
 # Focus des parcelles ayant changé de communes
 
 ## Cas des parcelles dans le cas d'une scission de communes
@@ -526,16 +466,16 @@ dbExecute(conn, paste0("
           parc_", params$num_departement, "_", params$temps_apres,"
   )
   SELECT
-      df.nom_com_avant,
-      df.code_com_avant,
+      df.participants,
+      df.participants_code_com,
       CASE 
           WHEN c.nom_com IS NOT NULL THEN 
               'Scission partielle'
           ELSE 
               'Scission totale'
       END AS changement,
-      df.participants,
-      df.participants_code_com
+      df.nom_com_avant,
+      df.code_com_avant
   FROM
       scission_data df
   LEFT JOIN 
@@ -623,7 +563,7 @@ dbExecute(conn, paste0("
       FROM parc_", params$num_departement, "_", params$temps_apres,
   ") AND avant.nom_com IN (
       SELECT nom_com_avant 
-      FROM disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com) = 1);"))
+      FROM disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com_apres) = 1);"))
 
 dbExecute(conn, paste0(" 
   INSERT INTO chgt_com
@@ -670,16 +610,16 @@ dbExecute(conn, paste0("
 dbExecute(conn, paste0(" 
   UPDATE chgt_com
   SET 
-      participants = disparition_com.nom_com_avant || ', ' || chgt_com.participants,
-      participants_code_com = disparition_com.code_com_avant || ', ' || chgt_com.participants_code_com
+      nom_com_avant = disparition_com.nom_com_avant || ', ' || chgt_com.nom_com_avant,
+      code_com_avant = disparition_com.code_com_avant || ', ' || chgt_com.nom_com_avant
   FROM disparition_com
-  WHERE chgt_com.nom_com = disparition_com.nom_com;"))
+  WHERE chgt_com.nom_com_apres = disparition_com.nom_com_apres;"))
 
 dbExecute(conn, paste0(" 
   INSERT INTO chgt_com
-  SELECT nom_com, code_com, 'Changement de nom', nom_com_avant, code_com_avant
+  SELECT nom_com_apres, code_com_apres, 'Changement de nom', nom_com_avant, code_com_avant
   FROM disparition_com
-  WHERE nom_com NOT IN (SELECT nom_com FROM chgt_com);"))
+  WHERE nom_com_apres NOT IN (SELECT nom_com_apres FROM chgt_com);"))
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
@@ -720,16 +660,26 @@ dbExecute(conn, "
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH decomposed_participants AS (
-      SELECT 
-          unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
       FROM chgt_com
-      WHERE changement != 'Changement de nom'
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+    SELECT a.nom_avant, b.nom_apres
+    FROM avant a
+    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   )
-  SELECT * FROM identique_bis 
-  WHERE nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND nom_com_apres NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND (nom_com_avant != nom_com_apres OR code_com_avant != code_com_apres);"))
+  SELECT idu_avant, nom_com_avant, code_com_avant, 
+      idu_apres, nom_com_apres, code_com_apres  
+  FROM identique_bis 
+  LEFT JOIN couples c ON c.nom_avant = nom_com_avant AND c.nom_apres = nom_com_apres
+  WHERE code_com_avant != code_com_apres
+      AND (nom_avant IS NULL OR nom_apres IS NULL)
+;"))
 
 # Parcelles ajoutées n'ayant pas été modifiées
 dbExecute(conn, "
@@ -752,6 +702,7 @@ dbExecute(conn, "
 
 ```{r fusion/subdivision, eval=FALSE}
 identique_bis <- st_read(conn, query = "SELECT * FROM identique_bis;")
+echange_parc <- dbGetQuery(conn, "SELECT * FROM echange_parc;")
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
 ```
@@ -782,21 +733,28 @@ dbExecute(conn, "
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH decomposed_participants AS (
-    SELECT 
-        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
-    FROM chgt_com
-    WHERE changement != 'Changement de nom'
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
+      FROM chgt_com
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+    SELECT a.nom_avant, b.nom_apres
+    FROM avant a
+    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   )
   SELECT supp.idu, supp.nom_com, supp.code_com, participants, 
       apres.nom_com, SUBSTRING(participants FROM 3 FOR 3) 
   FROM supp
   JOIN parc_", params$num_departement, "_", params$temps_avant, " apres
   ON apres.idu = supp.participants
+  LEFT JOIN couples c ON c.nom_avant = supp.nom_com AND c.nom_apres = apres.nom_com
   WHERE iou >= 0.99 AND LENGTH(participants) = 14
-  AND SUBSTRING(participants FROM 3 FOR 3) <> supp.code_com
-  AND supp.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);"))
+  AND SUBSTRING(participants FROM 3 FOR 3) <> supp.code_com 
+  AND (nom_avant IS NULL OR nom_apres IS NULL);"))
 
 dbExecute(conn, "
   DELETE FROM ajout
@@ -844,20 +802,27 @@ dbExecute(conn, "
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH decomposed_participants AS (
-    SELECT 
-        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
-    FROM chgt_com
-    WHERE changement != 'Changement de nom'
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
+      FROM chgt_com
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+    SELECT a.nom_avant, b.nom_apres
+    FROM avant a
+    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   )
   SELECT fa.idu, supp.nom_com, supp.code_com, fa.participants_apres, 
       fa.nom_com_apres, fa.code_com_apres
   FROM supp
   JOIN fusion_ajout fa ON fa.idu = supp.idu
+  LEFT JOIN couples c ON c.nom_avant = supp.nom_com AND c.nom_apres = fa.nom_com_apres
   WHERE LENGTH(fa.participants_avant) = 14
   AND SUBSTRING(fa.participants_avant FROM 3 FOR 3) <> fa.code_com_apres
-  AND supp.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND fa.nom_com_apres NOT IN (SELECT participant_idu FROM decomposed_participants);"))
+  AND (nom_avant IS NULL OR nom_apres IS NULL);"))
 
 dbExecute(conn, "
   DELETE FROM supp
@@ -1401,20 +1366,27 @@ dbExecute(conn, "TRUNCATE TABLE multi_calcul_cache, echange_parc_possible;")
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH decomposed_participants AS (
-    SELECT 
-        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
-    FROM chgt_com
-    WHERE changement != 'Changement de nom'
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
+      FROM chgt_com
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+    SELECT a.nom_avant, b.nom_apres
+    FROM avant a
+    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   )
   SELECT idu_translate, avant.nom_com, SUBSTRING(idu_translate FROM 3 FOR 3), 
       tr.idu, tr.nom_com, tr.code_com
   FROM translation tr
   JOIN parc_", params$num_departement, "_", params$temps_avant, " avant
   ON avant.idu = tr.idu_translate
+  LEFT JOIN couples c ON c.nom_avant = avant.nom_com AND c.nom_apres = tr.nom_com
   WHERE SUBSTRING(idu_translate FROM 3 FOR 3) <> tr.code_com
-  AND avant.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND tr.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);"))
+  AND (nom_avant IS NULL OR nom_apres IS NULL);"))
 
 dbExecute(conn, "
   DELETE FROM translation
@@ -1426,11 +1398,18 @@ dbExecute(conn, "
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH decomposed_participants AS (
-    SELECT 
-        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
-    FROM chgt_com
-    WHERE changement != 'Changement de nom'
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
+      FROM chgt_com
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+    SELECT a.nom_avant, b.nom_apres
+    FROM avant a
+    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   ),
   echange AS (
       SELECT DISTINCT 
@@ -1442,8 +1421,8 @@ dbExecute(conn, paste0("
   JOIN redecoupage red ON red.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
   ON apres.code_com = ech.code_com_apres
-  WHERE ech.nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);")) 
+  LEFT JOIN couples c ON c.nom_avant = ech.nom_com_avant AND c.nom_apres = apres.nom_com
+  WHERE (nom_avant IS NULL OR nom_apres IS NULL);")) 
 
 dbExecute(conn, "
   DELETE FROM redecoupage
@@ -1454,11 +1433,18 @@ dbExecute(conn, "
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
-  WITH decomposed_participants AS (
-    SELECT 
-        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
-    FROM chgt_com
-    WHERE changement != 'Changement de nom'
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
+      FROM chgt_com
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+    SELECT a.nom_avant, b.nom_apres
+    FROM avant a
+    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   ),
   echange AS (
       SELECT DISTINCT 
@@ -1470,8 +1456,8 @@ dbExecute(conn, paste0("
   JOIN contour_redecoupage con ON con.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
   ON apres.code_com = ech.code_com_apres
-  WHERE ech.nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);"))
+  LEFT JOIN couples c ON c.nom_avant = ech.nom_com_avant AND c.nom_apres = apres.nom_com
+  WHERE (nom_avant IS NULL OR nom_apres IS NULL);"))
 
 dbExecute(conn, "
   DELETE FROM contour_redecoupage
@@ -1495,11 +1481,18 @@ dbExecute(conn, "
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc_possible
-  WITH decomposed_participants AS (
-    SELECT 
-        unnest(regexp_split_to_array(participants, ',\\s*')) AS participant_idu
-    FROM chgt_com
-    WHERE changement != 'Changement de nom'
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
+      FROM chgt_com
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+    SELECT a.nom_avant, b.nom_apres
+    FROM avant a
+    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   ),
   echange AS (
       SELECT DISTINCT 
@@ -1511,8 +1504,8 @@ dbExecute(conn, paste0("
   JOIN supp ON supp.idu = ech.idu_avant
   JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
   ON apres.code_com = ech.code_com_apres
-  WHERE ech.nom_com_avant NOT IN (SELECT participant_idu FROM decomposed_participants)
-  AND apres.nom_com NOT IN (SELECT participant_idu FROM decomposed_participants);")) 
+  LEFT JOIN couples c ON c.nom_avant = ech.nom_com_avant AND c.nom_apres = apres.nom_com
+  WHERE (nom_avant IS NULL OR nom_apres IS NULL);")) 
 
 dbExecute(conn, "
   DELETE FROM ajout

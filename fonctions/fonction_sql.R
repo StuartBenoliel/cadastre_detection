@@ -295,6 +295,87 @@ dbExecute(conn, "
   $$ LANGUAGE plpgsql;
 ") 
 
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION calcul_iou_multi_test(
+      idu text, 
+      polygon_avant geometry, 
+      nom_table_avant text, 
+      nom_table_apres text,
+      seuil_qualite numeric DEFAULT 0.9
+  )
+  RETURNS TABLE (iou_multi numeric, participants_avant text, participants_apres text) AS $$
+  DECLARE
+      nb_polygon integer := 0;
+      nb_polygon_union integer := 0;
+      polygon_union geometry := polygon_avant;
+      iou_intersect RECORD;
+      query_sql text;
+  BEGIN
+      -- Vérifier si les résultats sont déjà pour cet idu dans le cache
+      BEGIN
+        SELECT mcc.iou_multi, mcc.participants_avant, mcc.participants_apres
+        INTO iou_multi, participants_avant, participants_apres
+        FROM multi_calcul_cache mcc
+        WHERE EXISTS (
+            SELECT 1
+            FROM unnest(regexp_split_to_array(mcc.participants_avant, ',\\s*')) AS participant
+            WHERE participant = idu
+        );
+      END;
+      
+      -- Si les résultats ne sont pas trouvés dans le cache, exécuter le calcul
+      IF NOT FOUND THEN
+          -- Boucle pour trouver les intersections dans nom_table_avant
+          LOOP
+              -- Mettre à jour polygon_union avec l'union des géométries de nom_table_avant
+              EXECUTE '
+                  SELECT ST_Union(geometry) 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)
+              ' INTO polygon_union USING polygon_union;
+  
+              -- Sortir de la boucle si le nombre de parcelles reste le même
+              query_sql := '
+                  SELECT COUNT(*) 
+                  FROM ' || quote_ident(nom_table_avant) || ' 
+                  WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
+              
+              EXECUTE query_sql INTO nb_polygon_union USING polygon_union;
+              
+              EXIT WHEN nb_polygon = nb_polygon_union;
+  
+              -- Mettre à jour le nombre de polygon
+              nb_polygon := nb_polygon_union;
+          END LOOP;
+  
+          -- Sélectionner les noms des participants avant
+          query_sql := '
+              SELECT string_agg(idu::text, '', '') 
+              FROM ' || quote_ident(nom_table_avant) || ' 
+              WHERE geometry&&$1 AND ST_Intersects(geometry, $1)';
+          
+          EXECUTE query_sql INTO participants_avant USING polygon_union;
+  
+          -- Calculer l'IoU intersection avec nom_table_apres
+          SELECT * INTO iou_intersect
+          FROM calcul_iou_intersec(polygon_union, nom_table_apres, seuil_qualite);
+  
+          -- Insérer les résultats dans le cache seulement si participants_avant n'est pas NULL
+          IF participants_avant IS NOT NULL THEN
+              INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
+              VALUES (participants_avant, iou_intersect.participants, iou_intersect.iou, md5(participants_avant::text));
+          END IF;
+          
+          -- Récupérer les résultats pour la sortie
+          RETURN QUERY SELECT iou_intersect.iou, participants_avant, iou_intersect.participants;
+      ELSE 
+          -- Retourner les résultats trouvés dans le cache
+          RETURN QUERY SELECT iou_multi, participants_avant, participants_apres;
+      END IF;
+  END;
+  $$ LANGUAGE plpgsql;
+") 
+
 # Version sans boucle for
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION calcul_iou_multi_rapide(polygon_avant geometry, nom_table_avant text, nom_table_apres text)
