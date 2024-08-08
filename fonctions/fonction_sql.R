@@ -651,3 +651,119 @@ dbExecute(conn, "
   END;
   $$ LANGUAGE plpgsql;
 ")
+
+dbExecute(conn, "
+  CREATE OR REPLACE FUNCTION echange_parcelles_bis(
+      idu text,
+      nom_table text,
+      nom_table_avant text,
+      nom_table_apres text
+  )
+  RETURNS TABLE (idu_avant text, code_com_avant text, code_com_apres text) AS $$
+  DECLARE
+      sql_query_avant text;
+      sql_query_apres text;
+      code_com_commun_avant text;
+      code_com_commun_apres text;
+      geom_union_avant geometry;
+      geom_union_apres geometry;
+      iou float;
+  BEGIN
+      -- Construction de la requête SQL dynamique pour les participants avant
+      sql_query_avant := '
+      WITH RECURSIVE split_strings_avant AS (
+        SELECT
+          idu,
+          unnest(string_to_array(participants_avant, '','')) AS sub_string
+        FROM ' || quote_ident(nom_table) || '
+      ),
+      groupes_avant AS (
+        SELECT
+          idu,
+          SUBSTRING(sub_string FROM 3 FOR 3) AS code_com
+        FROM
+          split_strings_avant
+      ),
+      groupes_union_avant AS (
+        SELECT
+          g.code_com,
+          ST_Union(geometry) AS geom_union
+        FROM
+          ' || quote_ident(nom_table_avant) || ' t
+        JOIN
+          groupes_avant g ON t.idu = g.idu
+        GROUP BY
+          g.code_com
+      )
+      SELECT
+        code_com,
+        geom_union
+      FROM
+        groupes_union_avant';
+        
+      -- Exécution de la requête dynamique pour les participants avant
+      FOR code_com_commun_avant, geom_union_avant IN EXECUTE sql_query_avant LOOP
+          RAISE NOTICE 'code_com_commun avant: %', code_com_commun_avant;
+          
+          -- Construction de la requête SQL dynamique pour les participants après
+          sql_query_apres := '
+          WITH RECURSIVE split_strings_apres AS (
+            SELECT
+              idu,
+              unnest(string_to_array(participants_apres, '','')) AS sub_string
+            FROM ' || quote_ident(nom_table) || '
+          ),
+          groupes_apres AS (
+            SELECT
+              idu,
+              SUBSTRING(sub_string FROM 3 FOR 3) AS code_com
+            FROM
+              split_strings_apres
+          ),
+          groupes_union_apres AS (
+            SELECT
+              g.code_com,
+              ST_Union(geometry) AS geom_union
+            FROM
+              ' || quote_ident(nom_table_apres) || ' t
+            JOIN
+              groupes_apres g ON t.idu = g.idu
+            GROUP BY
+              g.code_com
+          )
+          SELECT
+            code_com,
+            geom_union
+          FROM
+            groupes_union_apres';
+      
+          -- Exécution de la requête dynamique pour les participants après
+          FOR code_com_commun_apres, geom_union_apres IN EXECUTE sql_query_apres LOOP
+              RAISE NOTICE 'code_com_commun apres: %', code_com_commun_apres;
+              
+              -- Calcul de l'indicateur (iou)
+              iou := calcul_iou_ajust(geom_union_avant, geom_union_apres);
+              RAISE NOTICE 'IoU entre % et %: %', code_com_commun_avant, code_com_commun_apres, iou;
+              
+              -- Vérification des seuils et renvoi des résultats
+              IF iou < 0.95 THEN
+                  RETURN QUERY
+                  SELECT
+                    g_avant.idu,
+                    g_avant.code_com AS code_com_avant,
+                    g_apres.code_com AS code_com_apres
+                  FROM
+                    (SELECT * FROM groupes_avant WHERE code_com = code_com_commun_avant) g_avant
+                  JOIN
+                    (SELECT * FROM groupes_apres WHERE code_com = code_com_commun_apres) g_apres ON true;
+              END IF;
+          END LOOP;
+      END LOOP;
+      
+      RETURN;
+  END;
+  $$ LANGUAGE plpgsql;
+")
+
+
+

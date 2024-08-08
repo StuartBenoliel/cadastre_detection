@@ -20,9 +20,9 @@ conn <- connecter()
 # 1:5, 13, 21, 2a, 2b, 60, 85:95, 971:974, 976:978 
 
 # 1:19, 2a, 2b, 21:95, 971:974, 976:978
-num_departements <- c(78)
-num_annee <- 19
-indic_parc <- T
+num_departements <- c(85)
+num_annee <- 24
+indic_parc <- F
 
 # 8 min 1 département parcelle
 for (i in 1:length(num_departements)){

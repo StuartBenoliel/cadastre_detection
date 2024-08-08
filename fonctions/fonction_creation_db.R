@@ -56,11 +56,11 @@ telechargement_departement <- function(num_departement, num_annee, indic_parc = 
                   sys_projection(num_departement),
                   "_D",
                   num_departement,
-                  "_2024-04-01/PARCELLAIRE-EXPRESS_1-1__SHP_",
+                  "_2024-07-01/PARCELLAIRE-EXPRESS_1-1__SHP_",
                   sys_projection(num_departement),
                   "_D",
                   num_departement,
-                  "_2024-04-01.7z")
+                  "_2024-07-01.7z")
   }
   
   if(num_annee == 2023) {

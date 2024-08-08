@@ -3,7 +3,7 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "21"
+  num_departement: "60"
   temps_apres: 24
   temps_avant: 23
 ---
@@ -1432,6 +1432,14 @@ dbExecute(conn, "
       SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
       FROM echange_parc
   );")
+
+#echange_parc <- dbGetQuery(conn, paste0(" 
+#      SELECT DISTINCT 
+#          (echange_parcelles_bis(idu, 
+#          'contour_redecoupage', 
+#          'parc_", params$num_departement, "_", params$temps_avant, "',
+#          'parc_", params$num_departement, "_", params$temps_apres, "')).*
+#      FROM contour_redecoupage"))
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
