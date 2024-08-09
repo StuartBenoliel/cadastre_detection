@@ -284,9 +284,11 @@ dbExecute(conn, "
           -- Calculer l'IoU intersection avec nom_table_apres
           SELECT * INTO iou_intersect
           FROM calcul_iou_intersect(polygon_union, nom_table_apres, recale, seuil_intersect);
-
-          INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
-          VALUES (participants_avant, iou_intersect.participants, iou_intersect.iou, md5(participants_avant));
+          
+          IF participants_avant IS NOT NULL THEN
+              INSERT INTO multi_calcul_cache (participants_avant, participants_apres, iou_multi, participants_avant_hash)
+              VALUES (participants_avant, iou_intersect.participants, iou_intersect.iou, md5(participants_avant::text));
+          END IF;
           
           -- Récupérer les résultats pour la sortie
           RETURN QUERY SELECT iou_intersect.iou, participants_avant, iou_intersect.participants;

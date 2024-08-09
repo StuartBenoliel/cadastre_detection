@@ -24,13 +24,10 @@ conn <- connecter()
 num_departements <- c(21)
 num_annee <- 23
 indic_parc <- T
-# 14 -> 19 /20 D
 # 21 -> 20/21 /22 /23 /24
 # 23 -> 23/24 D
 # 38 -> 19/20 D
 # 54 -> 20/21 /22/23/24 D 
-# 62 -> 23/24 D
-#76 -> 19/20 D
 #91 -> 20/21/22
 
 # 8 min 1 département parcelle

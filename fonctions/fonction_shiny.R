@@ -306,7 +306,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
                              col.regions = "#FFDA5A",
                              alpha.regions = 0.5, homebutton = F) +
       mapview(parc_avant %>%
-                filter(idu %in% translation$idu_translate), 
+                filter(idu %in% translation$idu_recale), 
               col.regions = "#FFDA5A",
               layer.name = paste0("Parcelles translatées (état 20",temps_avant,")"), 
               alpha.regions = 0.5, homebutton = F)

@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "14"
-  temps_apres: 21
-  temps_avant: 20
+  num_departement: "23"
+  temps_apres: 24
+  temps_avant: 23
 ---
 
 ```{r setup, include=FALSE}
@@ -427,6 +427,14 @@ dbExecute(conn, paste0("
   LEFT JOIN 
       com_apres c ON c.nom_com = df.nom_com_avant;"))
 
+dbExecute(conn, paste0(" 
+  UPDATE chgt_com
+  SET 
+      nom_com_apres = disparition_com.nom_com_apres || ', ' || chgt_com.nom_com_apres,
+      code_com_apres = disparition_com.code_com_apres || ', ' || chgt_com.code_com_apres
+  FROM disparition_com
+  WHERE chgt_com.nom_com_avant = disparition_com.nom_com_avant;"))
+
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
 
@@ -557,7 +565,7 @@ dbExecute(conn, paste0("
   UPDATE chgt_com
   SET 
       nom_com_avant = disparition_com.nom_com_avant || ', ' || chgt_com.nom_com_avant,
-      code_com_avant = disparition_com.code_com_avant || ', ' || chgt_com.nom_com_avant
+      code_com_avant = disparition_com.code_com_avant || ', ' || chgt_com.code_com_avant
   FROM disparition_com
   WHERE chgt_com.nom_com_apres = disparition_com.nom_com_apres;"))
 
@@ -565,7 +573,10 @@ dbExecute(conn, paste0("
   INSERT INTO chgt_com
   SELECT nom_com_apres, code_com_apres, 'Changement de nom', nom_com_avant, code_com_avant
   FROM disparition_com
-  WHERE nom_com_apres NOT IN (SELECT nom_com_apres FROM chgt_com);"))
+  WHERE nom_com_apres NOT IN (
+      SELECT unnest(regexp_split_to_array(nom_com_apres, ',\\s*'))
+      FROM chgt_com
+  );"))
 
 # Parcelles n'ayant pas été modifiées mise à part le nom de commune
 ```
