@@ -30,8 +30,7 @@ dbExecute(conn, "
       participants_apres text,
       iou_multi numeric,
       participants_avant_hash text PRIMARY KEY
-  );
-")
+  );")
 
 dbExecute(conn, paste0("
   CREATE TABLE ajout (
@@ -42,11 +41,10 @@ dbExecute(conn, paste0("
       contenance numeric,
       iou numeric,
       participants text,
-      iou_ajust numeric,
-      idu_translate text,
+      iou_recale numeric,
+      idu_recale text,
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
+  );"))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_geometry ON ajout USING GIST(geometry);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_ajout_nom_com ON ajout (nom_com);")
 
@@ -62,12 +60,11 @@ dbExecute(conn, paste0("
       iou_multi numeric,
       participants_avant text,
       participants_apres text,
-      iou_multi_translate numeric,
-      participants_avant_translate text,
-      participants_apres_translate text,
+      iou_multi_recale numeric,
+      participants_avant_recale text,
+      participants_apres_recale text,
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
+  );"))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_geometry ON supp USING GIST(geometry);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_nom_com ON supp (nom_com);")
 
@@ -81,59 +78,47 @@ dbExecute(conn, paste0("
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_geometry ON bordure USING GIST(geometry);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_bordure_nom_com ON bordure (nom_com);")
 
-dbExecute(conn, "
+dbExecute(conn, paste0("
   CREATE TABLE identique (
-      idu text PRIMARY KEY,
+      idu_apres text PRIMARY KEY,
       nom_com_apres text,
+      code_com_apres text,
+      idu_avant text,
       nom_com_avant text,
-      code_com text
-  );
-")
-
-dbExecute(conn, paste0("
-  CREATE TABLE modif_avant (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou numeric,
-      iou_ajust numeric,
-      iou_multi numeric,
-      participants_avant text,
-      participants_apres text,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
+      code_com_avant text
   );
 "))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_avant_geometry ON modif_avant USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_avant_nom_com ON modif_avant (nom_com);")
-
-dbExecute(conn, paste0("
-  CREATE TABLE modif_apres (
-      idu text PRIMARY KEY,
-      nom_com text,
-      code_com text,
-      com_abs text,
-      contenance numeric,
-      iou numeric,
-      iou_ajust numeric,
-      geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
-  );
-"))
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_apres_geometry ON modif_apres USING GIST(geometry);")
-dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_apres_nom_com ON modif_apres (nom_com);")
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_identique_idu_avant ON identique (idu_avant);")
 
 dbExecute(conn, paste0("
   CREATE TABLE modif (
       idu text PRIMARY KEY,
-      geometry_avant geometry(multipolygon, ", code_sys_projection(params$num_departement),"),
-      geometry_apres geometry(multipolygon, ", code_sys_projection(params$num_departement),"),
+      nom_com text,
+      code_com text,
+      com_abs text,
+      contenance_apres numeric,
+      contenance_avant numeric,
       iou numeric,
-      iou_ajust numeric
+      iou_recale numeric,
+      iou_multi numeric,
+      participants_avant text,
+      participants_apres text,
+      geometry_apres geometry(multipolygon, ", code_sys_projection(params$num_departement),"),
+      geometry_avant geometry(multipolygon, ", code_sys_projection(params$num_departement),")
   );
 "))
+dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_nom_com ON modif (nom_com);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_geometry_avant ON modif USING GIST(geometry_avant);")
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_modif_geometry_apres ON modif USING GIST(geometry_apres);")
+
+dbExecute(conn, "
+  CREATE TABLE disparition_com (
+      nom_com_apres text PRIMARY KEY,
+      code_com_apres text,
+      nom_com_avant text,
+      code_com_avant text
+  );
+")
 
 dbExecute(conn, paste0("
   CREATE TABLE ajout_simp (
@@ -154,17 +139,6 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_supp_simp_geometry ON supp_simp USING GIST(geometry);")
-
-dbExecute(conn, paste0("
-  CREATE TABLE identique_bis (
-      idu_avant text PRIMARY KEY,
-      nom_com_avant text,
-      code_com_avant text,
-      idu_apres text,
-      nom_com_apres text,
-      code_com_apres text
-  );
-"))
 
 dbExecute(conn, "
   CREATE TABLE fusion_ajout (
@@ -214,8 +188,8 @@ dbExecute(conn, paste0("
       code_com text,
       com_abs text,
       contenance numeric,
-      iou_ajust numeric,
-      idu_translate text,
+      iou_recale numeric,
+      idu_recale text,
       geometry geometry(multipolygon, ", code_sys_projection(params$num_departement),")
   );
 "))
@@ -236,16 +210,6 @@ dbExecute(conn, paste0("
   );
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_contour_nom_com ON contour (nom_com);")
-
-
-dbExecute(conn, "
-  CREATE TABLE disparition_com (
-      nom_com_apres text PRIMARY KEY,
-      code_com_apres text,
-      nom_com_avant text,
-      code_com_avant text
-  );
-")
 
 dbExecute(conn, "
   CREATE TABLE chgt_com (

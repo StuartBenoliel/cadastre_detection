@@ -19,7 +19,7 @@ sys_projection <- function(num_departement) {
   if (num_departement %in% names(syst_proj)) {
     return(syst_proj[[num_departement]])
   } else {
-    return("LAMB93")  # Ou une autre valeur par défaut si nécessaire
+    return("LAMB93")
   }
 }
 
@@ -101,7 +101,6 @@ telechargement_departement <- function(num_departement, num_annee, indic_parc = 
     parc <- st_read(fichier_parcelle) %>%
       st_make_valid() %>% # st_buffer st_valid_reason where st-valid false
       mutate(geometry = st_cast(geometry, "MULTIPOLYGON"))
-    # Attention systeme de projection dans DOM
     print(str(parc))
     
   } else {
@@ -122,8 +121,7 @@ traitement_doublon_et_arrondissement <- function(table_sf) {
     group_by(IDU) %>%
     filter(n() > 1) %>%
     arrange(desc(FEUILLE))
-  
-  
+
   if (nrow(duplicates) > 0) {
     # Trouver la ligne avec la valeur maximale dans `feuille` pour chaque IDU
     to_remove <- duplicates %>%
@@ -146,8 +144,8 @@ traitement_doublon_et_arrondissement <- function(table_sf) {
                         ", COM_ABS: ", row$COM_ABS,
                         ", CODE_ARR: ", row$CODE_ARR,
                         ", CONTENANCE: ", row$CONTENANCE,
-                        ", geometry: ", row$geometry, 
                         "\n")
+      
       table_sf <- table_sf %>% 
         filter(!(IDU == row$IDU & FEUILLE == row$FEUILLE))
     }
@@ -199,14 +197,12 @@ constru_table <- function(table_sf, num_departement, num_annee, indic_parc = T) 
     ))
     
     dbExecute(conn,paste0(
-      'CREATE INDEX ',
-      'idx_parc_', num_departement, '_', num_annee, '_geometry',
+      'CREATE INDEX idx_parc_', num_departement, '_', num_annee, '_geometry',
       ' ON parc_', num_departement, '_', num_annee,
       ' USING GIST(geometry);'))
     
     dbExecute(conn,paste0(
-      'CREATE INDEX ',
-      'idx_parc_', num_departement, '_', num_annee, '_nom_com',
+      'CREATE INDEX idx_parc_', num_departement, '_', num_annee, '_nom_com',
       ' ON parc_', num_departement, '_', num_annee,
       ' (nom_com);'))
     
@@ -240,14 +236,12 @@ constru_table <- function(table_sf, num_departement, num_annee, indic_parc = T) 
     ))
     
     dbExecute(conn,paste0(
-      'CREATE INDEX ',
-      'idx_com_', num_departement, '_geometry',
+      'CREATE INDEX idx_com_', num_departement, '_geometry',
       ' ON com_', num_departement,
       ' USING GIST(geometry);'))
     
     dbExecute(conn,paste0(
-      'CREATE INDEX ',
-      'idx_com_', num_departement, '_nom_com',
+      'CREATE INDEX idx_com_', num_departement, '_nom_com',
       ' ON com_', num_departement,
       ' (nom_com);'))
     

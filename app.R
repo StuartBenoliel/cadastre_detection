@@ -1,8 +1,5 @@
 library(shiny)
 library(bslib)
-
-
-library(shiny)
 library(shinythemes)
 library(sf)
 library(mapview)
@@ -12,89 +9,14 @@ library(leafsync)
 library(leaflet.extras2)
 library(DBI)
 library(DT)
+
 rm(list=ls())
 source(file = "database/connexion_db.R")
 source(file = "fonctions/fonction_shiny.R")
+
 conn <- connecter()
-
 departements <- departement_traite(conn)
-
-# Define UI
-ui <- page_navbar(
-  id = "main_navbar",
-  title = "Cadastat : détection des évolutions des parcelles cadastrales",
-  nav_spacer(), # push nav items to the right
-  # Navigation panel
-  nav_panel("Carte des comparaisons par commune",
-            fluidRow(
-              column(3,
-                     selectInput("depart_select_carte", "Choisir un département:",
-                                 choices = departements,
-                                 selected = departements[length(departements)])
-              ),
-              column(3,
-                     selectInput("temps_select_carte", "Choisir une période de temps:",
-                                 choices = NULL,
-                                 selected = NULL)
-              ),
-              column(6,
-                     div(class = "input-group",
-                         selectizeInput("nom_com_select_carte", 
-                                        label = "Choisir une / plusieurs communes:",
-                                        choices = NULL,
-                                        multiple = TRUE,
-                                        options = list(plugins = "remove_button"),
-                                        width = "60%"),
-                         # Ajouter un icône avec une info-bulle à droite du selectInput
-                         tags$span(
-                           title = "Les communes proposées sont les communes existantes à l'année la plus tardive de la période de temps choisie.",
-                           class = "info-icon",
-                           icon("info-circle"),
-                           style = "margin-left: 10px; margin-bottom: 60px; display: flex; align-items: center;"
-                         )
-                     )
-              ),
-            ),
-            wellPanel(class = "well-panel",
-                      uiOutput("dynamicMaps")),
-            h3("Cas de parcelles avec géomètrie absente:"),
-            wellPanel(class = "well-pane-small",
-                      uiOutput("parcelles_absentes")),
-            br()
-            
-  ),
-  nav_panel("Tableau des changments par commune",
-            fluidRow(
-              column(3,
-                     selectInput("depart_select_tableau", "Choisir un département:",
-                                 choices = departements,
-                                 selected = departements[length(departements)])
-              ),
-              column(3,
-                     selectInput("temps_select_tableau", "Choisir une période de temps:",
-                                 choices = NULL,
-                                 selected = NULL)
-              ),
-              column(3,
-                     div(style = "margin-left: 10px; margin-top: 15px; display: flex; align-items: center;",
-                         span(style = "margin-right: 10px;","Filtrage des colonnes:"),
-                         popover(
-                           bsicons::bs_icon("gear", class = "icon-large", title = "Settings"),
-                           checkboxGroupInput("var_tableau", "Variables à afficher:",
-                                              NULL, selected = NULL, inline = TRUE)
-                         )
-                     )
-              ),
-            ),
-            wellPanel(class = "well-panel",
-                      DTOutput("table")),
-            h3("Fusion / scission de communes / changement de nom:"),
-            wellPanel(class = "well-pane-small",
-                      uiOutput("changement_communes")),
-            br()
-  ),
-  nav_item(img(src = "insee-logo.jpg", height = "50px", align = "right")),
-  header = tags$style(HTML("
+style <- HTML("
     .input-group {
       display: flex;
       align-items: bottom;
@@ -138,8 +60,79 @@ ui <- page_navbar(
     }
     .selectize-dropdown {
     z-index: 2000; /* Valeur plus élevée pour être au-dessus des cartes */
-    }
-  "))
+    }")
+
+
+ui <- page_navbar(
+  id = "main_navbar",
+  title = "Cadastat : détection des évolutions des parcelles cadastrales",
+  nav_spacer(), # push nav items to the right
+  nav_panel("Carte des comparaisons par commune",
+            fluidRow(
+              column(3,
+                     selectInput("depart_select_carte", "Choisir un département:",
+                                 choices = departements,
+                                 selected = departements[length(departements)])
+              ),
+              column(3,
+                     selectInput("temps_select_carte", "Choisir une période de temps:",
+                                 choices = NULL,
+                                 selected = NULL)
+              ),
+              column(6,
+                     div(class = "input-group",
+                         selectizeInput("nom_com_select_carte", 
+                                        label = "Choisir une / plusieurs communes:",
+                                        choices = NULL,
+                                        multiple = TRUE,
+                                        options = list(plugins = "remove_button"),
+                                        width = "60%"),
+                         # Ajouter un icône avec une info-bulle à droite du selectInput
+                         tags$span(
+                           title = "Les communes proposées sont les communes existantes à l'année la plus tardive de la période de temps choisie.",
+                           class = "info-icon",
+                           icon("info-circle"),
+                           style = "margin-left: 10px; margin-bottom: 60px; display: flex; align-items: center;"
+                         )
+                     )
+              ),
+            ),
+            wellPanel(class = "well-panel", uiOutput("dynamicMaps")),
+            h3("Cas de parcelles avec géomètrie absente:"),
+            wellPanel(class = "well-pane-small", uiOutput("parcelles_absentes")),
+            br()
+            
+  ),
+  nav_panel("Tableau des changments par commune",
+            fluidRow(
+              column(3,
+                     selectInput("depart_select_tableau", "Choisir un département:",
+                                 choices = departements,
+                                 selected = departements[length(departements)])
+              ),
+              column(3,
+                     selectInput("temps_select_tableau", "Choisir une période de temps:",
+                                 choices = NULL,
+                                 selected = NULL)
+              ),
+              column(3,
+                     div(style = "margin-left: 10px; margin-top: 15px; display: flex; align-items: center;",
+                         span(style = "margin-right: 10px;","Filtrage des colonnes:"),
+                         popover(
+                           bsicons::bs_icon("gear", class = "icon-large", title = "Settings"),
+                           checkboxGroupInput("var_tableau", "Variables à afficher:",
+                                              NULL, selected = NULL, inline = TRUE)
+                         )
+                     )
+              ),
+            ),
+            wellPanel(class = "well-panel", DTOutput("table")),
+            h3("Fusion / scission de communes / changement de nom:"),
+            wellPanel(class = "well-pane-small", uiOutput("changement_communes")),
+            br()
+  ),
+  nav_item(img(src = "insee-logo.jpg", height = "50px", align = "right")),
+  header = tags$style(style)
 )
 
 # Define server logic
@@ -168,30 +161,30 @@ server <- function(input, output, session) {
                       choices = int_temps, 
                       selected = temps_select)
     
-    temps_vec_carte <<- strsplit(temps_select, "-")[[1]]
+    temps_vec <<- strsplit(temps_select, "-")[[1]]
     
     if (input$temps_select_carte != temps_select){
       indic(FALSE) 
     } else{
       indic(TRUE)
       if (indic_double()){
-        maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
-        commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
+        maj_chemin(conn, input$depart_select_carte, temps_vec[1], temps_vec[2])
+        commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec[1])
         updateSelectizeInput(session, "nom_com_select_carte",
                              choices = commune, 
                              selected = commune[1])
       }
     }
-    
   })
   
   observeEvent(input$temps_select_carte, {
     req(input$temps_select_carte) # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau de la période de temps carte: ", input$temps_select_carte))
     
-    temps_vec_carte <<- strsplit(input$temps_select_carte, "-")[[1]]
-    maj_chemin(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2])
-    commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec_carte[1])
+    temps_vec <<- strsplit(input$temps_select_carte, "-")[[1]]
+    maj_chemin(conn, input$depart_select_carte, temps_vec[1], temps_vec[2])
+    
+    commune <<- nom_code_commune(conn, input$depart_select_carte, temps_vec[1])
     updateSelectizeInput(session, "nom_com_select_carte",
                          choices = commune, 
                          selected =  {
@@ -210,6 +203,7 @@ server <- function(input, output, session) {
     req(input$main_navbar == "Carte des comparaisons par commune")
     req(input$temps_select_carte) # Permet de relancer lors d'un changement de temps
     req(indic())
+    
     if (all(input$nom_com_select_carte %in% commune) & !is.null(input$nom_com_select_carte)){
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
       nom_com <- paste0("'", paste(nom_com, collapse = "', '"), "'")
@@ -220,7 +214,7 @@ server <- function(input, output, session) {
         showNotification("Refonte du plan cadastral de la commune probable. Classification non fiable.",
                          type = "warning", duration = NULL)
       }
-      cartes_dynamiques(conn, input$depart_select_carte, temps_vec_carte[1], temps_vec_carte[2], nom_com)
+      cartes_dynamiques(conn, input$depart_select_carte, temps_vec[1], temps_vec[2], nom_com)
     } 
   })
   
@@ -230,20 +224,18 @@ server <- function(input, output, session) {
     req(indic())
     
     if (all(input$nom_com_select_carte %in% commune) & !is.null(input$nom_com_select_carte)){
-      
       nom_com <- sub(" \\d+$", "",  gsub("'", "''", input$nom_com_select_carte))
       nom_com <- paste0("'", paste(nom_com, collapse = "', '"), "'")
       
       parc_null <- dbGetQuery(conn, paste0(
-        "SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[1], "' AS période 
-            FROM parc_", input$depart_select_carte, "_", temps_vec_carte[1], " 
+        "SELECT idu, nom_com, code_com, com_abs, '20", temps_vec[1], "' AS période 
+            FROM parc_", input$depart_select_carte, "_", temps_vec[1], " 
             WHERE ST_IsEmpty(geometry) AND  nom_com IN (", nom_com, ")
         UNION ALL
-        SELECT idu, nom_com, code_com, com_abs, '20", temps_vec_carte[2], "' AS période 
-            FROM parc_", input$depart_select_carte, "_", temps_vec_carte[2], " 
+        SELECT idu, nom_com, code_com, com_abs, '20", temps_vec[2], "' AS période 
+            FROM parc_", input$depart_select_carte, "_", temps_vec[2], " 
             WHERE ST_IsEmpty(geometry) AND  nom_com IN (", nom_com, ");"
       ))
-      
       tableau_si_donnee(parc_null)
     } 
   })
@@ -264,14 +256,14 @@ server <- function(input, output, session) {
                       choices = int_temps,
                       selected = temps_select)
     
-    temps_vec_tableau <<- strsplit(temps_select, "-")[[1]]
+    temps_vec <<- strsplit(temps_select, "-")[[1]]
     
     if (input$temps_select_tableau != temps_select){
       indic(FALSE) 
     } else{
       indic(TRUE)
       if (indic_double()){
-        maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+        maj_chemin(conn, input$depart_select_tableau, temps_vec[1], temps_vec[2])
       }
     }
     
@@ -280,12 +272,12 @@ server <- function(input, output, session) {
   observeEvent(input$temps_select_tableau, {
     req(input$main_navbar == "Tableau des changments par commune") # Evite que cela se lance avant la 1ere initialisation
     print(paste0("Changement au niveau de la période de temps tableau: ", input$temps_select_tableau))
-    temps_vec_tableau <<- strsplit(input$temps_select_tableau, "-")[[1]]
     
-    col_tableau <- c('nom', 'code', paste0('total_20',temps_vec_tableau[1]), 
-                     paste0('total_20',temps_vec_tableau[2]), 
-                     paste0('taux_classif_20',temps_vec_tableau[1]),
-                     paste0('taux_classif_20',temps_vec_tableau[2]), 
+    temps_vec <<- strsplit(input$temps_select_tableau, "-")[[1]]
+    col_tableau <- c('nom', 'code', paste0('total_20',temps_vec[1]), 
+                     paste0('total_20',temps_vec[2]), 
+                     paste0('taux_classif_20',temps_vec[1]),
+                     paste0('taux_classif_20',temps_vec[2]), 
                      'ajout', 'suppression', 'translation', 'contour', 
                      'redécoupage', 'contour_redécoupage', 'échange', 'échange_possible')
     
@@ -293,24 +285,23 @@ server <- function(input, output, session) {
                              choices = col_tableau,
                              selected = col_tableau, inline = T)
     
-    maj_chemin(conn, input$depart_select_tableau, temps_vec_tableau[1], temps_vec_tableau[2])
+    maj_chemin(conn, input$depart_select_tableau, temps_vec[1], temps_vec[2])
     
     indic(FALSE) 
     indic_double(TRUE) 
   })
   
   observeEvent(input$var_tableau, {
-    indic(TRUE)  # Active l'indicateur pour D une fois que C est mis à jour
+    indic(TRUE)
   })
   
-  # Erreur lorsque changement de temps et ou déparement du au reset des noms_colonnes
   output$table <- renderDT({
     req(input$main_navbar == "Tableau des changments par commune")
     req(indic())
-    
     print(paste0("Affichage du tableau des changements au niveau du département: ", input$depart_select_tableau))
+    
     tableau_recap(conn, input$depart_select_tableau, 
-                  temps_vec_tableau[1], temps_vec_tableau[2], input$var_tableau)
+                  temps_vec[1], temps_vec[2], input$var_tableau)
     
   })
   
@@ -332,6 +323,7 @@ server <- function(input, output, session) {
                input$temps_select_carte == input$temps_select_tableau, indic(TRUE), indic(FALSE))
       ifelse(input$depart_select_carte != input$depart_select_tableau & 
                input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
+      
       updateSelectInput(session, "depart_select_carte", selected = input$depart_select_tableau)
       updateSelectInput(session, "temps_select_carte",
                         choices = int_temps, 
@@ -343,6 +335,7 @@ server <- function(input, output, session) {
                input$temps_select_carte == input$temps_select_tableau, indic(TRUE) , indic(FALSE))
       ifelse(input$depart_select_carte != input$depart_select_tableau & 
                input$temps_select_carte != input$temps_select_tableau, indic_double(FALSE), indic_double(TRUE))
+      
       updateSelectInput(session, "depart_select_tableau", selected = input$depart_select_carte)
       updateSelectInput(session, "temps_select_tableau",
                         choices = int_temps,

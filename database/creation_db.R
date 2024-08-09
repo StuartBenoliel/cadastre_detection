@@ -18,11 +18,20 @@ conn <- connecter()
 
 # 2- Ajout de la base de données ####
 # 1:5, 13, 21, 2a, 2b, 60, 85:95, 971:974, 976:978 
-
 # 1:19, 2a, 2b, 21:95, 971:974, 976:978
-num_departements <- c(85)
-num_annee <- 24
-indic_parc <- F
+# 14, 21, 23, 38, 54, 62, 76, 85, 91
+
+num_departements <- c(21)
+num_annee <- 23
+indic_parc <- T
+# 14 -> 19 /20 D
+# 21 -> 20/21 /22 /23 /24
+# 23 -> 23/24 D
+# 38 -> 19/20 D
+# 54 -> 20/21 /22/23/24 D 
+# 62 -> 23/24 D
+#76 -> 19/20 D
+#91 -> 20/21/22
 
 # 8 min 1 département parcelle
 for (i in 1:length(num_departements)){
@@ -34,60 +43,20 @@ for (i in 1:length(num_departements)){
   if(indic_parc) {
     commune <- traitement_doublon_et_arrondissement(commune)
   }
-  
+  conn <- connecter()
   constru_table(commune, as.character(num_departements[i]), num_annee, indic_parc)
   
   print(paste0("Import département ", num_departements[i], 
                " pour l'années 20", num_annee, " terminé !"))
 }
 
-parc_85_24 <- process_departement('085', "2024")
-parc_85_23 <- process_departement('085', "2023")
-com_85 <- process_departement('085', "2024", F)
-
-parc_85_22 <- process_departement('085', "2022")
-parc_85_21 <- process_departement('085', "2021")
-
-parc_21_24 <- process_departement("021", "2024")
-parc_21_23 <- process_departement("021", "2023")
-com_21 <- process_departement("021", "2024", F)
-
-parc_13_24 <- process_departement("013", "2024")
-parc_13_23 <- process_departement("013", "2023")
-com_13 <- process_departement("013", "2024", F)
-
-
-# Appliquer la fonction à chaque département
-# list_parc <-lapply(num_departements,num_annee, process_departement)
-
-# c- Construction et Exécution des requêtes pour créer les données sur la base postgis ####
-
-# Construction de la requête créant les tables ####
-conn <- connecter()
-
-## Vendée
-constru_table(com_85, F)
-constru_table(parc_85_24)
-constru_table(parc_85_23)
-
-constru_table(parc_85_22)
 parc_85_21 <- parc_85_21 %>% 
   filter(!(IDU == "851190000A1037" & FEUILLE == "5"))
 # Doublon de ligne bizarre
-constru_table(parc_85_21)
 
-## Cote d'or
-constru_table(com_21, F)
-constru_table(parc_21_24)
 parc_21_23 <- parc_21_23 %>% 
   filter(!(IDU == "213200000B0081" & FEUILLE == "5"))
 # Doublon de ligne bizarre
-constru_table(parc_21_23)
-
-## PACA
-constru_table(com_13, F)
-constru_table(parc_13_24)
-constru_table(parc_13_23)
 
 dbListTables(conn)
 dbGetQuery(conn, "SELECT schema_name FROM information_schema.schemata;")

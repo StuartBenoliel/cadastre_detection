@@ -3,7 +3,7 @@ title: "Gestion des schémas de la base Postgre"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "13"
+  num_departement: "38"
   temps_apres: 24
   temps_avant: 23
 ---
@@ -107,4 +107,3 @@ for (pid in transactions$pid) {
   dbExecute(conn, paste("SELECT pg_terminate_backend(", pid, ");"))
 }
 ```
-
