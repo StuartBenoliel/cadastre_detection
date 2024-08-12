@@ -74,7 +74,6 @@ dbExecute(conn, "
       query_sql text;
       parcelles_intersectant RECORD;
       first boolean := true;
-      polygon_intersect geometry[] := '{}';  -- Variable pour stocker les géométries
       polygon_union geometry;
       iou_fonction text;  -- Variable pour stocker le nom de la fonction de calcul de l'IoU
   BEGIN
@@ -93,13 +92,13 @@ dbExecute(conn, "
       
       FOR parcelles_intersectant IN EXECUTE query_sql USING polygon, seuil_intersect
       LOOP
-          -- Stocker les géométries sélectionnées
-          polygon_intersect := array_append(polygon_intersect, parcelles_intersectant.geometry);
 
           IF first THEN
+              polygon_union := parcelles_intersectant.geometry;
               participants := parcelles_intersectant.idu::text;
               first := false;
           ELSE
+              polygon_union := ST_Union(polygon_union, parcelles_intersectant.geometry);
               participants := participants || ', ' || parcelles_intersectant.idu::text;
           END IF;
       END LOOP;
@@ -109,14 +108,6 @@ dbExecute(conn, "
           RETURN QUERY SELECT NULL::numeric, NULL::text;
           RETURN;  -- Terminer la fonction immédiatement
       END IF;
-      
-      -- Calculer l'union des parcelles intersectant à partir des géométries stockées
-      EXECUTE format(
-          'SELECT ST_Union(geom)
-           FROM (
-               SELECT unnest($1::geometry[]) AS geom
-           ) AS subquery'
-      ) INTO polygon_union USING polygon_intersect;
       
       -- Choisir la fonction de calcul de l'IoU en fonction du paramètre recal
       IF recale THEN

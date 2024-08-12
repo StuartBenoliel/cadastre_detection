@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "23"
-  temps_apres: 24
-  temps_avant: 23
+  num_departement: "78"
+  temps_apres: 23
+  temps_avant: 22
 ---
 
 ```{r setup, include=FALSE}
@@ -136,6 +136,7 @@ ATTENTION : Il arrive parfois qu'il reste trop de parcelles à comparer à cette
 
 ```{r géométrie égale + iou}
 dbExecute(conn, "TRUNCATE TABLE identique, modif, disparition_com;")
+
 
 dbExecute(conn, paste0("
   INSERT INTO identique
@@ -351,6 +352,34 @@ modif <- st_read(conn, query = "SELECT * FROM modif;")
 ```{r scission commune}
 dbExecute(conn, "TRUNCATE TABLE scission_com, chgt_com;")
 
+dbExecute(conn, paste0("
+  INSERT INTO disparition_com
+  SELECT 
+      fusion_ajout.nom_com, fusion_ajout.code_com, 
+      fusion_ajout.nom_com_avant, fusion_ajout.code_com_avant
+  FROM (
+      WITH avant AS (
+          SELECT
+              idu, nom_com, code_com,
+              SUBSTR(idu, 1, 2) AS prefix_idu,
+              SUBSTR(idu, 6, 14) AS suffix_idu
+          FROM
+              supp
+          WHERE com_abs != '000'
+      )
+      SELECT 
+          ajout.nom_com, ajout.code_com, 
+          avant.nom_com AS nom_com_avant, avant.code_com AS code_com_avant
+      FROM
+          avant
+      JOIN 
+          ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
+      WHERE avant.nom_com NOT IN (
+          SELECT DISTINCT nom_com 
+          FROM parc_", params$num_departement, "_", params$temps_apres, 
+      ")
+  ) AS fusion_ajout;"))
+
 dbExecute(conn, "
   INSERT INTO scission_com
   WITH avant AS (
@@ -390,7 +419,10 @@ dbExecute(conn, paste0("
   WHERE avant.nom_com IN (
       SELECT DISTINCT nom_com 
       FROM parc_", params$num_departement, "_", params$temps_apres,
-  ");"))
+  ") OR ajout.nom_com IN (
+      SELECT nom_com_apres
+      FROM disparition_com GROUP BY nom_com_apres HAVING COUNT(nom_com_avant) > 1
+  );"))
 
 dbExecute(conn, paste0(" 
   INSERT INTO chgt_com
@@ -440,6 +472,7 @@ dbExecute(conn, paste0("
 
 
 ```{r parcelle changeant de communes, eval=FALSE}
+disparition_com <- dbGetQuery(conn,  "SELECT * FROM disparition_com;")
 scission_com <- st_read(conn, query = "SELECT * FROM scission_com;")
 chgt_com <- dbGetQuery(conn,  "SELECT * FROM chgt_com;")
 ```
@@ -466,34 +499,6 @@ dbExecute(conn, "
   FROM
       apres
   JOIN supp ON apres.idu_avant = supp.idu;")
-
-dbExecute(conn, paste0("
-  INSERT INTO disparition_com
-  SELECT 
-      fusion_ajout.nom_com, fusion_ajout.code_com, 
-      fusion_ajout.nom_com_avant, fusion_ajout.code_com_avant
-  FROM (
-      WITH avant AS (
-          SELECT
-              idu, nom_com, code_com,
-              SUBSTR(idu, 1, 2) AS prefix_idu,
-              SUBSTR(idu, 6, 14) AS suffix_idu
-          FROM
-              supp
-          WHERE com_abs != '000'
-      )
-      SELECT 
-          ajout.nom_com, ajout.code_com, 
-          avant.nom_com AS nom_com_avant, avant.code_com AS code_com_avant
-      FROM
-          avant
-      JOIN 
-          ajout ON ajout.idu LIKE avant.prefix_idu || '___' || avant.suffix_idu
-      WHERE avant.nom_com NOT IN (
-          SELECT DISTINCT nom_com 
-          FROM parc_", params$num_departement, "_", params$temps_apres, 
-      ")
-  ) AS fusion_ajout;"))
 
 dbExecute(conn, paste0("
   INSERT INTO fusion_com
@@ -584,7 +589,6 @@ dbExecute(conn, paste0("
 
 ```{r parcelle changeant de communes, eval=FALSE}
 fusion_com <- st_read(conn, query = "SELECT * FROM fusion_com;")
-disparition_com <- dbGetQuery(conn,  "SELECT * FROM disparition_com;")
 chgt_com <- dbGetQuery(conn,  "SELECT * FROM chgt_com;")
 ```
 
@@ -1497,7 +1501,7 @@ echange_parc_possible <- dbGetQuery(conn, "SELECT * FROM echange_parc_possible;"
 dbExecute(conn, "
   DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout_simp, 
   supp_simp, fusion_ajout, max_iou, disparition_com, multi_rapide, 
-  multi_ajout CASCADE
+  multi_ajout, scission_com, fusion_com CASCADE
 ;")
 dbListTables(conn)
 ```
