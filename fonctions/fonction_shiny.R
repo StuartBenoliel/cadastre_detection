@@ -350,7 +350,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     echange_parc_avant <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_avant, " 
       WHERE idu IN (
-          SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
+          SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
           FROM echange_parc
           WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
     );"))
@@ -358,7 +358,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     echange_parc_apres <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_apres, " 
       WHERE idu IN (
-          SELECT unnest(regexp_split_to_array(idu_apres, ',\\s*')) 
+          SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) 
           FROM echange_parc
           WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
     );"))
@@ -376,7 +376,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     echange_parc_possible_avant <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_avant, " 
       WHERE idu IN (
-          SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
+          SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
           FROM echange_parc_possible
           WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
     );"))
@@ -384,7 +384,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
     echange_parc_possible_apres <- st_read(conn, query = paste0(
       "SELECT * FROM parc_", num_departement, "_", temps_apres, " 
       WHERE idu IN (
-          SELECT unnest(regexp_split_to_array(idu_apres, ',\\s*')) 
+          SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) 
           FROM echange_parc_possible
           WHERE nom_com_avant IN (", nom_com, ") OR nom_com_apres IN (", nom_com, ")
     );"))
@@ -542,13 +542,13 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       echange_avant AS (
           SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
           FROM echange_parc,
-          LATERAL unnest(regexp_split_to_array(idu_avant, ',\\s*')) AS idu
+          LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
           GROUP BY nom_com_avant
       ),
       echange_apres AS (
           SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
           FROM echange_parc,
-          LATERAL unnest(regexp_split_to_array(idu_apres, ',\\s*')) AS idu
+          LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
           GROUP BY nom_com_apres
       ),
       echange AS (
@@ -563,13 +563,13 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
       echange_poss_avant AS (
           SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges_poss
           FROM echange_parc_possible,
-          LATERAL unnest(regexp_split_to_array(idu_avant, ',\\s*')) AS idu
+          LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
           GROUP BY nom_com_avant
       ),
       echange_poss_apres AS (
           SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges_poss
           FROM echange_parc_possible,
-          LATERAL unnest(regexp_split_to_array(idu_apres, ',\\s*')) AS idu
+          LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
           GROUP BY nom_com_apres
       ),
       echange_poss AS (

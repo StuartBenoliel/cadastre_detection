@@ -137,7 +137,6 @@ ATTENTION : Il arrive parfois qu'il reste trop de parcelles à comparer à cette
 ```{r géométrie égale + iou}
 dbExecute(conn, "TRUNCATE TABLE identique, modif, disparition_com;")
 
-
 dbExecute(conn, paste0("
   INSERT INTO identique
   SELECT 
@@ -341,7 +340,6 @@ dbExecute(conn, "
 
 ```{r, eval=FALSE}
 contour <- st_read(conn, query = "SELECT * FROM contour;")
-
 modif <- st_read(conn, query = "SELECT * FROM modif;")
 ```
 
@@ -377,7 +375,7 @@ dbExecute(conn, paste0("
       WHERE avant.nom_com NOT IN (
           SELECT DISTINCT nom_com 
           FROM parc_", params$num_departement, "_", params$temps_apres, 
-      ")
+  ")
   ) AS fusion_ajout;"))
 
 dbExecute(conn, "
@@ -1355,7 +1353,7 @@ dbExecute(conn, "
   WHERE EXISTS (
       SELECT 1
       FROM echange_parc
-      WHERE translation.idu = echange_parc.idu_apres
+      WHERE translation.idu = echange_parc.participants_apres
   );")
 
 dbExecute(conn, paste0("
@@ -1369,9 +1367,9 @@ dbExecute(conn, paste0("
       FROM chgt_com
   ),
   couples AS (
-    SELECT a.nom_avant, b.nom_apres
-    FROM avant a
-    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
+      SELECT a.nom_avant, b.nom_apres
+      FROM avant a
+      JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   ),
   echange AS (
       SELECT 
@@ -1381,53 +1379,38 @@ dbExecute(conn, paste0("
           'parc_", params$num_departement, "_", params$temps_avant, "',
           'parc_", params$num_departement, "_", params$temps_apres, "')).*
       FROM redecoupage
+  ),
+  resultats_base AS (
+      SELECT DISTINCT ON (red.participants_avant) 
+          red.participants_avant, 
+          red.nom_com AS nom_com_avant, 
+          red.code_com AS code_com_avant, 
+          red.participants_apres, 
+          apres.nom_com AS nom_com_apres, 
+          ech.code_com_apres
+      FROM echange ech
+      JOIN redecoupage red ON red.idu = ech.idu
+      JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
+      ON apres.code_com = ech.code_com_apres
   )
-  SELECT DISTINCT ON (red.participants_avant) red.participants_avant, red.nom_com, red.code_com, 
-      red.participants_apres, apres.nom_com, ech.code_com_apres
-  FROM echange ech
-  JOIN redecoupage red ON red.idu = ech.idu_bis
-  JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
-  ON apres.code_com = ech.code_com_apres
-  LEFT JOIN couples c ON c.nom_avant = red.nom_com AND c.nom_apres = apres.nom_com
-  WHERE (nom_avant IS NULL OR nom_apres IS NULL);")) 
+  SELECT 
+      rb.participants_avant, 
+      rb.nom_com_avant, 
+      rb.code_com_avant, 
+      rb.participants_apres, 
+      rb.nom_com_apres, 
+      rb.code_com_apres
+  FROM resultats_base rb
+  LEFT JOIN couples c ON c.nom_avant = rb.nom_com_avant AND c.nom_apres = rb.nom_com_apres
+  WHERE c.nom_avant IS NULL OR c.nom_apres IS NULL;
+"))
 
 dbExecute(conn, "
   DELETE FROM redecoupage
   WHERE idu IN (
-      SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
+      SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
       FROM echange_parc
   );")
-
-echange_parc <- dbGetQuery(conn, paste0("WITH chgt_avant AS (
-      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
-      FROM chgt_com
-  ),
-  chgt_apres AS (
-      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
-      FROM chgt_com
-  ),
-  couples AS (
-    SELECT a.nom_avant, b.nom_apres
-    FROM chgt_avant a
-    JOIN chgt_apres b ON a.nom_com_avant = b.nom_com_avant
-  ),
-  echange AS (
-      SELECT 
-          (echange_parcelles(
-          idu,
-          'contour_redecoupage', 
-          'parc_", params$num_departement, "_", params$temps_avant, "',
-          'parc_", params$num_departement, "_", params$temps_apres, "')).*
-      FROM contour_redecoupage
-  )
-  SELECT DISTINCT ON (con.participants_avant) con.participants_avant, con.nom_com, con.code_com, 
-      con.participants_apres, apres.nom_com, ech.code_com_apres
-  FROM echange ech
-  JOIN contour_redecoupage con ON con.idu = ech.idu_bis
-  JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
-  ON apres.code_com = ech.code_com_apres
-  LEFT JOIN couples c ON c.nom_avant = con.nom_com AND c.nom_apres = apres.nom_com
-  WHERE (nom_avant IS NULL OR nom_apres IS NULL)"))
 
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
@@ -1440,9 +1423,9 @@ dbExecute(conn, paste0("
       FROM chgt_com
   ),
   couples AS (
-    SELECT a.nom_avant, b.nom_apres
-    FROM avant a
-    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
+      SELECT a.nom_avant, b.nom_apres
+      FROM avant a
+      JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   ),
   echange AS (
       SELECT 
@@ -1452,20 +1435,36 @@ dbExecute(conn, paste0("
           'parc_", params$num_departement, "_", params$temps_avant, "',
           'parc_", params$num_departement, "_", params$temps_apres, "')).*
       FROM contour_redecoupage
+  ),
+  resultats_base AS (
+      SELECT DISTINCT ON (con.participants_avant) 
+          con.participants_avant, 
+          con.nom_com AS nom_com_avant, 
+          con.code_com AS code_com_avant, 
+          con.participants_apres, 
+          apres.nom_com AS nom_com_apres, 
+          ech.code_com_apres
+      FROM echange ech
+      JOIN contour_redecoupage con ON con.idu = ech.idu
+      JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
+      ON apres.code_com = ech.code_com_apres
   )
-  SELECT DISTINCT ON (con.participants_avant) con.participants_avant, con.nom_com, con.code_com, 
-      con.participants_apres, apres.nom_com, ech.code_com_apres
-  FROM echange ech
-  JOIN contour_redecoupage con ON con.idu = ech.idu_bis
-  JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
-  ON apres.code_com = ech.code_com_apres
-  LEFT JOIN couples c ON c.nom_avant = con.nom_com AND c.nom_apres = apres.nom_com
-  WHERE (nom_avant IS NULL OR nom_apres IS NULL);"))
+  SELECT 
+      rb.participants_avant, 
+      rb.nom_com_avant, 
+      rb.code_com_avant, 
+      rb.participants_apres, 
+      rb.nom_com_apres, 
+      rb.code_com_apres
+  FROM resultats_base rb
+  LEFT JOIN couples c ON c.nom_avant = rb.nom_com_avant AND c.nom_apres = rb.nom_com_apres
+  WHERE c.nom_avant IS NULL OR c.nom_apres IS NULL;
+"))
 
 dbExecute(conn, "
   DELETE FROM contour_redecoupage
   WHERE idu IN (
-      SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
+      SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
       FROM echange_parc
   );")
 
@@ -1493,9 +1492,9 @@ dbExecute(conn, paste0("
       FROM chgt_com
   ),
   couples AS (
-    SELECT a.nom_avant, b.nom_apres
-    FROM avant a
-    JOIN apres b ON a.nom_com_avant = b.nom_com_avant
+      SELECT a.nom_avant, b.nom_apres
+      FROM avant a
+      JOIN apres b ON a.nom_com_avant = b.nom_com_avant
   ),
   echange AS (
       SELECT 
@@ -1505,27 +1504,43 @@ dbExecute(conn, paste0("
           'parc_", params$num_departement, "_", params$temps_avant, "',
           'parc_", params$num_departement, "_", params$temps_apres, "')).*
       FROM supp
+  ),
+  resultats_base AS (
+      SELECT DISTINCT ON (supp.participants_avant) 
+          supp.participants_avant, 
+          supp.nom_com AS nom_com_avant, 
+          supp.code_com AS code_com_avant, 
+          supp.participants_apres, 
+          apres.nom_com AS nom_com_apres, 
+          ech.code_com_apres
+      FROM echange ech
+      JOIN supp ON supp.idu = ech.idu
+      JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
+      ON apres.code_com = ech.code_com_apres
   )
-  SELECT DISTINCT ON (supp.participants_avant) supp.participants_avant, supp.nom_com, supp.code_com, 
-      supp.participants_apres, apres.nom_com, ech.code_com_apres
-  FROM echange ech
-  JOIN supp ON supp.idu = ech.idu_bis
-  JOIN parc_", params$num_departement, "_", params$temps_avant, " apres 
-  ON apres.code_com = ech.code_com_apres
-  LEFT JOIN couples c ON c.nom_avant = supp.nom_com AND c.nom_apres = apres.nom_com
-  WHERE (nom_avant IS NULL OR nom_apres IS NULL);")) 
+  SELECT 
+      rb.participants_avant, 
+      rb.nom_com_avant, 
+      rb.code_com_avant, 
+      rb.participants_apres, 
+      rb.nom_com_apres, 
+      rb.code_com_apres
+  FROM resultats_base rb
+  LEFT JOIN couples c ON c.nom_avant = rb.nom_com_avant AND c.nom_apres = rb.nom_com_apres
+  WHERE c.nom_avant IS NULL OR c.nom_apres IS NULL;
+"))
 
 dbExecute(conn, "
   DELETE FROM ajout
   WHERE idu IN (
-      SELECT unnest(regexp_split_to_array(idu_apres, ',\\s*')) 
+      SELECT unnest(regexp_split_to_array(participants_apres, ',\\s*')) 
       FROM echange_parc_possible
   );")
 
 dbExecute(conn, "
   DELETE FROM supp
   WHERE idu IN (
-      SELECT unnest(regexp_split_to_array(idu_avant, ',\\s*')) 
+      SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
       FROM echange_parc_possible
   );")
 ```
@@ -1534,16 +1549,6 @@ dbExecute(conn, "
 echange_parc <- dbGetQuery(conn, "SELECT * FROM echange_parc;")
 echange_parc_possible <- dbGetQuery(conn, "SELECT * FROM echange_parc_possible;")
 ```
-
-```{r nettoyage table inutile}
-dbExecute(conn, "
-  DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout_simp, 
-  supp_simp, fusion_ajout, max_iou, disparition_com, multi_rapide, 
-  multi_ajout, scission_com, fusion_com CASCADE
-;")
-dbListTables(conn)
-```
-
 
 ```{r carte reste, eval=FALSE}
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
@@ -1718,4 +1723,13 @@ if (nrow(modif_avant) > 0) {
                        alpha.regions = 0.5, homebutton = F)
 }
 mapshot(map, url = paste0("parcelles_",params$num_departement,"_",params$temps_apres,"-",params$temps_avant,".html"))
+```
+
+```{r nettoyage table inutile}
+dbExecute(conn, "
+  DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout_simp, 
+  supp_simp, fusion_ajout, max_iou, disparition_com, multi_rapide, 
+  multi_ajout, scission_com, fusion_com CASCADE
+;")
+dbListTables(conn)
 ```

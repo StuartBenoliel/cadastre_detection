@@ -440,131 +440,127 @@ dbExecute(conn, "
   $$ LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE;
 ")
 
-
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION regroupement_par_com(
-      idu text,
+      idu_entree text,
       nom_table text,
       nom_table_geom text,
       indic_avant boolean DEFAULT true
   )
-  RETURNS TABLE (idu_bis text, code_com text, participants text, geom_union geometry) AS $$
+  RETURNS TABLE (idu text, code_com text, participants text, geom_union geometry) AS $$
   DECLARE
       sql_query text;
-      participants_field text;
+      choix_participants text;
   BEGIN
   
       -- Choix du champ des participants selon la valeur de indic_avant
       IF indic_avant THEN
-          participants_field := 'participants_avant';
+          choix_participants := 'participants_avant';
       ELSE
-          participants_field := 'participants_apres';
+          choix_participants := 'participants_apres';
       END IF;
       
       -- Construction de la requête SQL dynamique pour les participants avant
-      sql_query := '
-      WITH split_strings_avant AS (
+      sql_query := format(
+        '
+        WITH split_strings AS (
+          SELECT
+            idu,
+            unnest(string_to_array(%I, '', '')) AS sub_string
+          FROM %I
+          WHERE idu = $1
+        ),
+        groupes AS (
+          SELECT
+            idu,
+            sub_string,
+            SUBSTRING(sub_string FROM 3 FOR 3) AS code_com
+          FROM
+            split_strings
+        ),
+        groupes_union AS (
+          SELECT
+            g.idu,
+            g.code_com,
+            string_agg(sub_string::text, '', '') AS participants,
+            ST_Union(geometry) AS geom_union
+          FROM
+            %I t
+          JOIN
+            groupes g ON t.idu = g.sub_string
+          GROUP BY
+            g.code_com, g.idu
+        )
         SELECT
           idu,
-          unnest(string_to_array(' || participants_field || ', '', '')) AS sub_string
-        FROM ' || quote_ident(nom_table) || '
-        WHERE idu = $1
-      ),
-      groupes_avant AS (
-        SELECT
-          idu,
-          sub_string,
-          SUBSTRING(sub_string FROM 3 FOR 3) AS code_com
+          code_com,
+          participants,
+          geom_union
         FROM
-          split_strings_avant
-      ),
-      groupes_union_avant AS (
-        SELECT
-          g.idu,
-          g.code_com,
-          string_agg(sub_string::text, '', '') AS participants,
-          ST_Union(geometry) AS geom_union
-        FROM
-          ' || quote_ident(nom_table_geom) || ' t
-        JOIN
-          groupes_avant g ON t.idu = g.sub_string
-        GROUP BY
-          g.code_com, g.idu
-      )
-      SELECT
-        idu,
-        code_com,
-        participants,
-        geom_union
-      FROM
-        groupes_union_avant';
+          groupes_union',
+        choix_participants,
+        nom_table,
+        nom_table_geom
+      );
 
-      RETURN QUERY EXECUTE sql_query USING idu;
+      RETURN QUERY EXECUTE sql_query USING idu_entree;
   END;
   $$ LANGUAGE plpgsql;
 ")
 
 dbExecute(conn, "
   CREATE OR REPLACE FUNCTION echange_parcelles(
-      idu text,
+      idu_entree text,
       nom_table text,
       nom_table_avant text,
       nom_table_apres text
   )
   RETURNS TABLE (
-      idu_bis text,
+      idu text,
       code_com_apres text
   ) AS $$
   BEGIN
       -- Jointure FULL entre les résultats des deux exécutions de regroupement_par_com
-      RETURN QUERY 
-      WITH jointure AS (
+      RETURN QUERY
+      WITH avant AS (
+          SELECT * FROM regroupement_par_com(idu_entree, nom_table, nom_table_avant, true)
+      ),
+      apres AS (
+          SELECT * FROM regroupement_par_com(idu_entree, nom_table, nom_table_apres, false)
+      ),
+      jointure AS (
           SELECT 
-              COALESCE(avant.idu_bis, apres.idu_bis) AS idu_bis,
-              avant.code_com AS code_com_avant,
-              avant.participants AS participants_avant,
-              apres.code_com AS code_com_apres,
-              apres.participants AS participants_apres,
-              calcul_iou_recale(avant.geom_union, apres.geom_union) AS iou
-          FROM 
-              regroupement_par_com(idu, nom_table, nom_table_avant, true) AS avant
-          FULL JOIN 
-              regroupement_par_com(idu, nom_table, nom_table_apres, false) AS apres
-          ON 
-              avant.idu_bis = apres.idu_bis 
-              AND avant.code_com = apres.code_com
+              COALESCE(a.idu, b.idu) AS idu,
+              a.code_com AS code_com_avant,
+              a.participants AS participants_avant,
+              b.code_com AS code_com_apres,
+              b.participants AS participants_apres,
+              calcul_iou_recale(a.geom_union, b.geom_union) AS iou
+          FROM avant a
+          FULL JOIN apres b ON a.idu = b.idu AND a.code_com = b.code_com
       ),
       filtre AS (
           SELECT 
-              j.idu_bis, 
+              j.idu, 
               COUNT(*) FILTER (WHERE j.iou IS NOT NULL) AS count_iou_valid,
               COUNT(*) FILTER (WHERE j.iou IS NULL) AS count_iou_na,
               MIN(j.iou) AS min_iou
-          FROM 
-              jointure j
-          GROUP BY 
-              j.idu_bis
-          HAVING 
-              COUNT(*) > 1  -- Seuls les idu_bis apparaissant plus d'une fois
+          FROM jointure j
+          GROUP BY j.idu
+          HAVING COUNT(*) > 1  -- Seuls les idu apparaissant plus d'une fois
       )
       SELECT 
-          f.idu_bis,
-          apres.code_com
-      FROM 
-          filtre f
-      JOIN 
-          regroupement_par_com(idu, nom_table, nom_table_apres, false) AS apres
-          ON 
-              f.idu_bis = apres.idu_bis 
+          f.idu,
+          a.code_com
+      FROM filtre f
+      JOIN apres a ON f.idu = a.idu
       WHERE 
-          -- Si toutes les IoU sont NA
-          f.count_iou_valid = 0
-          OR 
-          -- Si au moins un IoU est inférieur à 0.95
-          (f.count_iou_valid > 0 AND f.min_iou < 0.95)
-          AND  SUBSTRING(f.idu_bis FROM 3 FOR 3) <> apres.code_com;
-
+          (f.count_iou_valid = 0 OR (f.count_iou_valid > 0 AND f.min_iou < 0.95))
+          AND SUBSTRING(f.idu FROM 3 FOR 3) <> a.code_com;
+  
   END;
   $$ LANGUAGE plpgsql;
 ")
+
+
 
