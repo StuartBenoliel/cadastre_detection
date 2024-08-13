@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "78"
-  temps_apres: 23
-  temps_avant: 22
+  num_departement: "60"
+  temps_apres: 24
+  temps_avant: 23
 ---
 
 ```{r setup, include=FALSE}
@@ -417,9 +417,9 @@ dbExecute(conn, paste0("
   WHERE avant.nom_com IN (
       SELECT DISTINCT nom_com 
       FROM parc_", params$num_departement, "_", params$temps_apres,
-  ") OR ajout.nom_com IN (
-      SELECT nom_com_apres
-      FROM disparition_com GROUP BY nom_com_apres HAVING COUNT(nom_com_avant) > 1
+  ") OR avant.nom_com IN (
+      SELECT nom_com_avant
+      FROM disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com_apres) > 1
   );"))
 
 dbExecute(conn, paste0(" 

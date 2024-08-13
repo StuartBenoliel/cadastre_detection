@@ -311,7 +311,6 @@ dbExecute(conn, paste0("
 "))
 dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_vrai_ajout_nom_com ON vrai_ajout (nom_com);")
 
-# Apres
 dbExecute(conn, paste0("
   CREATE TABLE echange_parc (
       participants_avant text PRIMARY KEY,

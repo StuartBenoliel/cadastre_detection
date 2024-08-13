@@ -561,6 +561,3 @@ dbExecute(conn, "
   END;
   $$ LANGUAGE plpgsql;
 ")
-
-
-
