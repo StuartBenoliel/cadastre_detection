@@ -135,7 +135,6 @@ ui <- page_navbar(
   header = tags$style(style)
 )
 
-# Define server logic
 server <- function(input, output, session) {
   
   indic <- reactiveVal(FALSE)

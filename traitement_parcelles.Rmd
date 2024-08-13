@@ -1412,6 +1412,63 @@ dbExecute(conn, "
       FROM echange_parc
   );")
 
+
+dbExecute(conn, paste0("
+  INSERT INTO echange_parc
+  WITH avant AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_avant, ',\\s*')) AS nom_avant
+      FROM chgt_com
+  ),
+  apres AS (
+      SELECT nom_com_avant, unnest(regexp_split_to_array(nom_com_apres, ',\\s*')) AS nom_apres
+      FROM chgt_com
+  ),
+  couples AS (
+      SELECT a.nom_avant, b.nom_apres
+      FROM avant a
+      JOIN apres b ON a.nom_com_avant = b.nom_com_avant
+  ),
+  echange AS (
+      SELECT 
+          (echange_parcelles(
+          idu,
+          'contour', 
+          'parc_", params$num_departement, "_", params$temps_avant, "',
+          'parc_", params$num_departement, "_", params$temps_apres, "')).*
+      FROM contour
+  ),
+  resultats_base AS (
+      SELECT DISTINCT ON (con.participants_avant) 
+          con.participants_avant, 
+          con.nom_com AS nom_com_avant, 
+          con.code_com AS code_com_avant, 
+          con.participants_apres, 
+          apres.nom_com AS nom_com_apres, 
+          ech.code_com_apres
+      FROM echange ech
+      JOIN contour con ON con.idu = ech.idu
+      JOIN parc_", params$num_departement, "_", params$temps_apres, " apres 
+      ON apres.code_com = ech.code_com_apres
+  )
+  SELECT 
+      rb.participants_avant, 
+      rb.nom_com_avant, 
+      rb.code_com_avant, 
+      rb.participants_apres, 
+      rb.nom_com_apres, 
+      rb.code_com_apres
+  FROM resultats_base rb
+  LEFT JOIN couples c ON c.nom_avant = rb.nom_com_avant AND c.nom_apres = rb.nom_com_apres
+  WHERE c.nom_avant IS NULL OR c.nom_apres IS NULL;
+"))
+
+dbExecute(conn, "
+  DELETE FROM contour
+  WHERE idu IN (
+      SELECT unnest(regexp_split_to_array(participants_avant, ',\\s*')) 
+      FROM echange_parc
+  );")
+
 dbExecute(conn, paste0("
   INSERT INTO echange_parc
   WITH avant AS (
