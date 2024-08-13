@@ -265,9 +265,9 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   WHERE avant.nom_com IN (
       SELECT DISTINCT nom_com 
       FROM parc_", params$num_departement, "_", params$temps_apres,
-                         ") OR ajout.nom_com IN (
-      SELECT nom_com_apres
-      FROM disparition_com GROUP BY nom_com_apres HAVING COUNT(nom_com_avant) > 1
+                         ") OR avant.nom_com IN (
+      SELECT nom_com_avant
+      FROM disparition_com GROUP BY nom_com_avant HAVING COUNT(nom_com_apres) > 1
   );"))
   
   dbExecute(conn, paste0(" 
