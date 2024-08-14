@@ -1080,11 +1080,12 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   echange AS (
       SELECT 
           (echange_parcelles(
-          idu,
+          MIN(idu),
           'redecoupage', 
           'parc_", params$num_departement, "_", params$temps_avant, "',
           'parc_", params$num_departement, "_", params$temps_apres, "')).*
       FROM redecoupage
+      GROUP BY participants_avant
   ),
   resultats_base AS (
       SELECT DISTINCT ON (red.participants_avant) 
@@ -1118,6 +1119,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
       FROM echange_parc
   );")
   
+  
   dbExecute(conn, paste0("
   INSERT INTO echange_parc
   WITH avant AS (
@@ -1136,11 +1138,12 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   echange AS (
       SELECT 
           (echange_parcelles(
-          idu,
+          MIN(idu),
           'contour', 
           'parc_", params$num_departement, "_", params$temps_avant, "',
           'parc_", params$num_departement, "_", params$temps_apres, "')).*
       FROM contour
+      GROUP BY participants_avant
   ),
   resultats_base AS (
       SELECT DISTINCT ON (con.participants_avant) 
@@ -1192,11 +1195,12 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   echange AS (
       SELECT 
           (echange_parcelles(
-          idu,
+          MIN(idu),
           'contour_redecoupage', 
           'parc_", params$num_departement, "_", params$temps_avant, "',
           'parc_", params$num_departement, "_", params$temps_apres, "')).*
       FROM contour_redecoupage
+      GROUP BY participants_avant
   ),
   resultats_base AS (
       SELECT DISTINCT ON (con.participants_avant) 
@@ -1261,11 +1265,12 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   echange AS (
       SELECT 
           (echange_parcelles(
-          idu,
+          MIN(idu),
           'supp', 
           'parc_", params$num_departement, "_", params$temps_avant, "',
           'parc_", params$num_departement, "_", params$temps_apres, "')).*
       FROM supp
+      GROUP BY participants_avant
   ),
   resultats_base AS (
       SELECT DISTINCT ON (supp.participants_avant) 
