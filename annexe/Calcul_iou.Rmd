@@ -171,39 +171,39 @@ plot1 <- ggplot() +
   ggtitle("Translation de 0.2 unité Nord (figure verte)") +
   
   # Annotation pour le cercle (diamètre)
-  geom_segment(aes(x = -1, y = -1.5, xend = 1, yend = -1.5), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = -1, y = -1.25, xend = 1, yend = -1.25), color = "black", linetype = "dashed") + 
   annotate("text", x = 0, y = -1.7, label = "2 unités", color = "black", size = 4) +
   
   # Annotation pour le carré (côté)
-  geom_segment(aes(x = 2, y = -1.5, xend = 4, yend = -1.5), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = 2, y = -1.25, xend = 4, yend = -1.25), color = "black", linetype = "dashed") + 
   annotate("text", x = 3, y = -1.7, label = "2 unités", color = "black", size = 4) +
   
   # Annotation pour le rectangle (largeur et hauteur)
-  geom_segment(aes(x = 5, y = -2.5, xend = 7, yend = -2.5), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = 5, y = -2.25, xend = 7, yend = -2.25), color = "black", linetype = "dashed") + 
   annotate("text", x = 6, y = -2.7, label = "2 unités", color = "black", size = 4) +
-  geom_segment(aes(x = 7.5, y = -2, xend = 7.5, yend = 2), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = 7.25, y = -2, xend = 7.25, yend = 2), color = "black", linetype = "dashed") + 
   annotate("text", x = 7.7, y = 0, label = "4 unités", color = "black", size = 4, angle = 90) +
   
   # Annotation pour le losange (largeur et hauteur)
-  geom_segment(aes(x = 8, y = -2.5, xend = 10, yend = -2.5), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = 8, y = -2.25, xend = 10, yend = -2.25), color = "black", linetype = "dashed") + 
   annotate("text", x = 9, y = -2.7, label = "2 unités", color = "black", size = 4) +
   
   # Annotation pour le L (largeur et hauteur)
-  geom_segment(aes(x = 11, y = -1.5, xend = 11, yend = 1.75), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = 10.75, y = -1.5, xend = 10.75, yend = 1.75), color = "black", linetype = "dashed") + 
   annotate("text", x = 11.2, y = 0, label = "3.25 unités", color = "black", size = 4, angle = 90) +
   
-  geom_segment(aes(x = 11.5, y = -2.5, xend = 12.5, yend = -2.5), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = 11.5, y = -2.25, xend = 12.5, yend = -2.25), color = "black", linetype = "dashed") + 
   annotate("text", x = 12, y = -2.7, label = "1 unité", color = "black", size = 4) +
   
-  geom_segment(aes(x = 13, y = 1.25, xend = 13, yend = 1.75), color = "black", linetype = "dashed") + 
+  geom_segment(aes(x = 12.75, y = 1.25, xend = 12.75, yend = 1.75), color = "black", linetype = "dashed") + 
   annotate("text", x = 13.2, y = 1.5, label = "0.5 unité", color = "black", size = 4, angle = 90) +
   
   # Annotations des IOU
-  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
-  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black") +
-  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
-  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
-  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  annotate("text", x = 0, y = -4, label = paste0("IoU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = -4, label = round(iou$square, 2), color = "black") +
+  annotate("text", x = 6, y = -4, label = round(iou$rectangle, 2), color = "black") +
+  annotate("text", x = 9, y = -4, label = round(iou$diamond, 2), color = "black") +
+  annotate("text", x = 12.5, y = -4, label = round(iou$L, 2), color = "black") +
   
   # Suppression des axes et de la grille
   theme(
@@ -222,54 +222,34 @@ plot1
 
 ```{r cas translation intersection N}
 
-# Définir les centres pour espacer les formes
-centers_2 <- list(
-  circle_center = c(0, 0.1),
-  square_center = c(3, 0.1),
-  rectangle_center = c(6, 0.1),
-  diamond_center = c(9, 0.1),
-  L_b_center = c(12, 0.1),
-  L_h_center = c(13, 1.6)
-)
+circle_3 <- st_intersection(circle_1, circle_2)
+square_3 <- st_intersection(square_1, square_2)
+rectangle_3 <- st_intersection(rectangle_1, rectangle_2)
+diamond_3 <- st_intersection(diamond_1, diamond_2)
+L_3 <- st_intersection(L_1, L_2)
 
-circle_2 <- create_circle(centers_2$circle_center, radius = 1)
-square_2 <- create_square(centers_2$square_center, side_length = 2)
-rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
-diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
-L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
-L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
-
-L_2 <- st_union(L_b, L_h)
-
-
-circle_2 <- st_intersection(circle_1, circle_2)
-square_2 <- st_intersection(square_1, square_2)
-rectangle_2 <- st_intersection(rectangle_1, rectangle_2)
-diamond_2 <- st_intersection(diamond_1, diamond_2)
-L_2 <- st_intersection(L_1, L_2)
-
-geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
-geometries_sf_2 <- st_sf(geometry = geometries)
+geometries <- st_sfc(circle_3, square_3, rectangle_3, diamond_3, L_3, crs = 4326)
+geometries_sf_3 <- st_sf(geometry = geometries)
 
 iou <- list(
-  circle = calculate_iou(circle_1, circle_2),
-  square = calculate_iou(square_1, square_2),
-  rectangle = calculate_iou(rectangle_1, rectangle_2),
-  diamond = calculate_iou(rectangle_1, rectangle_2),
-  L = calculate_iou(L_1, L_2)
+  circle = calculate_iou(circle_1, circle_3),
+  square = calculate_iou(square_1, square_3),
+  rectangle = calculate_iou(rectangle_1, rectangle_3),
+  diamond = calculate_iou(rectangle_1, rectangle_3),
+  L = calculate_iou(L_1, L_3)
 )
 
 # Affichage avec ggplot2
 plot2 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
-  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  geom_sf(data = geometries_sf_3, fill = 'peachpuff', color = 'black') +
   theme_minimal() +
-  ggtitle("+ Intersection (figure verte)") +
-  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
-  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
-  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
-  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
-  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  ggtitle("Intersection des deux (figure orange)") +
+  annotate("text", x = 0, y = -4, label = paste0("IoU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = -4, label = round(iou$square, 2), color = "black") +
+  annotate("text", x = 6, y = -4, label = round(iou$rectangle, 2), color = "black") +
+  annotate("text", x = 9, y = -4, label = round(iou$diamond, 2), color = "black") +
+  annotate("text", x = 12.5, y = -4, label = round(iou$L, 2), color = "black") +
   theme(
     axis.title.x = element_blank(),  # Enlever le titre de l'axe x
     axis.title.y = element_blank(),  # Enlever le titre de l'axe y
@@ -278,7 +258,7 @@ plot2 <- ggplot() +
     axis.ticks.x = element_blank(),  # Enlever les graduations de l'axe x
     axis.ticks.y = element_blank(),  # Enlever les graduations de l'axe y
     panel.grid = element_blank()     # Enlever les lignes de la grille
-  )
+  ) 
 
 ```
 
@@ -286,12 +266,12 @@ plot2 <- ggplot() +
 
 # Définir les centres pour espacer les formes
 centers_2 <- list(
-  circle_center = c(0.1, 0),
-  square_center = c(3.1, 0),
-  rectangle_center = c(6.1, 0),
-  diamond_center = c(9.1, 0),
-  L_b_center = c(12.1, 0),
-  L_h_center = c(13.1, 1.5)
+  circle_center = c(0.2, 0),
+  square_center = c(3.2, 0),
+  rectangle_center = c(6.2, 0),
+  diamond_center = c(9.2, 0),
+  L_b_center = c(12.2, 0),
+  L_h_center = c(13.2, 1.5)
 )
 
 circle_2 <- create_circle(centers_2$circle_center, radius = 1)
@@ -320,11 +300,11 @@ plot3 <- ggplot() +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
   theme_minimal() +
   ggtitle("Translation de 0.2 unité Est (figure verte)") +
-  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
-  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
-  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
-  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
-  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  annotate("text", x = 0, y = -4, label = paste0("IoU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = -4, label = round(iou$square, 2), color = "black",) +
+  annotate("text", x = 6, y = -4, label = round(iou$rectangle, 2), color = "black") +
+  annotate("text", x = 9, y = -4, label = round(iou$diamond, 2), color = "black") +
+  annotate("text", x = 12.5, y = -4, label = round(iou$L, 2), color = "black") +
   theme(
     axis.title.x = element_blank(),  # Enlever le titre de l'axe x
     axis.title.y = element_blank(),  # Enlever le titre de l'axe y
@@ -339,54 +319,34 @@ plot3 <- ggplot() +
 
 
 ```{r cas translation intersection E}
+circle_3 <- st_intersection(circle_1, circle_2)
+square_3 <- st_intersection(square_1, square_2)
+rectangle_3 <- st_intersection(rectangle_1, rectangle_2)
+diamond_3 <- st_intersection(diamond_1, diamond_2)
+L_3 <- st_intersection(L_1, L_2)
 
-# Définir les centres pour espacer les formes
-centers_2 <- list(
-  circle_center = c(0.1, 0),
-  square_center = c(3.1, 0),
-  rectangle_center = c(6.1, 0),
-  diamond_center = c(9.1, 0),
-  L_b_center = c(12.1, 0),
-  L_h_center = c(13.1, 1.5)
-)
-
-circle_2 <- create_circle(centers_2$circle_center, radius = 1)
-square_2 <- create_square(centers_2$square_center, side_length = 2)
-rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
-diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
-L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
-L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
-
-L_2 <- st_union(L_b, L_h)
-
-circle_2 <- st_intersection(circle_1, circle_2)
-square_2 <- st_intersection(square_1, square_2)
-rectangle_2 <- st_intersection(rectangle_1, rectangle_2)
-diamond_2 <- st_intersection(diamond_1, diamond_2)
-L_2 <- st_intersection(L_1, L_2)
-
-geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
-geometries_sf_2 <- st_sf(geometry = geometries)
+geometries <- st_sfc(circle_3, square_3, rectangle_3, diamond_3, L_3, crs = 4326)
+geometries_sf_3 <- st_sf(geometry = geometries)
 
 iou <- list(
-  circle = calculate_iou(circle_1, circle_2),
-  square = calculate_iou(square_1, square_2),
-  rectangle = calculate_iou(rectangle_1, rectangle_2),
-  diamond = calculate_iou(rectangle_1, rectangle_2),
-  L = calculate_iou(L_1, L_2)
+  circle = calculate_iou(circle_1, circle_3),
+  square = calculate_iou(square_1, square_3),
+  rectangle = calculate_iou(rectangle_1, rectangle_3),
+  diamond = calculate_iou(rectangle_1, rectangle_3),
+  L = calculate_iou(L_1, L_3)
 )
 
 # Affichage avec ggplot2
 plot4 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
-  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  geom_sf(data = geometries_sf_3, fill = 'peachpuff', color = 'black') +
   theme_minimal() +
-  ggtitle("+ Intersection (figure verte)") +
-  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
-  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
-  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
-  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
-  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  ggtitle("Intersection des deux (figure orange)") +
+  annotate("text", x = 0, y = -4, label = paste0("IoU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = -4, label = round(iou$square, 2), color = "black",) +
+  annotate("text", x = 6, y = -4, label = round(iou$rectangle, 2), color = "black") +
+  annotate("text", x = 9, y = -4, label = round(iou$diamond, 2), color = "black") +
+  annotate("text", x = 12.5, y = -4, label = round(iou$L, 2), color = "black") +
   theme(
     axis.title.x = element_blank(),  # Enlever le titre de l'axe x
     axis.title.y = element_blank(),  # Enlever le titre de l'axe y
@@ -403,12 +363,12 @@ plot4 <- ggplot() +
 
 # Définir les centres pour espacer les formes
 centers_2 <- list(
-  circle_center = c(0.1, 0.1),
-  square_center = c(3.1, 0.1),
-  rectangle_center = c(6.1, 0.1),
-  diamond_center = c(9.1, 0.1),
-  L_b_center = c(12.1, 0.1),
-  L_h_center = c(13.1, 1.6)
+  circle_center = c(0.2/ sqrt(2), 0.2/ sqrt(2)),
+  square_center = c(3 + 0.2/ sqrt(2), 0.2/ sqrt(2)),
+  rectangle_center = c(6 + 0.2/ sqrt(2), 0.2/ sqrt(2)),
+  diamond_center = c(9+ 0.2/ sqrt(2), 0.2/ sqrt(2)),
+  L_b_center = c(12 + 0.2/ sqrt(2), 0.2/ sqrt(2)),
+  L_h_center = c(13 + 0.2/ sqrt(2), 1.5 + 0.2/ sqrt(2))
 )
 
 circle_2 <- create_circle(centers_2$circle_center, radius = 1)
@@ -437,11 +397,11 @@ plot5 <- ggplot() +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
   theme_minimal() +
   ggtitle("Translation de 0.2 unité Nord-Est (figure verte)") +
-  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
-  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
-  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
-  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
-  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  annotate("text", x = 0, y = -4, label = paste0("IoU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = -4, label = round(iou$square, 2), color = "black",) +
+  annotate("text", x = 6, y = -4, label = round(iou$rectangle, 2), color = "black") +
+  annotate("text", x = 9, y = -4, label = round(iou$diamond, 2), color = "black") +
+  annotate("text", x = 12.5, y = -4, label = round(iou$L, 2), color = "black") +
   theme(
     axis.title.x = element_blank(),  # Enlever le titre de l'axe x
     axis.title.y = element_blank(),  # Enlever le titre de l'axe y
@@ -457,52 +417,34 @@ plot5 <- ggplot() +
 
 ```{r cas translation NE}
 
-centers_2 <- list(
-  circle_center = c(0.1, 0.1),
-  square_center = c(3.1, 0.1),
-  rectangle_center = c(6.1, 0.1),
-  diamond_center = c(9.1, 0.1),
-  L_b_center = c(12.1, 0.1),
-  L_h_center = c(13.1, 1.6)
-)
+circle_3 <- st_intersection(circle_1, circle_2)
+square_3 <- st_intersection(square_1, square_2)
+rectangle_3 <- st_intersection(rectangle_1, rectangle_2)
+diamond_3 <- st_intersection(diamond_1, diamond_2)
+L_3 <- st_intersection(L_1, L_2)
 
-circle_2 <- create_circle(centers_2$circle_center, radius = 1)
-square_2 <- create_square(centers_2$square_center, side_length = 2)
-rectangle_2 <- create_rectangle(centers_2$rectangle_center, width = 2, height = 4)
-diamond_2 <- create_diamond(centers_2$diamond_center, width = 2, height = 4)
-L_b <- create_rectangle(centers_2$L_b_center, width = 1, height = 3)
-L_h <- create_rectangle(centers_2$L_h_center, width = 3, height = 0.5)
-
-L_2 <- st_union(L_b, L_h)
-
-circle_2 <- st_intersection(circle_1, circle_2)
-square_2 <- st_intersection(square_1, square_2)
-rectangle_2 <- st_intersection(rectangle_1, rectangle_2)
-diamond_2 <- st_intersection(diamond_1, diamond_2)
-L_2 <- st_intersection(L_1, L_2)
-
-geometries <- st_sfc(circle_2, square_2, rectangle_2, diamond_2, L_2, crs = 4326)
-geometries_sf_2 <- st_sf(geometry = geometries)
+geometries <- st_sfc(circle_3, square_3, rectangle_3, diamond_3, L_3, crs = 4326)
+geometries_sf_3 <- st_sf(geometry = geometries)
 
 iou <- list(
-  circle = calculate_iou(circle_1, circle_2),
-  square = calculate_iou(square_1, square_2),
-  rectangle = calculate_iou(rectangle_1, rectangle_2),
-  diamond = calculate_iou(rectangle_1, rectangle_2),
-  L = calculate_iou(L_1, L_2)
+  circle = calculate_iou(circle_1, circle_3),
+  square = calculate_iou(square_1, square_3),
+  rectangle = calculate_iou(rectangle_1, rectangle_3),
+  diamond = calculate_iou(rectangle_1, rectangle_3),
+  L = calculate_iou(L_1, L_3)
 )
 
 # Affichage avec ggplot2
 plot6 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
-  geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
+  geom_sf(data = geometries_sf_3, fill = 'peachpuff', color = 'black') +
   theme_minimal() +
-  ggtitle("+ Intersection (figure verte)") +
-  annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
-  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
-  annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
-  annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
-  annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
+  ggtitle("Intersection des deux (figure orange)") +
+  annotate("text", x = 0, y = -4, label = paste0("IoU: ", round(iou$circle, 2)), color = "black") +
+  annotate("text", x = 3, y = -4, label = round(iou$square, 2), color = "black",) +
+  annotate("text", x = 6, y = -4, label = round(iou$rectangle, 2), color = "black") +
+  annotate("text", x = 9, y = -4, label = round(iou$diamond, 2), color = "black") +
+  annotate("text", x = 12.5, y = -4, label = round(iou$L, 2), color = "black") +
   theme(
     axis.title.x = element_blank(),  # Enlever le titre de l'axe x
     axis.title.y = element_blank(),  # Enlever le titre de l'axe y
@@ -517,6 +459,6 @@ plot6 <- ggplot() +
 
 ```{r}
 plot <- grid.arrange(plot1, plot2, plot3, plot4, plot5, plot6, ncol = 2)
-ggsave("../www/Forme_iou_translation.png", plot = plot, width = 14, height = 8, dpi = 300)
+ggsave("../www/Forme_iou_translation.png", plot = plot, width = 10, height = 7, dpi = 300)
 ```
 
