@@ -21,9 +21,9 @@ conn <- connecter()
 # 1:19, 2a, 2b, 21:95, 971:974, 976:978
 # 14, 21, 23, 38, 54, 62, 76, 85, 91
 
-num_departements <- c(35)
-num_annee <- 23
-indic_parc <- T
+num_departements <- c(13)
+num_annee <- 24
+indic_parc <- F
 # 21 -> 20/21 /22 /23 /24
 # 23 -> 23/24 D
 # 38 -> 19/20 D
