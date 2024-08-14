@@ -122,12 +122,12 @@ centers_1 <- list(
 )
 
 centers_2 <- list(
-  circle_center = c(0, 0.1),
-  square_center = c(3, 0.1),
-  rectangle_center = c(6, 0.1),
-  diamond_center = c(9, 0.1),
-  L_b_center = c(12, 0.1),
-  L_h_center = c(13, 1.6)
+  circle_center = c(0, 0.2),
+  square_center = c(3, 0.2),
+  rectangle_center = c(6, 0.2),
+  diamond_center = c(9, 0.2),
+  L_b_center = c(12, 0.2),
+  L_h_center = c(13, 1.7)
 )
 
 # Créer les formes avec les centres espacés
@@ -168,16 +168,55 @@ plot1 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha = 0.5) +
   theme_minimal() +
-  ggtitle("Translation centre de 0.1 unité N") +
+  ggtitle("Translation de 0.2 unité Nord (figure verte)") +
+  
+  # Annotation pour le cercle (diamètre)
+  geom_segment(aes(x = -1, y = -1.5, xend = 1, yend = -1.5), color = "black", linetype = "dashed") + 
+  annotate("text", x = 0, y = -1.7, label = "2 unités", color = "black", size = 4) +
+  
+  # Annotation pour le carré (côté)
+  geom_segment(aes(x = 2, y = -1.5, xend = 4, yend = -1.5), color = "black", linetype = "dashed") + 
+  annotate("text", x = 3, y = -1.7, label = "2 unités", color = "black", size = 4) +
+  
+  # Annotation pour le rectangle (largeur et hauteur)
+  geom_segment(aes(x = 5, y = -2.5, xend = 7, yend = -2.5), color = "black", linetype = "dashed") + 
+  annotate("text", x = 6, y = -2.7, label = "2 unités", color = "black", size = 4) +
+  geom_segment(aes(x = 7.5, y = -2, xend = 7.5, yend = 2), color = "black", linetype = "dashed") + 
+  annotate("text", x = 7.7, y = 0, label = "4 unités", color = "black", size = 4, angle = 90) +
+  
+  # Annotation pour le losange (largeur et hauteur)
+  geom_segment(aes(x = 8, y = -2.5, xend = 10, yend = -2.5), color = "black", linetype = "dashed") + 
+  annotate("text", x = 9, y = -2.7, label = "2 unités", color = "black", size = 4) +
+  
+  # Annotation pour le L (largeur et hauteur)
+  geom_segment(aes(x = 11, y = -1.5, xend = 11, yend = 1.75), color = "black", linetype = "dashed") + 
+  annotate("text", x = 11.2, y = 0, label = "3.25 unités", color = "black", size = 4, angle = 90) +
+  
+  geom_segment(aes(x = 11.5, y = -2.5, xend = 12.5, yend = -2.5), color = "black", linetype = "dashed") + 
+  annotate("text", x = 12, y = -2.7, label = "1 unité", color = "black", size = 4) +
+  
+  geom_segment(aes(x = 13, y = 1.25, xend = 13, yend = 1.75), color = "black", linetype = "dashed") + 
+  annotate("text", x = 13.2, y = 1.5, label = "0.5 unité", color = "black", size = 4, angle = 90) +
+  
+  # Annotations des IOU
   annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
-  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
+  annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black") +
   annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
   annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
   annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
-  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+  
+  # Suppression des axes et de la grille
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank()
+  )
 
 plot1
-
 ```
 
 
@@ -225,13 +264,21 @@ plot2 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
   theme_minimal() +
-  ggtitle("Translation centre de 0.1 unité N + Intersection") +
+  ggtitle("+ Intersection (figure verte)") +
   annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
   annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
   annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
   annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
   annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
-  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+  theme(
+    axis.title.x = element_blank(),  # Enlever le titre de l'axe x
+    axis.title.y = element_blank(),  # Enlever le titre de l'axe y
+    axis.text.x = element_blank(),   # Enlever le texte de l'axe x
+    axis.text.y = element_blank(),   # Enlever le texte de l'axe y
+    axis.ticks.x = element_blank(),  # Enlever les graduations de l'axe x
+    axis.ticks.y = element_blank(),  # Enlever les graduations de l'axe y
+    panel.grid = element_blank()     # Enlever les lignes de la grille
+  )
 
 ```
 
@@ -272,13 +319,21 @@ plot3 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
   theme_minimal() +
-  ggtitle("Translation centre de 0.1 unité E") +
+  ggtitle("Translation de 0.2 unité Est (figure verte)") +
   annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
   annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
   annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
   annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
   annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
-  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+  theme(
+    axis.title.x = element_blank(),  # Enlever le titre de l'axe x
+    axis.title.y = element_blank(),  # Enlever le titre de l'axe y
+    axis.text.x = element_blank(),   # Enlever le texte de l'axe x
+    axis.text.y = element_blank(),   # Enlever le texte de l'axe y
+    axis.ticks.x = element_blank(),  # Enlever les graduations de l'axe x
+    axis.ticks.y = element_blank(),  # Enlever les graduations de l'axe y
+    panel.grid = element_blank()     # Enlever les lignes de la grille
+  )
 
 ```
 
@@ -326,13 +381,21 @@ plot4 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
   theme_minimal() +
-  ggtitle("Translation centre de 0.1 unité E + Intersection") +
+  ggtitle("+ Intersection (figure verte)") +
   annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
   annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
   annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
   annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
   annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
-  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+  theme(
+    axis.title.x = element_blank(),  # Enlever le titre de l'axe x
+    axis.title.y = element_blank(),  # Enlever le titre de l'axe y
+    axis.text.x = element_blank(),   # Enlever le texte de l'axe x
+    axis.text.y = element_blank(),   # Enlever le texte de l'axe y
+    axis.ticks.x = element_blank(),  # Enlever les graduations de l'axe x
+    axis.ticks.y = element_blank(),  # Enlever les graduations de l'axe y
+    panel.grid = element_blank()     # Enlever les lignes de la grille
+  )
 
 ```
 
@@ -373,13 +436,21 @@ plot5 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
   theme_minimal() +
-  ggtitle("Translation centre de 0.1 unité NE") +
+  ggtitle("Translation de 0.2 unité Nord-Est (figure verte)") +
   annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
   annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
   annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
   annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
   annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
-  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+  theme(
+    axis.title.x = element_blank(),  # Enlever le titre de l'axe x
+    axis.title.y = element_blank(),  # Enlever le titre de l'axe y
+    axis.text.x = element_blank(),   # Enlever le texte de l'axe x
+    axis.text.y = element_blank(),   # Enlever le texte de l'axe y
+    axis.ticks.x = element_blank(),  # Enlever les graduations de l'axe x
+    axis.ticks.y = element_blank(),  # Enlever les graduations de l'axe y
+    panel.grid = element_blank()     # Enlever les lignes de la grille
+  )
 
 ```
 
@@ -426,72 +497,26 @@ plot6 <- ggplot() +
   geom_sf(data = geometries_sf_1, fill = 'lightblue', color = 'black') +
   geom_sf(data = geometries_sf_2, fill = 'lightgreen', color = 'black', alpha= 0.5) +
   theme_minimal() +
-  ggtitle("Translation centre de 0.1 unité NE + Intersection") +
+  ggtitle("+ Intersection (figure verte)") +
   annotate("text", x = 0, y = 0, label = paste0("IOU: ", round(iou$circle, 2)), color = "black") +
   annotate("text", x = 3, y = 0, label = paste0("IOU: ", round(iou$square, 2)), color = "black",) +
   annotate("text", x = 6, y = 0, label = paste0("IOU: ", round(iou$rectangle, 2)), color = "black") +
   annotate("text", x = 9, y = 0, label = paste0("IOU: ", round(iou$diamond, 2)), color = "black") +
   annotate("text", x = 13.5, y = 0, label = paste0("IOU: ", round(iou$L, 2)), color = "black") +
-  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+  theme(
+    axis.title.x = element_blank(),  # Enlever le titre de l'axe x
+    axis.title.y = element_blank(),  # Enlever le titre de l'axe y
+    axis.text.x = element_blank(),   # Enlever le texte de l'axe x
+    axis.text.y = element_blank(),   # Enlever le texte de l'axe y
+    axis.ticks.x = element_blank(),  # Enlever les graduations de l'axe x
+    axis.ticks.y = element_blank(),  # Enlever les graduations de l'axe y
+    panel.grid = element_blank()     # Enlever les lignes de la grille
+  )
 
 ```
 
 ```{r}
 plot <- grid.arrange(plot1, plot2, plot3, plot4, plot5, plot6, ncol = 2)
-ggsave("Forme_iou_translation.png", plot = plot, width = 14, height = 8, dpi = 300)
-```
-
-```{r buffer négatif seuil}
-centers_1 <- list(
-  circle_center = c(0, 0),
-  square_center = c(3, 0),
-  rectangle_center = c(6, 0),
-  diamond_center = c(9, 0),
-  L_b_center = c(12, 0),
-  L_h_center = c(13, 1.5)
-)
-
-# Créer les formes avec les centres espacés
-circle_1 <- create_circle(centers_1$circle_center, radius = 1)
-square_1 <- create_square(centers_1$square_center, side_length = 2)
-rectangle_1 <- create_rectangle(centers_1$rectangle_center, width = 2, height = 4)
-diamond_1 <- create_diamond(centers_1$diamond_center, width = 2, height = 4)
-L_b <- create_rectangle(centers_1$L_b_center, width = 1, height = 3)
-L_h <- create_rectangle(centers_1$L_h_center, width = 3, height = 0.5)
-
-L_1 <- st_union(L_b, L_h)
-
-geometries <- st_sfc(circle_1, square_1, rectangle_1, diamond_1, L_1, crs = 4326)
-geometries_sf <- st_sf(geometry = geometries)
-
-# Créer des buffers négatifs pour les seuils donnés
-thresholds <- c(0, 0.01, 0.1, 0.5, 0.7)
-buffer_list <- list()
-
-# Appliquer les buffers et ajouter à la liste
-for (threshold in thresholds) {
-  
-  buffered_geometries <- st_sfc(st_buffer(circle_1, dist = -threshold), 
-                       st_buffer(square_1, dist = -threshold), 
-                       st_buffer(rectangle_1, dist = -threshold), 
-                       st_buffer(diamond_1, dist = -threshold), 
-                       st_buffer(L_1, dist = -threshold), crs = 4326)
-  buffer_sf <- st_sf(geometry = buffered_geometries, threshold = threshold)
-  buffer_list[[as.character(threshold)]] <- buffer_sf
-}
-
-all_buffers <- do.call(rbind, buffer_list)
-
-
-# Visualiser les buffers négatifs avec ggplot2
-plot1 <- ggplot() +
-  geom_sf(data = all_buffers, aes(fill = as.factor(threshold)), color = 'black') +
-  scale_fill_manual(values = c("black","lightblue", "lightgreen", "lightcoral", "lightgoldenrod"), 
-                    name = "Buffer Threshold") +
-  theme_minimal() +
-  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
-
-# Afficher le graphique
-plot1
+ggsave("../www/Forme_iou_translation.png", plot = plot, width = 14, height = 8, dpi = 300)
 ```
 
