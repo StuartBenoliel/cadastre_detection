@@ -3,7 +3,7 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "13"
+  num_departement: "85"
   temps_apres: 24
   temps_avant: 23
 ---
@@ -93,6 +93,20 @@ dbExecute(conn, paste0("
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
 ```
+
+```{r}
+ajout <-dbGetQuery(conn, paste0("
+  SELECT 
+      ST_Area(ST_Intersection(avant.geometry, apres.geometry)) / 
+      LEAST(ST_Area(avant.geometry), ST_Area(apres.geometry)) AS surface_ratio
+  FROM 
+      parc_", params$num_departement, "_", params$temps_avant, " avant
+  JOIN 
+      parc_", params$num_departement, "_", params$temps_apres," apres
+  ON 
+      ST_Intersects(avant.geometry, apres.geometry) AND avant.geometry && apres.geometry ;"))
+```
+
 
 # Définition de la bordure de 250 m par rapport au contour communal
 
