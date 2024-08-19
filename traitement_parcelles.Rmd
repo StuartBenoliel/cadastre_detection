@@ -94,20 +94,6 @@ ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
 ```
 
-```{r}
-ajout <-dbGetQuery(conn, paste0("
-  SELECT 
-      ST_Area(ST_Intersection(avant.geometry, apres.geometry)) / 
-      LEAST(ST_Area(avant.geometry), ST_Area(apres.geometry)) AS surface_ratio
-  FROM 
-      parc_", params$num_departement, "_", params$temps_avant, " avant
-  JOIN 
-      parc_", params$num_departement, "_", params$temps_apres," apres
-  ON 
-      ST_Intersects(avant.geometry, apres.geometry) AND avant.geometry && apres.geometry ;"))
-```
-
-
 # Définition de la bordure de 250 m par rapport au contour communal
 
 ```{r bordure}
@@ -679,6 +665,45 @@ identique <- st_read(conn, query = "SELECT * FROM identique;")
 echange_parc <- dbGetQuery(conn, "SELECT * FROM echange_parc;")
 ajout <- st_read(conn, query = "SELECT * FROM ajout;")
 supp <- st_read(conn, query = "SELECT * FROM supp;")
+```
+
+```{r eval=FALSE}
+ajout <- dbGetQuery(conn, paste0("
+  SELECT 
+      avant.idu AS idu_avant, 
+      apres.idu AS idu_apres,
+      ST_Area(ST_Intersection(avant.geometry, apres.geometry)) / 
+      LEAST(ST_Area(avant.geometry), ST_Area(apres.geometry)) AS surface_ratio
+  FROM 
+      supp avant
+  JOIN 
+      ajout apres
+  ON 
+      ST_Intersects(avant.geometry, apres.geometry) 
+      AND avant.geometry && apres.geometry;"))
+
+```
+
+```{r distib iou, eval=FALSE}
+quantiles <- quantile(ajout$surface_ratio, probs = c(0.3, 0.4, 0.5), na.rm = TRUE)
+
+plot <- ggplot(na.omit(ajout), aes(x = surface_ratio)) +
+  geom_histogram(aes(y = after_stat(count / sum(count))), fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_segment(x = quantiles[1], xend = quantiles[1], y = 0, yend = 0.3, color = "black", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[2], xend = quantiles[2], y = 0, yend = 0.3, color = "black", linetype = "dashed", linewidth = 0.6) +
+  geom_segment(x = quantiles[3], xend = quantiles[3], y = 0, yend = 0.5, color = "black", linetype = "dashed", linewidth = 0.6) +
+  annotate("text", x = quantiles[1], y = 0.3, label = paste0("Q3: ", round(quantiles[1], 2)), color = "black", size = 4, vjust = -1.5) +
+  annotate("text", x = quantiles[2], y = 0.3, label = paste0("Q4: ", round(quantiles[2], 2)), color = "black", size = 4,  vjust = -1.5) +
+  annotate("text", x = quantiles[3], y = 0.5, label = paste0("Médiane: ", round(quantiles[3], 2)), color = "black", size = 4, vjust = -1.5) +
+  labs(title = "",
+       x = "Proportion de surface recouverte de deux parcelles s'intersectant, par rapport à la plus petite",
+       y = "Fréquence",
+       caption = "Champ: Parcelles avec changement d'identifiant, et restantes après l'étape d'élimination avec ST_Equals") +
+  theme_bw()
+
+plot
+
+ggsave("www/Distribution_surface_ratio.png", plot = plot, width = 10, height = 8, dpi = 300)
 ```
 
 ## Reconnaissances des cas de fusion (peu fréquent) ou subdivision (plus courant)

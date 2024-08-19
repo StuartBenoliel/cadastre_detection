@@ -317,14 +317,12 @@ dbExecute(conn, "
               nom_table_avant
           ) INTO polygon_union USING polygon_union;
           
+          EXECUTE format(
+              'SELECT string_agg(idu::text, '', '') FROM %I WHERE geometry && $1 AND ST_Intersects(geometry, $1)',
+              nom_table_avant
+          ) INTO participants_avant USING polygon_union;
+          
       END LOOP;
-  
-      -- Get the participants before
-      query_sql := format(
-          'SELECT string_agg(idu::text, '', '') FROM %I WHERE geometry && $1 AND ST_Intersects(geometry, $1)',
-          nom_table_avant
-      );
-      EXECUTE query_sql INTO participants_avant USING polygon_union;
   
       -- Calculate the IoU with nom_table_apres
       SELECT * INTO iou_intersect
