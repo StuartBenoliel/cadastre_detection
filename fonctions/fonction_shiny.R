@@ -418,7 +418,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   if (nrow(modif_avant) > 0) {
     
     map_1 <- map_1 + mapview(modif_avant, col.regions = "#FFE2E2",
-                             layer.name = paste0("Parcelles modifiées restantes (état 20",temps_avant,")"),
+                             layer.name = paste0("Parcelles restantes (état 20",temps_avant,")"),
                              alpha.regions = 0.5, homebutton = F)
   }
   if (nrow(ajout) > 0) {
@@ -430,7 +430,7 @@ cartes_dynamiques <- function(conn, num_departement, temps_apres, temps_avant, n
   if (nrow(modif_apres) > 0) {
     
     map_1 <- map_1 + mapview(modif_apres,  col.regions = "#DAF7E2",
-                             layer.name = paste0("Parcelles modifiées restantes (état 20",temps_apres,")"),
+                             layer.name = paste0("Parcelles restantes (état 20",temps_apres,")"),
                              alpha.regions = 0.5, homebutton = F)
   }
   
