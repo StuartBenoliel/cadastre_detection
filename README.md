@@ -20,7 +20,7 @@ Ouvir le projet `cadastre_detection.Rproj` et installer les packages nécessaire
 **À exécuter :**
 
 ```r
-source("packages.R")
+source("requirements.R")
 ```
 
 
