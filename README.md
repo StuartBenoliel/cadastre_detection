@@ -1,157 +1,193 @@
 # Détection des évolutions des parcelles cadastrales
 
-Stage 2A réalisé au pôle Référentiel Géographique à la DR 45 Centre-Val de Loire.
+Stage de 2ᵉ année réalisé au pôle Référentiel Géographique à la DR 45 Centre-Val de Loire.  
 Encadré par Pierre Vernedal et Frédéric Minodier.
 
 ## Mise en garde
 
-Ce projet est fait pour être utilisé avec les données du Parcellaire Express de l'IGN.
-Il n'est pas utile de télécharger les données en amont car une fonction remplit déjà cette tâche.
+Ce projet est conçu pour être utilisé avec les données du Parcellaire Express de l'IGN.  
+Il n'est pas nécessaire de télécharger les données en amont, car une fonction prend déjà en charge cette tâche.
 
-De plus, le projet est conçut pour utiliser un système de base de donnée PostGre avec l'extension PostGIS.
+De plus, le projet est conçu pour utiliser un système de base de données PostgreSQL avec l'extension PostGIS.
 
 ## Usage
 
-1) Identifiants base de données
+### 1) Identifiants base de données
 
-  -> database/connexion_db.R
+**Fichier à modifier : `database/connexion_db.R`**
   
-A faire:
+**À faire :**
 
-Remplissez les variables du module database/connexion_db.R par vos identifiants de votre base de données.
-A adapter si il s'agit d'un système autre que PostGre
+Remplissez les variables du module avec les identifiants de votre base de données.  
+Adaptez les paramètres si vous utilisez un autre système que PostgreSQL.
 
 
-2) Import et enregistrement des données en SQL
+### 2) Import et enregistrement des données en SQL
 
-  -> database/creation_db.R
+**Fichier à modifier : `database/creation_db.R`**
   
-Pour faire une comparaison entre 20XX et 20YY pour un département ZZ, vous devez avoir :
-- Les parcelles de 20XX pour le département ZZ
-- Les parcelles de 20YY pour le département ZZ
-- Un fond communal (de l'année la plus récente à priori)
+Pour faire une comparaison entre 20XX et 20YY pour un département ZZ, vous devez disposer de :  
 
-Nous utilisons le fond communal se trouvant déjà dans le même fichier que celui où se situe les parcelles.
-Toutefois, ceci nécessite trois téléchargements différents dont un redondant si nous utilisons le fond communal de
-l'année 20XX ou 20YY.
-Il y a un traitement des départements qui comporte des arrondissements pour que l'arrondissement apparaisse directement
-dans l'attribut nom_comm (utile pour l'app shiny). Un autre traitement pour rendre les géomètries toutes valides.
-Et un dernier pour éliminer les parcelles dont l'attibut idu (identifiant unique) est en doublon ...
-Enfin, la dernière fonction sert à enregister les données traitées dans la base SQL.
+- Les parcelles de 20XX pour le département ZZ,  
+- Les parcelles de 20YY pour le département ZZ,  
+- Un fond communal (de l'année la plus récente à priori).
 
-A faire:
+Nous utilisons le fond communal déjà présent dans le même fichier que celui contenant les parcelles. Toutefois, ceci nécessite trois téléchargements différents, dont un redondant si nous utilisons le fond communal de l'année 20XX ou 20YY.  
 
-Remplir dans la variable num_departements, les numéros des départements que vous voulez traiter.
-Remplir dans la variable num_annees, les deux derniers chiffres des années que vous voulez comparez.
-Changer la variable indicatrice_parcelle, selon l'import que vous souhaitez : 
-- pour l'import des parcelles, mettez True
-- pour l'import du fond communal, mettez False
-Lancer l'entièreté du fichier
+Il y a un traitement des départements comportant des arrondissements pour que l'arrondissement apparaisse directement dans l'attribut nom_com (utile pour l'application shiny). Un autre traitement est effectué pour rendre les géométries valides. Enfin, un dernier traitement élimine les parcelles ayant un attribut idu (identifiant unique) en doublon.
 
-Exemple:
+La dernière fonction permet d'enregistrer les données traitées dans la base SQL.
 
-1) Import des parcelles
+**À faire :**
 
+Remplissez la variable `num_departements` avec les numéros des départements que vous souhaitez traiter.  
+Remplissez la variable `num_annees` avec les deux derniers chiffres des années que vous souhaitez comparer.  
+Changez la variable `indicatrice_parcelle` en fonction de l'import souhaité :
+
+- Pour l'import des parcelles, mettez `TRUE`.  
+- Pour l'import du fond communal, mettez `FALSE`.
+
+Exécutez l'intégralité du fichier.
+
+**Exemple:**
+
+**a) Import des parcelles**
+
+```r
 num_departements <- ZZ
 num_annees <- c(XX , YY)
-indicatrice_parcelle <- True
+indicatrice_parcelle <- TRUE
+```
 
-Lancer l'entièreté du fichier
+Exécutez l'intégralité du fichier.
 
-2) Import du fond
+**b) Import du fond**
 
+```r
 num_departements <- ZZ
 num_annees <- XX  # (ou YY)
-indicatrice_parcelle <- False
+indicatrice_parcelle <- FALSE
+```
 
-Lancer l'entièreté du fichier
+Exécutez l'intégralité du fichier.
 
-Remarque: 
+**Remarque:** 
 
-Le téléchargement est long s'il s'agit d'un téléchargement venant directement du site de l'IGN et
-non de opendatarchives.
+Le téléchargement peut être long s'il provient directement du site de l'IGN et non de opendatarchives.  
+Si vous entrez plusieurs numéros de départements et plusieurs années, alors pour chaque département, l'import sera effectué pour toutes les années du vecteur `num_annees`.  
+Si vous souhaitez choisir quelle parcelle doit être conservée en cas de doublon, vous devrez le faire manuellement.
 
-Si vous mettre plusieurs numéros de départements et plusieurs années, alors pour 
-chaque département, l'import sera fait pour toutes les années du vecteur num_annees.
+### 3) Application de la méthode de détection
 
-Si vous souhaitez choisir laquelles des parcelles supprimées en cas de doublon,
-vous devez faire cela manuellement.
-
-3) Application de la méthode de détection
-
-  -> traitement_automatique.R 
+**Fichier à modifier : `traitement_automatique.R`**
   
-Le fichier permet de traiter plusieurs départements ou plusieurs intervalles de temps d'un même département 
-en un seul coup. 
-Un message s'affiche pour indiquer la fin du traitement d'un département.
-Si vous voulez suivre le processus du début à la fin aller à la section traitement_parcelles.Rmd.
+Ce fichier permet de traiter plusieurs départements ou plusieurs intervalles de temps pour un même département en une seule fois. Un message s'affiche à la fin du traitement de chaque département.  
+Si vous souhaitez suivre le processus du début à la fin, reportez-vous à la section `traitement_parcelles.Rmd`.
 
-A faire:
+**À faire :**
 
-Remplir dans la variable params_list, la liste des paramètres nécessaire à un traitement :
-- le numéro du département dans num_departement
-- les deux derniers chiffres de la période la plus récente que vous souhaitez comparer dans temps_apres
-- les deux derniers chiffres de la période la plus ancienne que vous souhaitez comparer dans temps_avant
-Lancer l'entièreté du fichier
+Remplissez la variable `params_list` avec la liste des paramètres nécessaires au traitement :
 
-Exemple:
+- Le numéro du département dans `num_departement`,  
+- Les deux derniers chiffres de la période la plus récente que vous souhaitez comparer dans `temps_apres`,  
+- Les deux derniers chiffres de la période la plus ancienne que vous souhaitez comparer dans `temps_avant`.
 
+Exécutez l'intégralité du fichier.
+
+**Exemple :**
+
+```r
 params_list <- list(
   list(num_departement = ZZ, temps_apres = YY, temps_avant = XX)
 )
+```
 
-Lancer l'entièreté du fichier
+Exécutez l'intégralité du fichier.
 
-Remarque: 
+**Remarque :** 
 
-Vous pouvez mettre dans params_list, plusieurs listes comportant les paramètres de plusieurs traitement pour les effectuer en une seule fois.
+Vous pouvez ajouter plusieurs listes de paramètres dans `params_list` pour traiter plusieurs départements en une seule fois.
 
-Si pour un département, un message d'alerte indique un traitement partiel du à un trop nombre de parcelles à traiter à une étape, cela signifie que trop peu de parcelles ont été détecté comme identique. Un seuil de 500 000 parcelles maximal a été placé pour arrêter à une partie précise du traitement et pour qu'il reprenne à partir d'un endroit où cela ne pose plus problème. Plus le seuil est grand, plus il y a de risque que le traitement prenne du temps.
-Sauf si vous avez beaucoup de temps devant vous, je ne conseille pas d'augmenter le seuil et plutôt même de le diminuer.
-(variable nb_parcelles_seuil dans la fonction traitement_parcelles)
+Si un message d'alerte indique un traitement partiel dû à un trop grand nombre de parcelles à traiter, cela signifie que trop peu de parcelles ont été détectées comme identiques. Un seuil maximal de 500 000 parcelles a été fixé pour arrêter le traitement à une étape précise et le reprendre là où cela ne pose plus de problème. Plus le seuil est élevé, plus le traitement peut prendre de temps.  
+À moins d'avoir beaucoup de temps, il est déconseillé d'augmenter ce seuil, mais plutôt de le réduire (variable `nb_parcelles_seuil` dans la fonction `traitement_parcelles`).
 
-
-  -> traitement_parcelles.Rmd
+**Fichier à modifier : `traitement_parcelles.Rmd`**
   
-Si vous souhaitez appliquer la méthode de détection un département à la fois et étape par étape, ce fichier markdown permet de comprendre les étapes une par une et de trouver les problèmes pouvant avoir lieu.
+Si vous souhaitez appliquer la méthode de détection à un département à la fois, et étape par étape, ce fichier markdown permet de comprendre les étapes une par une et d'identifier les éventuels problèmes.
 
-A faire:
+**À faire :**
 
-Dans l'en-tête, remplir dans params, les paramètres nécessaire à un traitement :
-- le numéro du département dans num_departement
-- les deux derniers chiffres de la période la plus récente que vous souhaitez comparer dans temps_apres
-- les deux derniers chiffres de la période la plus ancienne que vous souhaitez comparer dans temps_avant
+Dans l'en-tête, remplissez les paramètres nécessaires au traitement :
 
-Lancer les chunks (CTRL + ALT + R pour tous lancer d'un coup)
+- Le numéro du département dans `num_departement`,  
+- Les deux derniers chiffres de la période la plus récente dans `temps_apres`,  
+- Les deux derniers chiffres de la période la plus ancienne dans `temps_avant`.
 
-Remarque: 
+Lancez les chunks (CTRL + ALT + R pour tous les lancer d'un coup).
 
-Des imports sont placés après chaque traitement pour voir les parcelles ajoutées dans chaque table à chaque étape.
-Ils ne peuvent être lancer que manuellement (et non via CTRL + ALT + R)
+**Remarque :** 
 
-De même, des cartes sont placées au cours du traitment pour visualiser mieux la classification effectuée. Elles ne sont lancées dans des chunks que manuellement.
+Des imports sont placés après chaque traitement pour visualiser les parcelles ajoutées dans chaque table à chaque étape.  
+Ils doivent être lancés manuellement (et non via CTRL + ALT + R).
+
+De même, des cartes sont ajoutées au cours du traitement pour mieux visualiser la classification effectuée. Elles ne peuvent être lancées manuellement qu'à partir des chunks.
 
 
-3) Visualisation 
+### 4) Visualisation 
 
-  -> cartes_departement.R
+**Fichier à modifier : `cartes_departement.R`**
   
-Pour une visualisation du département en intégralité via une carte htlm.
-Elle est automatiquement enregistrée dans l'environnement du projet.
+Pour visualiser un département dans son intégralité via une carte HTML. Elle est automatiquement enregistrée dans l'environnement du projet.
 
-A faire:
+**À faire :**
 
-Dans l'en-tête, remplir dans params, les paramètres nécessaire à un traitement :
-- le numéro du département dans num_departement
-- les deux derniers chiffres de la période la plus récente que vous souhaitez comparer dans temps_apres
-- les deux derniers chiffres de la période la plus ancienne que vous souhaitez comparer dans temps_avant
 
-Lancer les chunks (CTRL + ALT + R pour tous lancer d'un coup)
+**Fichier à lancer : `app.R`**
 
--> app.R
+Pour une visualisation par communes (ou plusieurs communes en même temps). Des informations telles que les parcelles avec des géométries vides, des détails sur la classification à l'échelle du département, et les changements au niveau des communes (changement de nom, fusion, scission) sont également disponibles dans des onglets dédiés.
 
-Pour une visualisation par communes (ou plusieurs en même temps). Des informations du type, parcelles avec des géométries vides, détail de la classification sur un département, changement au niveau de la commune (changement de nom, fusion, scission) sont également présent dans des onglets dédiés.
+**À faire :**
 
-A faire:
+Exécutez l'intégralité du fichier via le bouton 'Run App'.
 
-Lancer l'entièreté du fichier via le bouton 'Run app'
+
+## Maintenir le projet
+
+**Fonction à modifier: `telechargement_departement` situé dans `fonctions/fonction_creation_db.R`**
+
+La fonction nécessaire à mettre à jour est celle pour l'import des données.  
+Le Parcellaire Express étant mise à jour trimestriellement, l'url de téléchargement dépend du mois (et jour) de publications des données.  
+Je n'ai pas connaissance de la date de fréquence de mise à jour d'opendatarchives mais je sais qu'elle ne conserve pas toutes les publications trimestrielles du Parcellaire Express.
+
+Si vous souhaitez obtenir les données les plus fraiches du site de l'IGN et que vous constatez sur le site qu'elle date d'après Juillet 2024 (ou la fonction renvoie URL introuvable), il est nécessaire de faire des modifications dans l'URL.
+
+```r
+# Nous nous situons dans la fonction telechargement_departement
+
+if (num_annee == 2024) {
+    url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_",
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
+                  "_2024-07-01/PARCELLAIRE-EXPRESS_1-1__SHP_",
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
+                  "_2024-07-01.7z")
+  }
+  
+# Il faut changer 2024-07-01 par la date qui convient
+# Par exemple, si les données sont mise à jour au 1er Octobre 2024
+  
+url_maj <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_",
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
+                  "_2024-10-01/PARCELLAIRE-EXPRESS_1-1__SHP_", # changement ici
+                  sys_projection(num_departement),
+                  "_D",
+                  num_departement,
+                  "_2024-10-01.7z") # changement ici
+```
+
+Si vous souhaitez obtenir les données les plus fraiches du site de l'IGN et que vous constatez sur le site qu'elle date d'après Juillet 2024 (ou la fonction renvoie URL introuvable), il est nécessaire de faire des modifications dans l'URL.
