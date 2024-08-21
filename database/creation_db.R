@@ -1,9 +1,7 @@
 # Créer une base de données postgis avec la plateforme datalab-sspcloud 
 
 library(DBI)
-library(RPostgres)
 library(dplyr)
-library(dbplyr)
 library(sf)
 library(archive)
 
@@ -22,8 +20,8 @@ conn <- connecter()
 # 14, 21, 23, 38, 54, 62, 76, 85, 91
 
 num_departements <- c(13)
-num_annee <- 24
-indic_parc <- F
+num_annees <- c(24)
+indicatrice_parcelle <- F
 # 21 -> 20/21 /22 /23 /24
 # 23 -> 23/24 D
 # 38 -> 19/20 D
@@ -32,28 +30,24 @@ indic_parc <- F
 
 # 8 min 1 département parcelle
 for (i in 1:length(num_departements)){
-  
-  commune <- telechargement_departement(gestion_num_departement(toupper(num_departements[i])), 
-                                 paste0("20", num_annee), 
-                                 indic_parc)
-  
-  if(indic_parc) {
-    commune <- traitement_doublon_et_arrondissement(commune)
+  for (j in 1:length(num_departements)){
+    
+    donnees <- telechargement_departement(gestion_num_departement(toupper(num_departements[i])), 
+                                          paste0("20", num_annees[j]), 
+                                          indicatrice_parcelle)
+    
+    if(indicatrice_parcelle) {
+      donnees <- traitement_doublon_et_arrondissement(donnees)
+    }
+    
+    conn <- connecter() # Pour récupérer la connexion si le téléchargement prend beaucoup de temps
+    
+    constru_table(donnees, as.character(num_departements[i]), num_annees[j], indicatrice_parcelle)
+    
+    print(paste0("Import département ", num_departements[i], 
+                 " pour l'années 20", num_annees[j], " terminé !"))
   }
-  conn <- connecter()
-  constru_table(commune, as.character(num_departements[i]), num_annee, indic_parc)
-  
-  print(paste0("Import département ", num_departements[i], 
-               " pour l'années 20", num_annee, " terminé !"))
 }
-
-parc_85_21 <- parc_85_21 %>% 
-  filter(!(IDU == "851190000A1037" & FEUILLE == "5"))
-# Doublon de ligne bizarre
-
-parc_21_23 <- parc_21_23 %>% 
-  filter(!(IDU == "213200000B0081" & FEUILLE == "5"))
-# Doublon de ligne bizarre
 
 # dbGetQuery(conn, "SELECT schema_name FROM information_schema.schemata;")
 

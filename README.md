@@ -1,7 +1,8 @@
 # Détection des évolutions des parcelles cadastrales
 
 Stage de 2ᵉ année réalisé au pôle Référentiel Géographique à la DR 45 Centre-Val de Loire.  
-Encadré par Pierre Vernedal et Frédéric Minodier.
+Encadré par Pierre Vernedal et Frédéric Minodier.  
+Mes remerciements vont à Pierre Vernedal et Frédéric Minodier pour leur mentorat, ainsi qu'à Joachim Clé et Violaine Simon pour leur soutien.
 
 ## Mise en garde
 
@@ -12,7 +13,18 @@ De plus, le projet est conçu pour utiliser un système de base de données Post
 
 ## Usage
 
-### 1) Identifiants base de données
+### 1) Projet et installation des packages
+
+Ouvir le projet `cadastre_detection.Rproj` et installer les packages nécessaires via le module prévu à cet effet.
+  
+**À exécuter :**
+
+```r
+source("packages.R")
+```
+
+
+### 2) Identifiants base de données
 
 **Fichier à modifier : `database/connexion_db.R`**
   
@@ -22,7 +34,7 @@ Remplissez les variables du module avec les identifiants de votre base de donné
 Adaptez les paramètres si vous utilisez un autre système que PostgreSQL.
 
 
-### 2) Import et enregistrement des données en SQL
+### 3) Import et enregistrement des données en SQL
 
 **Fichier à modifier : `database/creation_db.R`**
   
@@ -49,7 +61,7 @@ Changez la variable `indicatrice_parcelle` en fonction de l'import souhaité :
 
 Exécutez l'intégralité du fichier.
 
-**Exemple:**
+**Exemple :**
 
 **a) Import des parcelles**
 
@@ -65,19 +77,21 @@ Exécutez l'intégralité du fichier.
 
 ```r
 num_departements <- ZZ
-num_annees <- XX  # (ou YY)
+num_annees <- XX  # ou YY ou autre
 indicatrice_parcelle <- FALSE
 ```
 
 Exécutez l'intégralité du fichier.
 
-**Remarque:** 
+**Remarque :** 
 
 Le téléchargement peut être long s'il provient directement du site de l'IGN et non de opendatarchives.  
 Si vous entrez plusieurs numéros de départements et plusieurs années, alors pour chaque département, l'import sera effectué pour toutes les années du vecteur `num_annees`.  
 Si vous souhaitez choisir quelle parcelle doit être conservée en cas de doublon, vous devrez le faire manuellement.
 
-### 3) Application de la méthode de détection
+### 4) Application de la méthode de détection
+
+#### A) De manière automatisée
 
 **Fichier à modifier : `traitement_automatique.R`**
   
@@ -111,6 +125,8 @@ Vous pouvez ajouter plusieurs listes de paramètres dans `params_list` pour trai
 Si un message d'alerte indique un traitement partiel dû à un trop grand nombre de parcelles à traiter, cela signifie que trop peu de parcelles ont été détectées comme identiques. Un seuil maximal de 500 000 parcelles a été fixé pour arrêter le traitement à une étape précise et le reprendre là où cela ne pose plus de problème. Plus le seuil est élevé, plus le traitement peut prendre de temps.  
 À moins d'avoir beaucoup de temps, il est déconseillé d'augmenter ce seuil, mais plutôt de le réduire (variable `nb_parcelles_seuil` dans la fonction `traitement_parcelles`).
 
+#### B) Pas à pas
+
 **Fichier à modifier : `traitement_parcelles.Rmd`**
   
 Si vous souhaitez appliquer la méthode de détection à un département à la fois, et étape par étape, ce fichier markdown permet de comprendre les étapes une par une et d'identifier les éventuels problèmes.
@@ -130,17 +146,29 @@ Lancez les chunks (CTRL + ALT + R pour tous les lancer d'un coup).
 Des imports sont placés après chaque traitement pour visualiser les parcelles ajoutées dans chaque table à chaque étape.  
 Ils doivent être lancés manuellement (et non via CTRL + ALT + R).
 
-De même, des cartes sont ajoutées au cours du traitement pour mieux visualiser la classification effectuée. Elles ne peuvent être lancées manuellement qu'à partir des chunks.
+De même, des graphiques sont ajoutées au cours du traitement pour mieux visualiser la classification effectuée. Elles ne peuvent être lancées manuellement qu'à partir des chunks.
 
 
-### 4) Visualisation 
+### 5) Visualisation 
 
-**Fichier à modifier : `cartes_departement.R`**
+#### A) Carte à l'échelle départementale
+
+**Fichier à modifier : `carte_departement.R`**
   
-Pour visualiser un département dans son intégralité via une carte HTML. Elle est automatiquement enregistrée dans l'environnement du projet.
+Pour visualiser les évolution des parcelles d'un département dans son intégralité via une carte HTML. Elle est automatiquement enregistrée dans l'environnement du projet sous la forme (pour un département ZZ entre 20XX et 20YY où YY est plus grand que XX) : parcelles_ZZ_YY-XX.html.  
+La visualisation de la carte doit être fait via un navigateur internet (option 'View in Web Browser' via un click gauche).
 
 **À faire :**
 
+Remplissez la variable `params` avec les paramètres nécessaires :
+
+- Le numéro du département dans `num_departement`,  
+- Les deux derniers chiffres de la période la plus récente que vous souhaitez comparer dans `temps_apres`,  
+- Les deux derniers chiffres de la période la plus ancienne que vous souhaitez comparer dans `temps_avant`.
+
+Exécutez l'intégralité du module.
+
+#### B) Application Shiny
 
 **Fichier à lancer : `app.R`**
 
@@ -151,43 +179,37 @@ Pour une visualisation par communes (ou plusieurs communes en même temps). Des 
 Exécutez l'intégralité du fichier via le bouton 'Run App'.
 
 
-## Maintenir le projet
+## Maintenir le projet dans le temps
 
 **Fonction à modifier: `telechargement_departement` situé dans `fonctions/fonction_creation_db.R`**
 
-La fonction nécessaire à mettre à jour est celle pour l'import des données.  
-Le Parcellaire Express étant mise à jour trimestriellement, l'url de téléchargement dépend du mois (et jour) de publications des données.  
-Je n'ai pas connaissance de la date de fréquence de mise à jour d'opendatarchives mais je sais qu'elle ne conserve pas toutes les publications trimestrielles du Parcellaire Express.
+La fonction à mettre à jour concerne l'import des données.  
+Le Parcellaire Express étant mis à jour trimestriellement, l'URL de téléchargement dépend du mois et de l'année de publication des données.  
+Je n'ai pas connaissance de la fréquence exacte de mise à jour d'opendatarchives, mais je sais qu'elle ne conserve pas toutes les publications trimestrielles du Parcellaire Express.
 
-Si vous souhaitez obtenir les données les plus fraiches du site de l'IGN et que vous constatez sur le site qu'elle date d'après Juillet 2024 (ou la fonction renvoie URL introuvable), il est nécessaire de faire des modifications dans l'URL.
+Si vous souhaitez obtenir les données les plus récentes sur le site de l'IGN et que vous constatez qu'elles datent d'après juillet 2024 (ou que la fonction renvoie une erreur du type "URL introuvable"), il sera nécessaire de modifier l'URL en conséquence. Il en va de même pour ajouter des téléchargements suite à des ajouts sur opendatarchives.
 
 ```r
 # Nous nous situons dans la fonction telechargement_departement
 
-if (num_annee == 2024) {
-    url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_",
-                  sys_projection(num_departement),
-                  "_D",
-                  num_departement,
-                  "_2024-07-01/PARCELLAIRE-EXPRESS_1-1__SHP_",
-                  sys_projection(num_departement),
-                  "_D",
-                  num_departement,
-                  "_2024-07-01.7z")
-  }
-  
-# Il faut changer 2024-07-01 par la date qui convient
-# Par exemple, si les données sont mise à jour au 1er Octobre 2024
-  
-url_maj <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_",
-                  sys_projection(num_departement),
-                  "_D",
-                  num_departement,
-                  "_2024-10-01/PARCELLAIRE-EXPRESS_1-1__SHP_", # changement ici
-                  sys_projection(num_departement),
-                  "_D",
-                  num_departement,
-                  "_2024-10-01.7z") # changement ici
+mois_publi_ign <- c(
+    "2024" = "07" # Modifier la date si nécessaire (association de l'année avec le mois de publication)
+)
+
+# Par exemple, si les données sont mises à jour au 1er octobre 2024,
+# Il faut changer "07" par "10" (voire l'année si nous sommes en 2025)
+
+mois_publi_ign_maj <- c(
+    "2024" = "10" # Mise à jour liée à la mise à disposition des données plus récentes du site de l'IGN
+)
+
+# Si plus tard, le site datarchives ajoute la version du 1er juillet 2024 et que vous souhaitez la récupérer par ce biais, ajoutez une entrée dans le vecteur `mois_publi_archive_pci_version_rec_maj`
+
+mois_publi_archive_pci_version_rec_maj <- c(
+    "2024" = "07", # Mise à jour
+    "2023" = "07"
+)
 ```
 
-Si vous souhaitez obtenir les données les plus fraiches du site de l'IGN et que vous constatez sur le site qu'elle date d'après Juillet 2024 (ou la fonction renvoie URL introuvable), il est nécessaire de faire des modifications dans l'URL.
+**Attention :** on ne peut pas conserver deux millésimes d'une même année, il faudra faire un choix.  
+Si les variables `mois_publi_ign` et `mois_publi_archive_pci_version_rec_maj` contiennent une même année mais associée à un mois différent, l'import se fera à partir des données de opendatarchives.

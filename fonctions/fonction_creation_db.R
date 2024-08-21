@@ -43,7 +43,15 @@ code_sys_projection <- function(num_departement) {
 # Fonction pour télécharger et traiter chaque département
 telechargement_departement <- function(num_departement, num_annee, indic_parc = T) {
   
-  archive_months <- c(
+  mois_publi_ign <- c(
+    "2024" = "07" # Modifier la date si nécessaire (association de l'année avec le mois de publication)
+  )
+  
+  mois_publi_archive_pci_version_rec <- c(
+    "2023" = "07" # Ajouter des dates si nécessaire
+  )
+  
+  mois_publi_archive_pci_version_ant <- c(
     "2022" = "01",
     "2021" = "02",
     "2020" = "01",
@@ -51,31 +59,43 @@ telechargement_departement <- function(num_departement, num_annee, indic_parc = 
   )
 
   # Construire l'URL du fichier .7z pour le département spécifié
-  if (num_annee == 2024) {
+  if (num_annee %in% names(mois_publi_ign)) {
     url <- paste0("https://data.geopf.fr/telechargement/download/PARCELLAIRE-EXPRESS/PARCELLAIRE-EXPRESS_1-1__SHP_",
                   sys_projection(num_departement),
                   "_D",
                   num_departement,
-                  "_2024-07-01/PARCELLAIRE-EXPRESS_1-1__SHP_",
+                  "_",
+                  num_annee,
+                  "-",
+                  mois_publi_ign[num_annee],
+                  "-01/PARCELLAIRE-EXPRESS_1-1__SHP_",
                   sys_projection(num_departement),
                   "_D",
                   num_departement,
-                  "_2024-07-01.7z")
+                  "_",
+                  num_annee,
+                  "-",
+                  mois_publi_ign[num_annee],
+                  "-01.7z")
   }
   
-  if(num_annee == 2023) {
+  if(num_annee %in% names(mois_publi_archive_pci_version_rec)) {
     url <- paste0("https://files.opendatarchives.fr/professionnels.ign.fr/parcellaire-express/PARCELLAIRE_EXPRESS_1-1__SHP_",
                   sys_projection(num_departement),
                   "_D",
                   num_departement,
-                  "_2023-07-01.7z")
+                  "_",
+                  num_annee,
+                  "-",
+                  mois_publi_archive_pci_version_rec[num_annee],
+                  "-01.7z")
   }
   
-  if (num_annee %in% names(archive_months)) {
+  if (num_annee %in% names(mois_publi_archive_pci_version_ant)) {
     url <- paste0("https://files.opendatarchives.fr/professionnels.ign.fr/parcellaire-express/PCI-par-DEPT_",
                   num_annee,
                   "-",
-                  archive_months[num_annee],
+                  mois_publi_archive_pci_version_ant[num_annee],
                   "/PARCELLAIRE_EXPRESS_1-0__SHP_",
                   sys_projection(num_departement),
                   "_D",
@@ -83,7 +103,7 @@ telechargement_departement <- function(num_departement, num_annee, indic_parc = 
                   "_",
                   num_annee,
                   "-",
-                  archive_months[num_annee],
+                  mois_publi_archive_pci_version_ant[num_annee],
                   "-01.7z")
   }
   
