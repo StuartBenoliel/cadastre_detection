@@ -454,18 +454,15 @@ check_refonte_pc <- function(conn, nom_com, seuil=50) {
   SELECT 
     (SELECT COUNT(*) 
      FROM modif
-     WHERE nom_com IN (", nom_com, ")) AS nb_modif_restant,
-    (SELECT COUNT(*) 
-     FROM supp
-     WHERE nom_com IN (", nom_com, ")) AS nb_supp_restant,
-    (SELECT COUNT(*) 
-     FROM modif
+     WHERE nom_com IN (", nom_com, ")) +
+     (SELECT COUNT(*) 
+     FROM ajout
      WHERE nom_com IN (", nom_com, ")) +
     (SELECT COUNT(*) 
      FROM supp
-     WHERE nom_com IN (", nom_com, ")) AS total_count
+     WHERE nom_com IN (", nom_com, ")) AS total
 "))
-  ifelse(nb_parcelles_rest >50, return(T), return(F))
+  ifelse(nb_parcelles_rest$total > seuil, return(T), return(F))
 }
 
 tableau_si_donnee <- function(table) {
@@ -494,29 +491,29 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         FROM parc_", num_departement, "_", temps_apres, "
         GROUP BY code_com, nom_com
       ),
-      modif_restant AS (
-        SELECT nom_com, COUNT(*) AS nb_modif_restant
-        FROM modif
+      restantes AS (
+        SELECT nom_com, 
+               COALESCE(SUM(CASE WHEN type = 'modif' THEN 1 ELSE 0 END), 0) AS nb_modif_restant,
+               COALESCE(SUM(CASE WHEN type = 'supp' THEN 1 ELSE 0 END), 0) AS nb_supp_restant,
+               COALESCE(SUM(CASE WHEN type = 'ajout' THEN 1 ELSE 0 END), 0) AS nb_ajout_restant
+        FROM (
+            SELECT nom_com, 'modif' AS type FROM modif
+            UNION ALL
+            SELECT nom_com, 'supp' AS type FROM supp
+            UNION ALL
+            SELECT nom_com, 'ajout' AS type FROM ajout
+        ) AS testantes
         GROUP BY nom_com
       ),
-      supp_restant AS (
-        SELECT nom_com, COUNT(*) AS nb_supp_restant
-        FROM supp
-        GROUP BY nom_com
-      ),
-      ajout_restant AS (
-        SELECT nom_com, COUNT(*) AS nb_ajout_restant
-        FROM ajout
-        GROUP BY nom_com
-      ),
-      vrai_ajout AS (
-        SELECT nom_com, COUNT(*) AS nb_ajout
-        FROM vrai_ajout
-        GROUP BY nom_com
-      ),
-      vrai_supp AS (
-        SELECT nom_com, COUNT(*) AS nb_supp
-        FROM vrai_supp
+      vrai_ajout_supp AS (
+        SELECT nom_com, 
+               COUNT(CASE WHEN type = 'vrai_ajout' THEN 1 END) AS nb_ajout,
+               COUNT(CASE WHEN type = 'vrai_supp' THEN 1 END) AS nb_supp
+        FROM (
+            SELECT nom_com, 'vrai_ajout' AS type FROM vrai_ajout
+            UNION ALL
+            SELECT nom_com, 'vrai_supp' AS type FROM vrai_supp
+        ) AS vrai_ajout_supp
         GROUP BY nom_com
       ),
       translation AS (
@@ -539,45 +536,33 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         FROM contour_redecoupage
         GROUP BY nom_com
       ),
-      echange_avant AS (
-          SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
-          FROM echange_parc,
-          LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
-          GROUP BY nom_com_avant
-      ),
-      echange_apres AS (
-          SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
-          FROM echange_parc,
-          LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
-          GROUP BY nom_com_apres
-      ),
       echange AS (
-          SELECT nom_com, SUM(nb_echanges) AS nb_echanges
-          FROM (
-            SELECT * FROM echange_avant
+        SELECT nom_com, SUM(nb_echanges) AS nb_echanges
+        FROM (
+            SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
+            FROM echange_parc
+            LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
+            GROUP BY nom_com_avant
             UNION ALL
-            SELECT * FROM echange_apres
+            SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
+            FROM echange_parc
+            LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
+            GROUP BY nom_com_apres
         ) AS combined
         GROUP BY nom_com
       ),
-      echange_poss_avant AS (
-          SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges_poss
-          FROM echange_parc_possible,
-          LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
-          GROUP BY nom_com_avant
-      ),
-      echange_poss_apres AS (
-          SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges_poss
-          FROM echange_parc_possible,
-          LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
-          GROUP BY nom_com_apres
-      ),
       echange_poss AS (
-          SELECT nom_com, SUM(nb_echanges_poss) AS nb_echanges_poss
-          FROM (
-            SELECT * FROM echange_poss_avant
+        SELECT nom_com, SUM(nb_echanges) AS nb_echanges_poss
+        FROM (
+            SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
+            FROM echange_parc_possible
+            LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
+            GROUP BY nom_com_avant
             UNION ALL
-            SELECT * FROM echange_poss_apres
+            SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
+            FROM echange_parc_possible
+            LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
+            GROUP BY nom_com_apres
         ) AS combined
         GROUP BY nom_com
       ),
@@ -596,27 +581,23 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         parcelles_20", temps_apres," AS total_20", temps_apres,",
         parcelles_20", temps_avant," AS total_20", temps_avant,",
         COALESCE(nb_modif_restant, 0) + COALESCE(nb_ajout_restant, 0) AS taux_classif_20", temps_apres,",
-        COALESCE(nb_modif_restant, 0) + COALESCE(nb_supp_restant, 0) AS taux_classif_20", temps_avant,",
+        COALESCE(nb_modif_restant, 0) + COALESCE(nb_supp_restant, 0) AS taux_classif_20", temps_avant,',
         COALESCE(nb_ajout, 0) AS ajout,
         COALESCE(nb_supp, 0) AS suppression,
         COALESCE(nb_translation, 0) AS translation,
         COALESCE(nb_contour, 0) AS contour,
         COALESCE(nb_redecoupage, 0) AS redécoupage,
         COALESCE(nb_contour_redecoupage, 0) AS contour_redécoupage,
-        COALESCE(nb_echanges, 0) AS échange,
-        COALESCE(nb_echanges_poss, 0) AS échange_possible
+        COALESCE(nb_echanges, 0) + COALESCE(nb_echanges_poss, 0) AS échange
       FROM base
-      FULL OUTER JOIN modif_restant ON base.nom_com = modif_restant.nom_com
-      FULL OUTER JOIN supp_restant ON base.nom_com = supp_restant.nom_com
-      FULL OUTER JOIN ajout_restant ON base.nom_com = ajout_restant.nom_com
-      FULL OUTER JOIN vrai_ajout ON base.nom_com = vrai_ajout.nom_com
-      FULL OUTER JOIN vrai_supp ON base.nom_com = vrai_supp.nom_com
-      FULL OUTER JOIN translation ON base.nom_com = translation.nom_com
-      FULL OUTER JOIN contour ON base.nom_com = contour.nom_com
-      FULL OUTER JOIN redecoupage ON base.nom_com = redecoupage.nom_com
-      FULL OUTER JOIN contour_redecoupage ON base.nom_com = contour_redecoupage.nom_com
-      FULL OUTER JOIN echange ON base.nom_com = echange.nom_com
-      FULL OUTER JOIN echange_poss ON base.nom_com = echange_poss.nom_com;"))
+      LEFT JOIN restantes ON base.nom_com = restantes.nom_com
+      LEFT JOIN vrai_ajout_supp ON base.nom_com = vrai_ajout_supp.nom_com
+      LEFT JOIN translation ON base.nom_com = translation.nom_com
+      LEFT JOIN contour ON base.nom_com = contour.nom_com
+      LEFT JOIN redecoupage ON base.nom_com = redecoupage.nom_com
+      LEFT JOIN contour_redecoupage ON base.nom_com = contour_redecoupage.nom_com
+      LEFT JOIN echange ON base.nom_com = echange.nom_com
+      LEFT JOIN echange_poss ON base.nom_com = echange_poss.nom_com;'))
   
   
   final_df <- final_df %>%

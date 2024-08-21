@@ -211,5 +211,5 @@ mois_publi_archive_pci_version_rec_maj <- c(
 )
 ```
 
-**Attention :** on ne peut pas conserver deux millésimes d'une même année, il faudra faire un choix.  
+**Attention :** on ne peut pas conserver deux millésimes d'une même année, il faut faire un choix.  
 Si les variables `mois_publi_ign` et `mois_publi_archive_pci_version_rec_maj` contiennent une même année mais associée à un mois différent, l'import se fera à partir des données de opendatarchives.

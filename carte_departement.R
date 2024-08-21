@@ -2,15 +2,14 @@ library(sf)
 library(dplyr)
 library(mapview)
 library(DBI)
-library(ggplot2)
 library(webshot)
 library(stringr)
 rm(list = ls())
 
 params <- list(
-  num_departement = "23",
-  temps_apres = 23,
-  temps_avant = 22
+  num_departement = "85",
+  temps_apres = 24,
+  temps_avant = 23
 ) # A modifier au besoin
 
 source(file = "database/connexion_db.R")

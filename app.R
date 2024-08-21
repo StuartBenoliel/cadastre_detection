@@ -1,12 +1,11 @@
 library(shiny)
 library(bslib)
-library(shinythemes)
 library(sf)
 library(mapview)
 library(leaflet)
+library(leaflet.extras2)
 library(stringr)
 library(leafsync)
-library(leaflet.extras2)
 library(DBI)
 library(DT)
 
@@ -278,7 +277,7 @@ server <- function(input, output, session) {
                      paste0('taux_classif_20',temps_vec[1]),
                      paste0('taux_classif_20',temps_vec[2]), 
                      'ajout', 'suppression', 'translation', 'contour', 
-                     'redécoupage', 'contour_redécoupage', 'échange', 'échange_possible')
+                     'redécoupage', 'contour_redécoupage', 'échange')
     
     updateCheckboxGroupInput(session, "var_tableau",
                              choices = col_tableau,

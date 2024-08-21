@@ -2,6 +2,7 @@
 packages <- c(
   "shiny",
   "bslib",
+  "bsicons",
   "DT",
   "archive",
   "DBI",
@@ -11,6 +12,7 @@ packages <- c(
   "mapview",
   "leaflet",
   "leafsync",
+  "leaflet.extras2",
   "webshot",
   "ggplot2"
 )
