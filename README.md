@@ -52,33 +52,26 @@ La dernière fonction permet d'enregistrer les données traitées dans la base S
 
 **À faire :**
 
-Remplissez la variable `num_departements` avec les numéros des départements que vous souhaitez traiter.  
-Remplissez la variable `num_annees` avec les deux derniers chiffres des années que vous souhaitez comparer.  
-Changez la variable `indicatrice_parcelle` en fonction de l'import souhaité :
+Remplissez la variable `params_list` avec la liste des paramètres nécessaires à l'importation :
 
-- Pour l'import des parcelles, mettez `TRUE`.  
-- Pour l'import du fond communal, mettez `FALSE`.
+- Le numéro du département dans `num_departement`,  
+- Les deux derniers chiffres de l'année à comparer dans `num_annee`,  
+- La variable `indicatrice_parcelle` en fonction de l'import souhaité :
+
+  - Pour l'import des parcelles, mettez `TRUE`.  
+  - Pour l'import du fond communal, mettez `FALSE`.
 
 Exécutez l'intégralité du fichier.
 
 **Exemple :**
 
-**a) Import des parcelles**
-
 ```r
-num_departements <- ZZ
-num_annees <- c(XX , YY)
-indicatrice_parcelle <- TRUE
-```
-
-Exécutez l'intégralité du fichier.
-
-**b) Import du fond**
-
-```r
-num_departements <- ZZ
-num_annees <- XX  # ou YY ou autre
-indicatrice_parcelle <- FALSE
+params_list <- list(
+  list(num_departement = ZZ, num_annee = XX, indicatrice_parcelle = TRUE),
+  list(num_departement = ZZ, num_annee = YY, indicatrice_parcelle = TRUE),
+  list(num_departement = ZZ, num_annee = YY, indicatrice_parcelle = FALSE)
+)
+# Enregistrement des parcelles des années 20XX et 20YY et du fond communal de l'année 20YY
 ```
 
 Exécutez l'intégralité du fichier.
@@ -86,7 +79,6 @@ Exécutez l'intégralité du fichier.
 **Remarque :** 
 
 Le téléchargement peut être long s'il provient directement du site de l'IGN et non de opendatarchives.  
-Si vous entrez plusieurs numéros de départements et plusieurs années, alors pour chaque département, l'import sera effectué pour toutes les années du vecteur `num_annees`.  
 Si vous souhaitez choisir quelle parcelle doit être conservée en cas de doublon, vous devrez le faire manuellement.
 
 ### 4) Application de la méthode de détection
