@@ -47,14 +47,9 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   FROM parc_", params$num_departement, "_", params$temps_apres, " apres
   JOIN parc_", params$num_departement, "_", params$temps_avant, " avant 
     ON avant.idu = apres.idu
-  WHERE EXISTS (
-      SELECT 1
-      FROM parc_", params$num_departement, "_", params$temps_avant, " avant
-      WHERE apres.idu = avant.idu 
-          AND safe_st_equals(
-              ST_SnapToGrid(apres.geometry, 0.0001), 
-              ST_SnapToGrid(avant.geometry, 0.0001)
-      )
+  WHERE safe_st_equals(
+      ST_SnapToGrid(apres.geometry, 0.0001), 
+      ST_SnapToGrid(avant.geometry, 0.0001)
   );"))
   # On récupèrer les parcelles identiques pour lesquelles on a arrondi au préalable à 
   # 10^-4 les cordonnées de la géomètrie (vraiment utile parfois). Toutefois, lors

@@ -56,8 +56,11 @@ params_list <- list(
 
 # Boucle pour exécuter les blocs de code avec différents paramètres
 for (params in params_list) {
+  
   traitement_parcelles(conn, params$num_departement, 
-                       params$temps_apres, params$temps_avant)
+                       params$temps_apres, params$temps_avant, 
+                       nb_parcelles_seuil=5e05)
+  
   print(paste0("Traitement département ", params$num_departement, 
                " pour les années 20", params$temps_apres, " - 20", params$temps_avant, " terminé !"))
 }

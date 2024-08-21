@@ -3,9 +3,9 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "85"
-  temps_apres: 24
-  temps_avant: 23
+  num_departement: "23"
+  temps_apres: 23
+  temps_avant: 22
 ---
 
 ```{r setup, include=FALSE}
@@ -144,14 +144,10 @@ dbExecute(conn, paste0("
   FROM parc_", params$num_departement, "_", params$temps_apres, " apres
   JOIN parc_", params$num_departement, "_", params$temps_avant, " avant 
     ON avant.idu = apres.idu
-  WHERE EXISTS (
-      SELECT 1
-      FROM parc_", params$num_departement, "_", params$temps_avant, " avant
-      WHERE apres.idu = avant.idu 
-          AND safe_st_equals(
-              ST_SnapToGrid(apres.geometry, 0.0001), 
-              ST_SnapToGrid(avant.geometry, 0.0001)
-      )
+  WHERE safe_st_equals(
+      ST_SnapToGrid(apres.geometry, 0.0001), 
+      ST_SnapToGrid(avant.geometry, 0.0001)
+      
   );"))
 # On récupèrer les parcelles identiques pour lesquelles on a arrondi au préalable à 
 # 10^-4 les cordonnées de la géomètrie (vraiment utile parfois). Toutefois, lors
@@ -223,8 +219,8 @@ dbExecute(conn, paste0("
 
 
 ```{r, eval=FALSE}
-identique <- st_read(conn, query = "SELECT * FROM identique;")
-disparition_com <- st_read(conn, query = "SELECT * FROM disparition_com;")
+identique <- dbGetQuery(conn, "SELECT * FROM identique;")
+disparition_com <- dbGetQuery(conn, "SELECT * FROM disparition_com;")
 modif <- st_read(conn, query = "SELECT * FROM modif;")
 ```
 

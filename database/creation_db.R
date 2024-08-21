@@ -55,8 +55,7 @@ parc_21_23 <- parc_21_23 %>%
   filter(!(IDU == "213200000B0081" & FEUILLE == "5"))
 # Doublon de ligne bizarre
 
-dbListTables(conn)
-dbGetQuery(conn, "SELECT schema_name FROM information_schema.schemata;")
+# dbGetQuery(conn, "SELECT schema_name FROM information_schema.schemata;")
 
 # Déconnexion finale
 dbDisconnect(conn)
