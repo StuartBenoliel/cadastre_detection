@@ -7,9 +7,9 @@ library(stringr)
 rm(list = ls())
 
 params <- list(
-  num_departement = "85",
-  temps_apres = 24,
-  temps_avant = 23
+  num_departement = "2b",
+  temps_apres = 23,
+  temps_avant = 22
 ) # A modifier au besoin
 
 source(file = "database/connexion_db.R")
