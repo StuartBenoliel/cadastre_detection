@@ -81,7 +81,7 @@ ui <- page_navbar(
               column(6,
                      div(class = "input-group",
                          selectizeInput("nom_com_select_carte", 
-                                        label = "Choisir une / plusieurs communes:",
+                                        label = "Choisir une ou plusieurs communes:",
                                         choices = NULL,
                                         multiple = TRUE,
                                         options = list(plugins = "remove_button"),
