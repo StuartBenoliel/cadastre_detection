@@ -1320,7 +1320,7 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   dbExecute(conn, "
   DROP TABLE IF EXISTS multi_calcul_cache, identique, ajout_simp, 
   supp_simp, fusion_ajout, max_iou, disparition_com, multi_rapide, 
-  multi_ajout, scission_com, fusion_com CASCADE
+  multi_ajout CASCADE
 ;")
   
 }

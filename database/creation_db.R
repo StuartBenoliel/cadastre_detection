@@ -26,8 +26,8 @@ conn <- connecter()
 #91 -> 20/21/22
 
 params_list <- list(
-  list(num_departement = "2b", num_annee = 23, indicatrice_parcelle = F),
-  list(num_departement = "2b", num_annee = 22, indicatrice_parcelle = F)
+  list(num_departement = "2b", num_annee = 23, indicatrice_parcelle = T),
+  list(num_departement = "2b", num_annee = 22, indicatrice_parcelle = T)
 )
 
 # Boucle pour exécuter les blocs de code avec différents paramètres
