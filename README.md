@@ -42,7 +42,7 @@ Pour faire une comparaison entre 20XX et 20YY pour un département ZZ, vous deve
 
 - Les parcelles de 20XX pour le département ZZ,  
 - Les parcelles de 20YY pour le département ZZ,  
-- Un fond communal (de l'année la plus récente à priori).
+- Un fond communal (de l'année la plus récente à priori). (Optionnel)
 
 Nous utilisons le fond communal déjà présent dans le même fichier que celui contenant les parcelles. Toutefois, ceci nécessite trois téléchargements différents, dont un redondant si nous utilisons le fond communal de l'année 20XX ou 20YY.  
 

@@ -3,7 +3,7 @@ title: "Traitement des parcelles d'un département"
 output: html_document
 date: "2024-06-18"
 params:
-  num_departement: "23"
+  num_departement: "2b"
   temps_apres: 23
   temps_avant: 22
 ---
@@ -99,8 +99,16 @@ supp <- st_read(conn, query = "SELECT * FROM supp;")
 dbExecute(conn, "TRUNCATE TABLE bordure;")
 
 dbExecute(conn, paste0("
-  INSERT INTO bordure
-  SELECT
+DO $$
+BEGIN
+  -- Vérifier si la table existe dans le chemin de recherche actuel
+  IF EXISTS (
+    SELECT FROM information_schema.tables 
+    WHERE table_name = 'com_", params$num_departement, "'
+  ) THEN
+    -- Si la table existe, effectuer l'insertion
+    INSERT INTO bordure
+    SELECT
       code_insee, nom_com,
       ST_Multi(
           ST_Simplify(
@@ -109,8 +117,11 @@ dbExecute(conn, paste0("
               )
           , 10)
       ) AS geometry
-  FROM
-      com_", params$num_departement, ";"))
+    FROM
+      com_", params$num_departement, ";
+  END IF;
+END $$;
+"))
 # Création de la bordure de 250 mètres de chaque coté par rapport au contour communal
 ```
 

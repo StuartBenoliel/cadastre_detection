@@ -540,12 +540,12 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         SELECT nom_com, SUM(nb_echanges) AS nb_echanges
         FROM (
             SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
-            FROM echange_parc
+            FROM echange_parc,
             LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
             GROUP BY nom_com_avant
             UNION ALL
             SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
-            FROM echange_parc
+            FROM echange_parc,
             LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
             GROUP BY nom_com_apres
         ) AS combined
@@ -555,12 +555,12 @@ tableau_recap <- function(conn, num_departement, temps_apres, temps_avant, var) 
         SELECT nom_com, SUM(nb_echanges) AS nb_echanges_poss
         FROM (
             SELECT nom_com_avant AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
-            FROM echange_parc_possible
+            FROM echange_parc_possible,
             LATERAL unnest(regexp_split_to_array(participants_avant, ',\\s*')) AS idu
             GROUP BY nom_com_avant
             UNION ALL
             SELECT nom_com_apres AS nom_com, COUNT(DISTINCT idu) AS nb_echanges
-            FROM echange_parc_possible
+            FROM echange_parc_possible,
             LATERAL unnest(regexp_split_to_array(participants_apres, ',\\s*')) AS idu
             GROUP BY nom_com_apres
         ) AS combined

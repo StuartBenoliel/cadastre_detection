@@ -62,7 +62,7 @@ dbGetQuery(conn, paste0("
   FROM 
       pg_tables
   WHERE 
-      schemaname = '", paste0("traitement_", temps_apres, "_", temps_avant, "_cadastre_" , num_departement), "'
+      schemaname = '", paste0("traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_" , params$num_departement), "'
   ORDER BY 
       schemaname, tablename;
            "))
@@ -70,7 +70,7 @@ dbGetQuery(conn, paste0("
 
 ```{r supprimer un schéma de traitement}
 dbExecute(conn, paste0(
-  "DROP SCHEMA IF EXISTS traitement_", temps_apres, "_", temps_avant, "_cadastre_", num_departement, " CASCADE;"))
+  "DROP SCHEMA IF EXISTS traitement_", params$temps_apres, "_", params$temps_avant, "_cadastre_", params$num_departement, " CASCADE;"))
 ```
 
 ```{r supprimer tous les schémas de traitement}

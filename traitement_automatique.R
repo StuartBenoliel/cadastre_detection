@@ -26,32 +26,10 @@ params_list <- list(
   list(num_departement = "23", temps_apres = 24, temps_avant = 23)
 )
 
-params_list <- list(
-  list(num_departement = "35", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "38", temps_apres = 20, temps_avant = 19),
-  list(num_departement = "38", temps_apres = 21, temps_avant = 20),
-  list(num_departement = "38", temps_apres = 22, temps_avant = 21),
-  list(num_departement = "38", temps_apres = 23, temps_avant = 22),
-  list(num_departement = "54", temps_apres = 21, temps_avant = 20),
-  list(num_departement = "54", temps_apres = 22, temps_avant = 21),
-  list(num_departement = "54", temps_apres = 23, temps_avant = 22),
-  list(num_departement = "54", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "60", temps_apres = 24, temps_avant = 23)
-)
 
 params_list <- list(
-  list(num_departement = "62", temps_apres = 21, temps_avant = 20),
-  list(num_departement = "62", temps_apres = 22, temps_avant = 21),
-  list(num_departement = "62", temps_apres = 23, temps_avant = 22),
-  list(num_departement = "62", temps_apres = 24, temps_avant = 23),
-  list(num_departement = "76", temps_apres = 20, temps_avant = 19),
-  list(num_departement = "76", temps_apres = 21, temps_avant = 20),
-  list(num_departement = "76", temps_apres = 22, temps_avant = 21),
-  list(num_departement = "76", temps_apres = 23, temps_avant = 22),
-  list(num_departement = "78", temps_apres = 23, temps_avant = 22),
-  list(num_departement = "85", temps_apres = 24, temps_avant = 23)
+  list(num_departement = "2b", temps_apres = 23, temps_avant = 22)
 )
-
 
 
 # Boucle pour exécuter les blocs de code avec différents paramètres

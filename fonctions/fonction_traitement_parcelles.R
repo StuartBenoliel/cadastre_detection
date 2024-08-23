@@ -26,18 +26,29 @@ traitement_parcelles <- function(conn, num_departement, temps_apres, temps_avant
   # Parcelles à la période T-1 non présentes à T
   
   dbExecute(conn, paste0("
-  INSERT INTO bordure
-  SELECT
-      code_insee, nom_com,
-      ST_Multi(
-          ST_Simplify(
-              ST_Difference(
-                  ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)
-              )
-          , 10)
-      ) AS geometry
-  FROM
-      com_", params$num_departement, ";"))
+  DO $$
+  BEGIN
+    -- Vérifier si la table existe dans le chemin de recherche actuel
+    IF EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_name = 'com_", params$num_departement, "'
+    ) THEN
+      -- Si la table existe, effectuer l'insertion
+      INSERT INTO bordure
+      SELECT
+        code_insee, nom_com,
+        ST_Multi(
+            ST_Simplify(
+                ST_Difference(
+                    ST_Buffer(geometry, 250), ST_Buffer(geometry, -250)
+                )
+            , 10)
+        ) AS geometry
+      FROM
+        com_", params$num_departement, ";
+    END IF;
+  END $$;
+  "))
   
   dbExecute(conn, paste0("
   INSERT INTO identique
