@@ -97,7 +97,7 @@ ui <- page_navbar(
               ),
             ),
             wellPanel(class = "well-panel", uiOutput("dynamicMaps")),
-            h3("Cas de parcelles avec géomètrie absente:"),
+            h3("Cas de parcelles avec géométrie absente:"),
             wellPanel(class = "well-pane-small", uiOutput("parcelles_absentes")),
             br()
             

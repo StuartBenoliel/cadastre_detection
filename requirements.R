@@ -4,6 +4,7 @@ packages <- c(
   "bslib",
   "bsicons",
   "DT",
+  "RPostgres",
   "archive",
   "DBI",
   "dplyr",

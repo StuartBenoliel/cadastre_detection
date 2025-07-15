@@ -8,7 +8,7 @@ rm(list = ls())
 source(file = "database/connexion_db.R")
 conn <- connecter()
 source(file = "fonctions/fonction_traitement_parcelles.R")
-
+source(file = "fonctions/fonction_sql.R")
 # Liste des paramètres à utiliser
 
 params_list <- list(

@@ -13,9 +13,14 @@ De plus, le projet est conçu pour utiliser un système de base de données Post
 
 ## Usage
 
+### 0) Utilisation du SSPCloud
+
+Lancer un service Rstudio en renseignant l'URL du dépot git ainsi qu'un token d'accès et un service Postgre avec l'extension Postgis.
+
+
 ### 1) Projet et installation des packages
 
-Ouvir le projet `cadastre_detection.Rproj` et installer les packages nécessaires via le module prévu à cet effet.
+Ouvrir le projet `cadastre_detection.Rproj` et installer les packages nécessaires via le module prévu à cet effet.
   
 **À exécuter :**
 
